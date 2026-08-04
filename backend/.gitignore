@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+.env
+logs/*
+!logs/.gitkeep
+reports/*
+!reports/.gitkeep
+uploads/*
+!uploads/.gitkeep
+!uploads/contracts/.gitkeep
+!uploads/payments/.gitkeep
+!uploads/expenses/.gitkeep
+!uploads/invoices/.gitkeep
+!uploads/logos/.gitkeep
+!uploads/contributions/.gitkeep
+!uploads/members/.gitkeep

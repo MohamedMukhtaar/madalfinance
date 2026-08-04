@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Semantic theme tokens.
+  Light = white/light gray system. Dark = navy-black system.
+  Active menu uses --color-active (Madal dark blue #101848).
+*/
+:root {
+  --color-app: #f8fafc;
+  --color-panel: #ffffff;
+  --color-card: #ffffff;
+  --color-muted: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-ink: #0f172a;
+  --color-ink-soft: #475569;
+  --color-ink-muted: #64748b;
+  --color-active: #101848;
+  --color-accent: #74bcf8;
+}
+
+html.dark {
+  --color-app: #040614;
+  --color-panel: #070b22;
+  --color-card: #0b1224;
+  --color-muted: #111827;
+  --color-line: #1e293b;
+  --color-ink: #f8fafc;
+  --color-ink-soft: #cbd5e1;
+  --color-ink-muted: #94a3b8;
+  --color-active: #101848;
+  --color-accent: #74bcf8;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-app);
+    color: var(--color-ink-soft);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    color: var(--color-ink);
+  }
+
+  ::selection {
+    background-color: rgba(16, 24, 72, 0.18);
+    color: #101848;
+  }
+
+  html.dark ::selection {
+    background-color: rgba(116, 188, 248, 0.45);
+    color: #ffffff;
+  }
+
+  /* Readable selection on navy marketing panel */
+  .bg-navy ::selection,
+  .bg-navy-gradient ::selection {
+    background-color: rgba(116, 188, 248, 0.45);
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.4) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: #cbd5e1;
+  }
+  html.dark *::-webkit-scrollbar-thumb {
+    background-color: #334155;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: 0.5rem;
+    background-color: var(--color-muted);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+}
+
+.recharts-cartesian-axis-tick-value {
+  font-size: 11px;
+}
+.recharts-default-legend {
+  font-size: 12px;
+}
+.recharts-tooltip-cursor {
+  fill: rgba(100, 116, 139, 0.08);
+}

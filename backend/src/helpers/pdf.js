@@ -1,0 +1,184 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import PDFDocument from 'pdfkit';
+import dayjs from 'dayjs';
+import env from '../config/index.js';
+import { REFERENCE_TYPES } from '../utils/constants.js';
+
+const ensureReportsDir = () => {
+  if (!fs.existsSync(env.dirs.reports)) fs.mkdirSync(env.dirs.reports, { recursive: true });
+};
+
+const money = (settings, value) =>
+  `${settings?.currency || '$'}${Number(value || 0).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+
+const addCompanyHeader = (doc, settings) => {
+  doc
+    .fillColor('#1e293b')
+    .fontSize(18)
+    .font('Helvetica-Bold')
+    .text(settings?.company_name || 'ICT Solutions', { align: 'left' });
+  doc
+    .fontSize(8)
+    .font('Helvetica')
+    .fillColor('#64748b')
+    .text(
+      [settings?.company_address, settings?.company_phone, settings?.company_email]
+        .filter(Boolean)
+        .join(' · '),
+      { align: 'left' }
+    );
+  doc.moveDown(1.2);
+};
+
+const addMetaRow = (doc, label, value, width) => {
+  doc.fontSize(9);
+  doc.fillColor('#64748b').text(label, { width, continued: true });
+  doc.fillColor('#0f172a').font('Helvetica-Bold').text(`: ${value}`, { width: 230 - width });
+  doc.moveDown(0.3);
+};
+
+/**
+ * Builds a PDF invoice. Returns the path of the generated file.
+ */
+export const generateInvoicePdf = async ({ invoice, items, customer, settings }) => {
+  ensureReportsDir();
+  const filename = `${invoice.invoice_number}.pdf`;
+  const filePath = path.join(env.dirs.reports, filename);
+
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
+
+    addCompanyHeader(doc, settings);
+    doc.fontSize(15).font('Helvetica-Bold').fillColor('#0f172a').text('INVOICE');
+    doc.moveDown(0.8);
+
+    addMetaRow(doc, 'Invoice No', invoice.invoice_number, 110);
+    addMetaRow(doc, 'Invoice Date', dayjs(invoice.invoice_date).format('DD MMM YYYY'), 110);
+    if (invoice.due_date) addMetaRow(doc, 'Due Date', dayjs(invoice.due_date).format('DD MMM YYYY'), 110);
+    addMetaRow(doc, 'Status', invoice.status, 110);
+    doc.moveDown(1);
+
+    doc.fontSize(9).fillColor('#64748b').text('BILL TO');
+    doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(11).text(customer?.customer_name || '');
+    if (customer?.company_name) doc.font('Helvetica').fontSize(9).fillColor('#334155').text(customer.company_name);
+    if (customer?.address) doc.font('Helvetica').fontSize(9).fillColor('#334155').text(customer.address);
+    if (customer?.city) doc.font('Helvetica').fontSize(9).fillColor('#334155').text(customer.city);
+    doc.moveDown(1.2);
+
+    const tableTop = doc.y;
+    const colX = { desc: 48, qty: 330, price: 410, total: 480 };
+    const drawRow = (y, values, bold, shade) => {
+      if (shade) doc.rect(48, y, 509, 18).fill('#f8fafc');
+      doc.fillColor('#0f172a').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(9);
+      doc.text(values.desc, colX.desc, y + 4, { width: 270 });
+      doc.text(values.qty, colX.qty, y + 4, { width: 60, align: 'right' });
+      doc.text(values.price, colX.price, y + 4, { width: 60, align: 'right' });
+      doc.text(values.total, colX.total, y + 4, { width: 70, align: 'right' });
+    };
+
+    drawRow(tableTop, { desc: 'Description', qty: 'Qty', price: 'Unit Price', total: 'Total' }, true, true);
+    doc.moveDown(0.9);
+    let y = doc.y + 4;
+    (items || []).forEach((item, i) => {
+      drawRow(y, {
+        desc: item.description,
+        qty: String(item.quantity),
+        price: money(settings, item.unit_price),
+        total: money(settings, item.total),
+      }, false, i % 2 === 1);
+      y += 20;
+    });
+    doc.y = y + 8;
+
+    const totalsX = 380;
+    doc.fontSize(9);
+    const totalRow = (label, value, bold) => {
+      doc.fillColor('#64748b').font(bold ? 'Helvetica-Bold' : 'Helvetica').text(label, totalsX, undefined, { width: 90, continued: true });
+      doc.fillColor('#0f172a').font(bold ? 'Helvetica-Bold' : 'Helvetica').text(value, { width: 90, align: 'right' });
+    };
+    totalRow('Subtotal', money(settings, invoice.subtotal), false);
+    if (Number(invoice.discount || 0) > 0) totalRow('Discount', `-${money(settings, invoice.discount)}`, false);
+    if (Number(invoice.tax || 0) > 0) totalRow('Tax', money(settings, invoice.tax), false);
+    totalRow('Total', money(settings, invoice.total_amount), true);
+    totalRow('Paid', money(settings, invoice.paid_amount), false);
+    totalRow('Balance Due', money(settings, invoice.balance ?? invoice.total_amount - invoice.paid_amount), true);
+
+    doc.moveDown(2);
+    if (invoice.notes) {
+      doc.fontSize(9).fillColor('#64748b').text(`Notes: ${invoice.notes}`);
+      doc.moveDown(1);
+    }
+    doc.moveTo(48, doc.y).lineTo(557, doc.y).strokeColor('#e2e8f0').stroke();
+    doc.moveDown(0.5);
+    doc.fontSize(8).fillColor('#94a3b8').text(
+      `Generated by Madal ICT Solutions · ${dayjs().format('DD MMM YYYY HH:mm')}`,
+      { align: 'center' }
+    );
+
+    doc.end();
+    stream.on('finish', resolve);
+    stream.on('error', reject);
+  });
+
+  return { filename, filePath };
+};
+
+/**
+ * Generic PDF report generator (tabulated data with a title).
+ */
+export const generateReportPdf = async ({ title, subtitle, columns, rows, settings }) => {
+  ensureReportsDir();
+  const filename = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${dayjs().format('YYYYMMDDHHmmss')}.pdf`;
+  const filePath = path.join(env.dirs.reports, filename);
+
+  await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 48 });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
+
+    addCompanyHeader(doc, settings);
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#0f172a').text(title);
+    if (subtitle) doc.fontSize(9).font('Helvetica').fillColor('#64748b').text(subtitle);
+    doc.moveDown(1);
+
+    const colWidth = 509 / columns.length;
+    doc.fontSize(8.5);
+    doc.font('Helvetica-Bold').fillColor('#ffffff');
+    columns.forEach((c, i) => {
+      doc.rect(48 + i * colWidth, doc.y, colWidth, 18).fill('#334155');
+    });
+    columns.forEach((c, i) => {
+      doc.fillColor('#ffffff').text(String(c.header).toUpperCase(), 48 + i * colWidth + 4, doc.y - 13, { width: colWidth - 8 });
+    });
+    doc.moveDown(0.9);
+
+    doc.font('Helvetica').fontSize(8.5);
+    rows.forEach((row, r) => {
+      if (r % 2 === 1) doc.rect(48, doc.y, 509, 16).fill('#f8fafc');
+      columns.forEach((c, i) => {
+        doc.fillColor('#0f172a').text(String(row[c.key] ?? ''), 48 + i * colWidth + 4, doc.y, { width: colWidth - 8 });
+      });
+      doc.moveDown(1.05);
+      if (doc.y > 740) {
+        doc.addPage();
+      }
+    });
+
+    doc.moveDown(1);
+    doc.fontSize(8).fillColor('#94a3b8').text(`Generated by Madal ICT Solutions · ${dayjs().format('DD MMM YYYY HH:mm')}`, { align: 'center' });
+
+    doc.end();
+    stream.on('finish', resolve);
+    stream.on('error', reject);
+  });
+
+  return { filename, filePath };
+};
+
+export { REFERENCE_TYPES };
