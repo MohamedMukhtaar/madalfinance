@@ -161,7 +161,7 @@ export const invoiceService = {
         delete_reason: deleteReason,
         deleted_by: userId,
       });
-      await auditService.log({ module: 'Invoice', action: 'DELETE', userId, recordId: id, ip });
+      await auditService.log({ module: 'Invoice', action: 'DELETE', userId, recordId: id, ip, details: deleteReason });
       return { invoice_id: id };
     });
   },

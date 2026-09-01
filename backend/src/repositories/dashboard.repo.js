@@ -30,8 +30,27 @@ export const dashboardStats = (conn, { year, month } = {}) => {
           WHERE transaction_type = 'Income' AND transaction_date BETWEEN ? AND ?) AS month_income,
        (SELECT COALESCE(SUM(expense), 0) FROM transactions
           WHERE transaction_type = 'Expense' AND transaction_date BETWEEN ? AND ?) AS month_expense,
+       (SELECT COALESCE(SUM(income), 0) FROM transactions
+          WHERE transaction_type = 'Income' AND transaction_date = CURDATE()) AS today_income,
+       (SELECT COALESCE(SUM(income), 0) FROM transactions
+          WHERE transaction_type = 'Income'
+            AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+            AND transaction_date <= CURDATE()) AS week_income,
+       (SELECT COALESCE(SUM(expense), 0) FROM transactions
+          WHERE transaction_type = 'Expense' AND transaction_date = CURDATE()) AS today_expense,
+       (SELECT COALESCE(SUM(expense), 0) FROM transactions
+          WHERE transaction_type = 'Expense'
+            AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+            AND transaction_date <= CURDATE()) AS week_expense,
        (SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL) AS total_customers,
        (SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL AND status = 'active') AS active_customers,
+       (SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL) AS total_projects,
+       (SELECT COUNT(*) FROM projects p
+          JOIN project_types pt ON pt.project_type_id = p.project_type_id
+         WHERE p.deleted_at IS NULL AND pt.type_name = 'Rental') AS total_rental_projects,
+       (SELECT COUNT(*) FROM projects p
+          JOIN project_types pt ON pt.project_type_id = p.project_type_id
+         WHERE p.deleted_at IS NULL AND pt.type_name = 'One Time') AS total_one_time_projects,
        (SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL AND status IN ('Pending','In Progress')) AS active_projects,
        (SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL AND status = 'Completed') AS completed_projects,
        (SELECT COALESCE(SUM(total_amount - paid_amount), 0) FROM invoices

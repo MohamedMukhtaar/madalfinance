@@ -3,11 +3,13 @@ import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateRangeFilter, type DateFilterMode, StatCard, Select, Badge, ErrorState } from "@/components/ui";
+import { DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Badge, ErrorState } from "@/components/ui";
 import { useTransactions } from "@/hooks/queries";
+import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
+import { matchesMonth } from "@/utils/monthFilter";
 import { cn } from "@/utils/cn";
 import type { LedgerTransaction } from "@/types";
 
@@ -17,39 +19,32 @@ export default function TransactionsPage() {
   const { data, isLoading, error, refetch } = useTransactions();
   const txns = data?.rows ?? [];
   const { currency } = useSettings();
+  const { month, setMonth } = useSelectedMonth();
   const [typeFilter, setTypeFilter] = useState("all");
-  const [monthFilter, setMonthFilter] = useState("all");
   const [dateMode, setDateMode] = useState<DateFilterMode>("all");
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const months = useMemo(() => {
-    const set = new Set(txns.map((t) => t.transactionDate.slice(0, 7)));
-    return [...set].sort().reverse();
-  }, [txns]);
-
   const filtered = useMemo(
     () =>
       txns.filter((t) => {
         if (typeFilter !== "all" && t.transactionType !== typeFilter) return false;
-        if (monthFilter !== "all" && t.transactionDate.slice(0, 7) !== monthFilter) return false;
+        if (!matchesMonth(t.transactionDate, month)) return false;
         if (!matchesDateFilter(t.transactionDate, { mode: dateMode, date: day, from, to })) return false;
         return true;
       }),
-    [txns, typeFilter, monthFilter, dateMode, day, from, to]
+    [txns, typeFilter, month, dateMode, day, from, to]
   );
 
   const totals = useMemo(() => {
-    const base = txns.filter((t) =>
-      monthFilter === "all" ? true : t.transactionDate.slice(0, 7) === monthFilter
-    );
+    const base = txns.filter((t) => matchesMonth(t.transactionDate, month));
     return {
       income: base.filter((t) => t.transactionType === "Income").reduce((s, t) => s + t.income, 0),
       expense: base.filter((t) => t.transactionType === "Expense").reduce((s, t) => s + t.expense, 0),
       net: base.reduce((s, t) => s + t.income - t.expense, 0),
     };
-  }, [txns, monthFilter]);
+  }, [txns, month]);
 
   const columns = useMemo<ColumnDef<LedgerTransaction, any>[]>(
     () => [
@@ -60,7 +55,7 @@ export default function TransactionsPage() {
       columnHelper.display({
         id: "time",
         header: "Time",
-        cell: (info) => <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatTime(info.row.original.transactionDate)}</span>,
+        cell: (info) => <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{formatTime(info.row.original.createdAt ?? info.row.original.transactionDate)}</span>,
       }),
       columnHelper.accessor("transactionType", {
         header: "Type",
@@ -125,13 +120,14 @@ export default function TransactionsPage() {
       <PageHeader
         title="Transactions"
         subtitle="The complete ledger — every income and expense, in order."
+        actions={<MonthNavigator value={month} onChange={setMonth} />}
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard index={0} loading={isLoading} label="Total Income" value={formatCurrency(totals.income, currency)} icon={<ArrowUpRight className="h-5 w-5" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
-        <StatCard index={1} loading={isLoading} label="Total Expenses" value={formatCurrency(totals.expense, currency)} icon={<ArrowDownRight className="h-5 w-5" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
-        <StatCard index={2} loading={isLoading} label="Net Position" value={formatCurrency(totals.net, currency)} icon={<ArrowLeftRight className="h-5 w-5" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
-      </div>
+      <StatCardsGrid className="sm:grid-cols-3 xl:grid-cols-3">
+        <StatCard index={0} loading={isLoading} label="Income" value={formatCurrency(totals.income, currency)} icon={<ArrowUpRight className="h-4 w-4" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
+        <StatCard index={1} loading={isLoading} label="Expenses" value={formatCurrency(totals.expense, currency)} icon={<ArrowDownRight className="h-4 w-4" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
+        <StatCard index={2} loading={isLoading} label="Net" value={formatCurrency(totals.net, currency)} icon={<ArrowLeftRight className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
+      </StatCardsGrid>
 
       <DataTable
         columns={columns}
@@ -139,7 +135,7 @@ export default function TransactionsPage() {
         loading={isLoading}
         searchPlaceholder="Search transactions…"
         pageSize={12}
-        initialSorting={[{ id: "transactionDate", desc: true }]}
+        initialSorting={[{ id: "transactionDate", desc: false }]}
         toolbar={
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -151,18 +147,6 @@ export default function TransactionsPage() {
                 { value: "Expense", label: "Expense" },
               ]}
               className="w-36"
-            />
-            <Select
-              value={monthFilter}
-              onChange={(e) => setMonthFilter(e.target.value)}
-              options={[
-                { value: "all", label: "All months" },
-                ...months.map((m) => {
-                  const [y, mo] = m.split("-");
-                  return { value: m, label: new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }) };
-                }),
-              ]}
-              className="w-44"
             />
             <DateRangeFilter
               mode={dateMode}

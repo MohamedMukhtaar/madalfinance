@@ -1,5 +1,6 @@
 import projectService from '../services/project.service.js';
 import ApiResponse from '../utils/ApiResponse.js';
+import ApiError from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { parseListQuery, paginationMeta } from '../helpers/queryHelper.js';
 
@@ -44,4 +45,16 @@ export const types = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, projectTypes, 'Project types fetched');
 });
 
-export default { list, getById, create, update, remove, types };
+export const uploadLogo = asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('Logo file is required');
+  const project = await projectService.uploadLogo(Number(req.params.id), req.file, req.user.id, req.ip);
+  return ApiResponse.success(res, project, 'Project logo uploaded');
+});
+
+export const uploadAttachment = asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('Attachment file is required');
+  const project = await projectService.uploadAttachment(Number(req.params.id), req.file, req.user.id, req.ip);
+  return ApiResponse.success(res, project, 'Project attachment uploaded');
+});
+
+export default { list, getById, create, update, remove, types, uploadLogo, uploadAttachment };

@@ -8,6 +8,7 @@ export interface ModalProps {
   onClose: () => void;
   title?: ReactNode;
   subtitle?: ReactNode;
+  headerActions?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
@@ -26,6 +27,7 @@ export function Modal({
   onClose,
   title,
   subtitle,
+  headerActions,
   children,
   footer,
   size = "md",
@@ -68,27 +70,30 @@ export function Modal({
                 )}
               >
                 {(title || subtitle) && (
-                  <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
-                    <div>
-                      <Dialog.Title className="text-base font-semibold text-ink">{title}</Dialog.Title>
+                  <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3 sm:px-5">
+                    <div className="min-w-0 flex-1">
+                      <Dialog.Title className="text-sm font-semibold text-ink sm:text-base">{title}</Dialog.Title>
                       {subtitle && (
-                        <Dialog.Description className="mt-0.5 text-sm text-ink-muted">
+                        <Dialog.Description className="mt-0.5 text-xs text-ink-muted sm:text-sm">
                           {subtitle}
                         </Dialog.Description>
                       )}
                     </div>
-                    <button
-                      onClick={onClose}
-                      className="rounded-lg p-1.5 text-ink-muted transition hover:bg-muted hover:text-ink"
-                      aria-label="Close"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {headerActions}
+                      <button
+                        onClick={onClose}
+                        className="rounded-lg p-1.5 text-ink-muted transition hover:bg-muted hover:text-ink"
+                        aria-label="Close"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 )}
-                <div className="max-h-[70vh] overflow-y-auto px-6 py-5">{children}</div>
+                <div className="max-h-[70vh] overflow-y-auto px-4 py-3 sm:px-5 sm:py-4">{children}</div>
                 {footer && (
-                  <div className="flex items-center justify-end gap-3 border-t border-line bg-muted px-6 py-4">
+                  <div className="flex items-center justify-end gap-2 border-t border-line bg-muted px-4 py-3 sm:px-5">
                     {footer}
                   </div>
                 )}

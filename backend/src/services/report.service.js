@@ -1,11 +1,28 @@
 import reportRepo from '../repositories/report.repo.js';
 import contributionRepo from '../repositories/contribution.repo.js';
+import memberRepo from '../repositories/member.repo.js';
+import customerRepo from '../repositories/customer.repo.js';
+import accountRepo from '../repositories/account.repo.js';
+import accountService from './account.service.js';
+import transactionRepo from '../repositories/transaction.repo.js';
 import settingsRepo from '../repositories/settings.repo.js';
+import exportJobRepo from '../repositories/exportJob.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
-import { generateReportPdf } from '../helpers/pdf.js';
+import {
+  generateReportPdf,
+  generateIncomeStatementPdf,
+  generateMemberStatementPdf,
+  generateCustomerStatementPdf,
+  generateAccountStatementPdf,
+  generateAccountBalancesPdf,
+  generateCashFlowPdf,
+  generateContributionReportPdf,
+} from '../helpers/pdf.js';
 import { generateExcel } from '../helpers/excel.js';
 import dayjs from 'dayjs';
+
+const EXPORT_MAX_ROWS = 2000;
 
 const REPORT_DEFINITIONS = {
   incomeStatement: {
@@ -36,6 +53,20 @@ const REPORT_DEFINITIONS = {
       { header: 'Month', key: 'month' },
       { header: 'Inflow', key: 'inflow' },
       { header: 'Outflow', key: 'outflow' },
+      { header: 'Net', key: 'net' },
+    ],
+    build: (rows) => rows,
+  },
+  cashFlowDetails: {
+    title: 'Cash Flow Transactions',
+    columns: [
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Time', key: 'time', width: 10 },
+      { header: 'Inflow (in)', key: 'inflow', width: 14 },
+      { header: 'Outflow (out)', key: 'outflow', width: 14 },
+      { header: 'Net', key: 'net', width: 14 },
+      { header: 'Balance', key: 'balance', width: 14 },
     ],
     build: (rows) => rows,
   },
@@ -103,7 +134,202 @@ const REPORT_DEFINITIONS = {
     ],
     build: (rows) => rows,
   },
+  memberStatement: {
+    title: 'Member Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Description', key: 'description' },
+      { header: 'Due', key: 'due' },
+      { header: 'Paid', key: 'paid' },
+      { header: 'Loan', key: 'loan' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  customerStatement: {
+    title: 'Customer Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Description', key: 'description' },
+      { header: 'Debit', key: 'debit' },
+      { header: 'Credit', key: 'credit' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  accountBalances: {
+    title: 'Account Balances',
+    columns: [
+      { header: 'Institution', key: 'institution' },
+      { header: 'Account #', key: 'number' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => [
+      ...(data.accounts ?? []).map((a) => ({
+        institution: `${a.institution}${a.is_default ? ' (Default)' : ''}`,
+        number: a.number,
+        balance: Number(a.balance ?? 0),
+      })),
+      { institution: 'TOTAL', number: '', balance: Number(data.total ?? 0) },
+    ],
+  },
+  accountStatement: {
+    title: 'Account Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Type', key: 'type' },
+      { header: 'Description', key: 'description' },
+      { header: 'Debit (in)', key: 'debit' },
+      { header: 'Credit (out)', key: 'credit' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
 };
+
+const periodLabel = (month, year) =>
+  dayjs(`${year}-${String(month).padStart(2, '0')}-01`).format('MMMM YYYY');
+
+const timeSortKey = (date, time) => dayjs(time ?? date).valueOf();
+
+const buildMemberStatementRows = (dues, payments, loanEntries = []) => {
+  const items = [];
+  for (const due of dues) {
+    const when = dayjs(due.generated_date);
+    items.push({
+      sort: when.valueOf(),
+      tie: 0,
+      date: when.format('YYYY-MM-DD'),
+      time: due.generated_date,
+      description: `Contribution due — ${periodLabel(due.month, due.year)}`,
+      due: Number(due.amount),
+      paid: 0,
+      loan: 0,
+    });
+  }
+  for (const payment of payments) {
+    const when = dayjs(payment.paid_date);
+    items.push({
+      sort: when.valueOf(),
+      tie: 1,
+      date: when.format('YYYY-MM-DD'),
+      time: payment.created_at ?? payment.paid_date,
+      description: `Payment — ${periodLabel(payment.month, payment.year)}`,
+      due: 0,
+      paid: Number(payment.amount),
+      loan: 0,
+    });
+  }
+  for (const entry of loanEntries) {
+    const amt = Number(entry.amount);
+    if (!amt) continue;
+    const when = dayjs(entry.credit_date);
+    const isLoan = amt > 0;
+    items.push({
+      sort: when.valueOf(),
+      tie: isLoan ? 2 : 3,
+      date: when.format('YYYY-MM-DD'),
+      time: entry.created_at ?? entry.credit_date,
+      description: isLoan
+        ? entry.description?.trim() || 'Member loan'
+        : entry.description?.trim() || 'Loan repayment',
+      due: 0,
+      paid: isLoan ? 0 : Math.abs(amt),
+      loan: isLoan ? amt : 0,
+    });
+  }
+  items.sort((a, b) => {
+    const ta = timeSortKey(a.date, a.time);
+    const tb = timeSortKey(b.date, b.time);
+    return ta !== tb ? ta - tb : a.tie - b.tie;
+  });
+  let balance = 0;
+  const rows = items.map((item) => {
+    balance = Math.round((balance + item.due + item.loan - item.paid) * 100) / 100;
+    return {
+      date: dayjs(item.date).format('DD MMM YYYY'),
+      time: dayjs(item.time).format('HH:mm'),
+      description: item.description,
+      due: item.due,
+      paid: item.paid,
+      loan: item.loan,
+      balance,
+    };
+  });
+  return rows;
+};
+
+const inDateRange = (dateStr, fromDate, toDate) => {
+  const d = String(dateStr ?? '').slice(0, 10);
+  if (fromDate && d < fromDate) return false;
+  if (toDate && d > toDate) return false;
+  return true;
+};
+
+const buildCustomerStatementRows = (invoices, payments, { fromDate, toDate } = {}) => {
+  const items = [];
+  for (const inv of invoices) {
+    if (!inDateRange(inv.invoice_date, fromDate, toDate)) continue;
+    const when = dayjs(inv.invoice_date);
+    items.push({
+      sort: when.valueOf(),
+      date: when.format('YYYY-MM-DD'),
+      time: when.format('HH:mm'),
+      description: `Invoice ${inv.invoice_number}`,
+      debit: Number(inv.total_amount ?? 0),
+      credit: 0,
+    });
+  }
+  for (const pmt of payments) {
+    if (!inDateRange(pmt.payment_date, fromDate, toDate)) continue;
+    const when = dayjs(pmt.payment_date);
+    items.push({
+      sort: when.valueOf(),
+      date: when.format('YYYY-MM-DD'),
+      time: when.format('HH:mm'),
+      description: `Payment ${pmt.payment_number}`,
+      debit: 0,
+      credit: Number(pmt.amount ?? 0),
+    });
+  }
+  items.sort((a, b) => a.sort - b.sort || a.description.localeCompare(b.description));
+  let balance = 0;
+  const rows = items.map((item) => {
+    balance = Math.round((balance + item.debit - item.credit) * 100) / 100;
+    return {
+      date: item.date,
+      time: item.time,
+      description: item.description,
+      debit: item.debit,
+      credit: item.credit,
+      balance,
+    };
+  });
+  return rows;
+};
+
+const movementTypeLabel = (type) => {
+  if (type === 'income') return 'Receipt';
+  if (type === 'expense') return 'Payment';
+  if (type === 'loan_out') return 'Loan out';
+  if (type === 'loan_repay') return 'Loan repayment';
+  if (type === 'opening') return 'Opening';
+  return String(type ?? 'Movement');
+};
+
+const buildAccountStatementRows = (movements) =>
+  (movements ?? []).map((m) => ({
+    date: dayjs(m.movement_date).format('YYYY-MM-DD'),
+    time: dayjs(m.movement_date).format('HH:mm'),
+    type: movementTypeLabel(m.movement_type),
+    description: m.description || m.reference_label || '—',
+    debit: Number(m.debit ?? 0),
+    credit: Number(m.credit ?? 0),
+    balance: Number(m.balance ?? 0),
+  }));
 
 export const reportService = {
   async incomeStatement(fromDate, toDate) {
@@ -116,6 +342,47 @@ export const reportService = {
 
   async cashFlow(fromDate, toDate) {
     return reportRepo.cashFlow(null, fromDate, toDate);
+  },
+
+  async cashFlowDetails(fromDate, toDate) {
+    const rows = await transactionRepo.list(null, {
+      fromDate,
+      toDate,
+      offset: 0,
+      perPage: EXPORT_MAX_ROWS,
+      order: 'transaction_id ASC',
+    });
+    let balance = 0;
+    let totalInflow = 0;
+    let totalOutflow = 0;
+    const detailRows = rows.map((row) => {
+      const income = Number(row.income ?? 0);
+      const expense = Number(row.expense ?? 0);
+      const net = Math.round((income - expense) * 100) / 100;
+      balance = Math.round((balance + net) * 100) / 100;
+      totalInflow += income;
+      totalOutflow += expense;
+      return {
+        description: row.description || `${row.reference_type ?? 'Transaction'} #${row.reference_id ?? ''}`,
+        date: dayjs(row.transaction_date).format('DD MMM YYYY'),
+        time: dayjs(row.created_at ?? row.transaction_date).format('HH:mm'),
+        inflow: income > 0 ? income : '',
+        outflow: expense > 0 ? expense : '',
+        net,
+        balance,
+      };
+    });
+    const netTotal = Math.round((totalInflow - totalOutflow) * 100) / 100;
+    detailRows.push({
+      description: 'Total',
+      date: '',
+      time: '',
+      inflow: Math.round(totalInflow * 100) / 100,
+      outflow: Math.round(totalOutflow * 100) / 100,
+      net: netTotal,
+      balance,
+    });
+    return detailRows;
   },
 
   async rentalRevenue(fromDate, toDate) {
@@ -138,7 +405,7 @@ export const reportService = {
       status: '',
       memberId: '',
       offset: 0,
-      perPage: 10000,
+      perPage: EXPORT_MAX_ROWS,
       order: 'member_name ASC',
     });
     return { summary: data, dues };
@@ -148,11 +415,110 @@ export const reportService = {
     return reportRepo.projectReport(null);
   },
 
+  async memberStatement(memberId, fromDate, toDate) {
+    const member = await memberRepo.findMemberById(null, memberId);
+    if (!member) throw ApiError.notFound('Member not found');
+
+    const [dues, payments, outstanding, credits, creditBalance] = await Promise.all([
+      contributionRepo.memberStatementDues(null, memberId, { fromDate, toDate }),
+      contributionRepo.memberStatementPayments(null, memberId, { fromDate, toDate }),
+      contributionRepo.memberOutstanding(null, memberId),
+      contributionRepo.memberCreditLedger(null, memberId, { fromDate, toDate }),
+      contributionRepo.getMemberCreditBalance(null, memberId),
+    ]);
+
+    const rows = buildMemberStatementRows(dues, payments, credits);
+    const duesCharged = dues.reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
+    const loansGranted = credits
+      .filter((e) => Number(e.amount) > 0)
+      .reduce((sum, e) => sum + Number(e.amount), 0);
+    const contributionsPaid = payments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
+    const loanRepaid = credits
+      .filter((e) => Number(e.amount) < 0)
+      .reduce((sum, e) => sum + Math.abs(Number(e.amount)), 0);
+    const paid = contributionsPaid + loanRepaid;
+    const closingBalance = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+
+    return {
+      member: {
+        member_id: member.member_id,
+        member_name: member.member_name,
+        position: member.position,
+        email: member.email,
+        phone: member.phone,
+        joined_date: member.joined_date,
+        loan_balance: creditBalance,
+        credit_balance: creditBalance,
+      },
+      totals: {
+        charged: duesCharged,
+        loans: loansGranted,
+        paid,
+        outstanding,
+        loan_balance: creditBalance,
+        closing_balance: closingBalance,
+        credit_balance: creditBalance,
+      },
+      rows,
+    };
+  },
+
+  async customerStatement(customerId, fromDate, toDate) {
+    const customer = await customerRepo.findById(null, customerId);
+    if (!customer) throw ApiError.notFound('Customer not found');
+
+    const [invoices, payments] = await Promise.all([
+      customerRepo.statementInvoices(null, customerId),
+      customerRepo.statementPayments(null, customerId),
+    ]);
+    const rows = buildCustomerStatementRows(invoices, payments, { fromDate, toDate });
+    const filteredInvoices = invoices.filter((i) => inDateRange(i.invoice_date, fromDate, toDate));
+    const invoiced = filteredInvoices.reduce((sum, i) => sum + Number(i.total_amount ?? 0), 0);
+    const paid = filteredInvoices.reduce((sum, i) => sum + Number(i.paid_amount ?? 0), 0);
+    const outstanding = filteredInvoices.reduce((sum, i) => sum + Number(i.balance ?? 0), 0);
+    const closingBalance = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+
+    return {
+      customer: {
+        customer_id: customer.customer_id,
+        customer_name: customer.customer_name,
+        customer_code: customer.customer_code,
+        company_name: customer.company_name,
+        phone: customer.phone,
+        email: customer.email,
+      },
+      totals: { invoiced, paid, outstanding, closing_balance: closingBalance },
+      rows,
+    };
+  },
+
+  async accountBalances() {
+    const accounts = await accountRepo.list(null);
+    const total = accounts.reduce((sum, a) => sum + Number(a.balance ?? 0), 0);
+    return { accounts, total };
+  },
+
+  async accountStatement(accId, fromDate, toDate) {
+    const { account, movements } = await accountService.statement(accId, { fromDate, toDate });
+    const rows = buildAccountStatementRows(movements);
+    const debits = rows.reduce((sum, r) => sum + Number(r.debit ?? 0), 0);
+    const credits = rows.reduce((sum, r) => sum + Number(r.credit ?? 0), 0);
+    return {
+      account,
+      totals: {
+        debits,
+        credits,
+        balance: Number(account.balance ?? 0),
+      },
+      rows,
+    };
+  },
+
   /**
    * Generate a PDF or Excel export for a report kind.
    * Returns { filename, filePath }.
    */
-  async export(kind, { fromDate, toDate, months, batchId }, format, userId, ip) {
+  async export(kind, { fromDate, toDate, months, batchId, memberId, customerId, accId }, format, userId, ip) {
     const def = REPORT_DEFINITIONS[kind];
     if (!def) throw ApiError.badRequest(`Unknown report kind '${kind}'`);
     if (!['pdf', 'xlsx'].includes(format)) throw ApiError.badRequest('Format must be pdf or xlsx');
@@ -166,7 +532,7 @@ export const reportService = {
         data = await this.monthlyRevenue(months || 12);
         break;
       case 'cashFlow':
-        data = await this.cashFlow(fromDate, toDate);
+        data = await this.cashFlowDetails(fromDate, toDate);
         break;
       case 'rentalRevenue':
         data = await this.rentalRevenue(fromDate, toDate);
@@ -188,17 +554,39 @@ export const reportService = {
           id = batches[0]?.batch_id;
         }
         if (!id) throw ApiError.badRequest('No contribution batch available to export');
-        data = (await this.contributionReport(id)).summary;
+        data = await this.contributionReport(id);
         break;
       }
       case 'projectReport':
         data = await this.projectReport();
         break;
+      case 'memberStatement': {
+        if (!memberId) throw ApiError.badRequest('member_id is required');
+        data = await this.memberStatement(memberId, fromDate, toDate);
+        break;
+      }
+      case 'customerStatement': {
+        if (!customerId) throw ApiError.badRequest('customer_id is required');
+        data = await this.customerStatement(customerId, fromDate, toDate);
+        break;
+      }
+      case 'accountBalances':
+        data = await this.accountBalances();
+        break;
+      case 'accountStatement': {
+        if (!accId) throw ApiError.badRequest('acc_id is required');
+        data = await this.accountStatement(accId, fromDate, toDate);
+        break;
+      }
       default:
         throw ApiError.badRequest('Unknown report kind');
     }
 
-    const rows = def.build(data ?? {});
+    const exportData =
+      kind === 'contributionReport' && format === 'xlsx' ? data?.summary ?? data : data;
+    const rows = def.build(exportData ?? {});
+    const exportDef =
+      kind === 'cashFlow' ? REPORT_DEFINITIONS.cashFlowDetails : def;
     const subtitle = `Generated ${dayjs().format('DD MMM YYYY HH:mm')}${
       fromDate ? ` · From ${fromDate}` : ''
     }${toDate ? ` · To ${toDate}` : ''}`;
@@ -206,24 +594,146 @@ export const reportService = {
 
     let result;
     if (format === 'pdf') {
-      result = await generateReportPdf({
-        title: def.title,
-        subtitle,
-        columns: def.columns,
-        rows,
-        settings,
-      });
+      if (kind === 'incomeStatement') {
+        result = await generateIncomeStatementPdf({
+          data,
+          fromDate,
+          toDate,
+          settings,
+        });
+      } else if (kind === 'memberStatement') {
+        result = await generateMemberStatementPdf({
+          statement: data,
+          fromDate,
+          toDate,
+          settings,
+        });
+      } else if (kind === 'customerStatement') {
+        result = await generateCustomerStatementPdf({
+          statement: data,
+          fromDate,
+          toDate,
+          settings,
+        });
+      } else if (kind === 'accountStatement') {
+        result = await generateAccountStatementPdf({
+          statement: data,
+          fromDate,
+          toDate,
+          settings,
+        });
+      } else if (kind === 'accountBalances') {
+        result = await generateAccountBalancesPdf({
+          data,
+          settings,
+        });
+      } else if (kind === 'cashFlow') {
+        result = await generateCashFlowPdf({
+          rows: data,
+          fromDate,
+          toDate,
+          settings,
+        });
+      } else if (kind === 'contributionReport') {
+        result = await generateContributionReportPdf({
+          report: data,
+          settings,
+        });
+      } else {
+        result = await generateReportPdf({
+          title: def.title,
+          subtitle,
+          columns: def.columns,
+          rows,
+          settings,
+        });
+      }
     } else {
+      const excelRows =
+        kind === 'memberStatement'
+          ? rows.map((row) => ({
+              date: row.date,
+              time: row.time,
+              description: row.description,
+              due: row.due > 0 ? row.due : '',
+              paid: row.paid > 0 ? row.paid : '',
+              loan: row.loan > 0 ? row.loan : '',
+              balance: row.balance,
+            }))
+          : kind === 'customerStatement'
+            ? rows.map((row) => ({
+                date: row.date,
+                time: row.time,
+                description: row.description,
+                debit: row.debit > 0 ? row.debit : '',
+                credit: row.credit > 0 ? row.credit : '',
+                balance: row.balance,
+              }))
+            : kind === 'accountStatement'
+              ? rows.map((row) => ({
+                  date: row.date,
+                  time: row.time,
+                  type: row.type,
+                  description: row.description,
+                  debit: row.debit > 0 ? row.debit : '',
+                  credit: row.credit > 0 ? row.credit : '',
+                  balance: row.balance,
+                }))
+              : kind === 'cashFlow'
+                ? rows.map((row) => ({
+                    description: row.description,
+                    date: row.date,
+                    time: row.time,
+                    inflow: row.inflow !== '' && row.inflow != null ? row.inflow : '',
+                    outflow: row.outflow !== '' && row.outflow != null ? row.outflow : '',
+                    net: row.net,
+                    balance: row.balance,
+                  }))
+                : rows;
       result = await generateExcel({
-        title: def.title,
+        title: exportDef.title,
         subtitle,
-        columns: def.columns,
-        rows,
+        columns: exportDef.columns,
+        rows: excelRows,
       });
     }
 
     await auditService.log({ module: 'Report', action: 'EXPORT', userId, ip });
     return result;
+  },
+
+  async enqueueExport(kind, params, format, userId, ip) {
+    const jobId = await exportJobRepo.create(null, {
+      kind,
+      format,
+      params,
+      created_by: userId,
+    });
+    setImmediate(() => {
+      this.processExportJob(jobId, userId, ip).catch(async (err) => {
+        await exportJobRepo.markFailed(null, jobId, err?.message || 'Export failed');
+      });
+    });
+    return { jobId, status: 'pending' };
+  },
+
+  async processExportJob(jobId, userId, ip) {
+    const job = await exportJobRepo.findById(null, jobId);
+    if (!job || job.status === 'completed') return null;
+    await exportJobRepo.markProcessing(null, jobId);
+    const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params ?? {};
+    const result = await this.export(job.kind, params, job.format, userId, ip);
+    await exportJobRepo.markCompleted(null, jobId, result.filePath);
+    return result;
+  },
+
+  async getExportJob(jobId, userId) {
+    const job = await exportJobRepo.findById(null, jobId);
+    if (!job) throw ApiError.notFound('Export job not found');
+    if (job.created_by && job.created_by !== userId) {
+      throw ApiError.forbidden('You do not have access to this export job');
+    }
+    return job;
   },
 };
 

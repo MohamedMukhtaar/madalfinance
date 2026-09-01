@@ -60,7 +60,7 @@ export const contractService = {
         delete_reason: deleteReason,
         deleted_by: userId,
       });
-      await auditService.log({ module: 'Contract', action: 'DELETE', userId, recordId: id, ip });
+      await auditService.log({ module: 'Contract', action: 'DELETE', userId, recordId: id, ip, details: deleteReason });
       return { contract_id: id };
     });
   },

@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import {
   Check,
@@ -11,18 +10,24 @@ import {
   Printer,
   Download,
   Trash2,
+  Banknote,
 } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { GenerateInvoiceModal } from "@/features/invoices/GenerateInvoiceModal";
+import { InvoiceViewModal } from "@/features/invoices/InvoiceViewModal";
+import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
 import { useCustomers, useDeleteInvoice, useInvoices, useProjects } from "@/hooks/queries";
+import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
+import { useAuth } from "@/context/AuthContext";
 import { INVOICE_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
-import { matchesDateFilter } from "@/utils/dateFilter";
+import { monthRangeParams } from "@/utils/monthFilter";
 import { printInvoice } from "@/utils/print";
+import { canManage } from "@/utils/roles";
 import { cn } from "@/utils/cn";
 import type { Invoice } from "@/types";
 import toast from "react-hot-toast";
@@ -30,17 +35,17 @@ import toast from "react-hot-toast";
 const columnHelper = createColumnHelper<Invoice>();
 
 export default function InvoicesPage() {
-  const { data: invoicesData, isLoading, error, refetch } = useInvoices();
-  const { data: customersData } = useCustomers();
-  const { data: projectsData } = useProjects();
-  const invoices = invoicesData?.rows ?? [];
-  const customers = customersData?.rows ?? [];
-  const projects = projectsData?.rows ?? [];
+  const { user } = useAuth();
+  const manage = canManage(user?.role);
   const deleteMutation = useDeleteInvoice();
-  const navigate = useNavigate();
   const { currency, settings } = useSettings();
+  const { month, setMonth } = useSelectedMonth();
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(12);
   const [modalOpen, setModalOpen] = useState(false);
+  const [viewId, setViewId] = useState<number | undefined>();
+  const [payFor, setPayFor] = useState<Invoice | undefined>();
   const [statusFilter, setStatusFilter] = useState("all");
   const [attachmentFor, setAttachmentFor] = useState<Invoice | undefined>();
   const [uploadingFor, setUploadingFor] = useState<Invoice | undefined>();
@@ -50,24 +55,42 @@ export default function InvoicesPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const filtered = useMemo(
-    () =>
-      invoices.filter(
-        (i) =>
-          (statusFilter === "all" || i.status === statusFilter) &&
-          matchesDateFilter(i.invoiceDate, { mode: dateMode, date: day, from, to })
-      ),
-    [invoices, statusFilter, dateMode, day, from, to]
-  );
+  const listParams = useMemo(() => {
+    const base: Record<string, string | number> = {
+      page: pageIndex + 1,
+      perPage: pageSize,
+      sort: "created_at:desc",
+    };
+    if (statusFilter !== "all") base.status = statusFilter;
+    if (dateMode === "day" && day) {
+      base.fromDate = day;
+      base.toDate = day;
+    } else if (dateMode === "range") {
+      if (from) base.fromDate = from;
+      if (to) base.toDate = to;
+    }
+    return base;
+  }, [pageIndex, pageSize, statusFilter, dateMode, day, from, to]);
+
+  const { data: invoicesData, isLoading, error, refetch } = useInvoices(listParams);
+  const monthParams = useMemo(() => monthRangeParams(month), [month]);
+  const { data: monthInvoicesData } = useInvoices({ ...monthParams, perPage: 500 });
+  const { data: customersData } = useCustomers();
+  const { data: projectsData } = useProjects();
+  const invoices = invoicesData?.rows ?? [];
+  const totalCount = invoicesData?.total ?? 0;
+  const customers = customersData?.rows ?? [];
+  const projects = projectsData?.rows ?? [];
+  const monthInvoices = monthInvoicesData?.rows ?? [];
 
   const totals = useMemo(
     () => ({
-      total: invoices.reduce((s, i) => s + i.totalAmount, 0),
-      paid: invoices.reduce((s, i) => s + i.paidAmount, 0),
-      balance: invoices.reduce((s, i) => s + i.balance, 0),
-      overdue: invoices.filter((i) => i.status === "Overdue").reduce((s, i) => s + i.balance, 0),
+      total: monthInvoices.reduce((s, i) => s + i.totalAmount, 0),
+      paid: monthInvoices.reduce((s, i) => s + i.paidAmount, 0),
+      balance: monthInvoices.reduce((s, i) => s + i.balance, 0),
+      overdue: monthInvoices.filter((i) => i.status === "Overdue").reduce((s, i) => s + i.balance, 0),
     }),
-    [invoices]
+    [monthInvoices]
   );
 
   const columns = useMemo<ColumnDef<Invoice, any>[]>(
@@ -133,7 +156,7 @@ export default function InvoicesPage() {
       }),
       columnHelper.display({
         id: "actions",
-        header: "Actions",
+        header: "",
         cell: () => null,
       }),
     ],
@@ -160,87 +183,156 @@ export default function InvoicesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Invoices"
-        subtitle="Create, manage and collect on your invoices."
+        subtitle="Customer charges. Use Pay on each line to record payment."
         actions={
-          <Button onClick={() => setModalOpen(true)} leftIcon={<FilePlus2 className="h-4 w-4" />}>
-            Generate Invoice
-          </Button>
+          <>
+            <MonthNavigator value={month} onChange={setMonth} />
+            {manage && (
+              <Button onClick={() => setModalOpen(true)} leftIcon={<FilePlus2 className="h-4 w-4" />}>
+                Generate Invoice
+              </Button>
+            )}
+          </>
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard index={0} loading={isLoading} label="Total Invoiced" value={formatCurrency(totals.total, currency)} icon={<FileText className="h-5 w-5" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
-        <StatCard index={1} loading={isLoading} label="Collected" value={formatCurrency(totals.paid, currency)} icon={<FileText className="h-5 w-5" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
-        <StatCard index={2} loading={isLoading} label="Outstanding" value={formatCurrency(totals.balance, currency)} icon={<FileText className="h-5 w-5" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
-        <StatCard index={3} loading={isLoading} label="Overdue" value={formatCurrency(totals.overdue, currency)} icon={<FileText className="h-5 w-5" />} iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" />
-      </div>
+      <StatCardsGrid>
+        <StatCard index={0} loading={isLoading} label="Invoiced" value={formatCurrency(totals.total, currency)} icon={<FileText className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
+        <StatCard index={1} loading={isLoading} label="Collected" value={formatCurrency(totals.paid, currency)} icon={<FileText className="h-4 w-4" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
+        <StatCard index={2} loading={isLoading} label="Outstanding" value={formatCurrency(totals.balance, currency)} icon={<FileText className="h-4 w-4" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
+        <StatCard index={3} loading={isLoading} label="Overdue" value={formatCurrency(totals.overdue, currency)} icon={<FileText className="h-4 w-4" />} iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" />
+      </StatCardsGrid>
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={invoices}
         loading={isLoading}
         searchPlaceholder="Search invoices…"
-        onRowClick={(row) => navigate(`/invoices/${row.invoiceId}`)}
-        actions={(row) => [
-          { label: "View Details", icon: <Eye className="h-4 w-4" />, onClick: () => navigate(`/invoices/${row.invoiceId}`) },
-          { label: "Print", icon: <Printer className="h-4 w-4" />, onClick: () => handlePrint(row) },
-          { label: "Download PDF", icon: <Download className="h-4 w-4" />, onClick: () => handlePrint(row) },
-          { divider: true },
-          {
-            label: "Upload Agreement",
-            icon: <Paperclip className="h-4 w-4" />,
-            onClick: () => {
-              setUploadingFor(row);
-              setUploads((u) => ({ ...u, [row.invoiceId]: [] }));
-            },
-          },
-          {
-            label: `View Attachments (${row.attachments?.length ?? 0})`,
-            icon: <Paperclip className="h-4 w-4" />,
-            onClick: () => setAttachmentFor(row),
-          },
-          { divider: true },
-          {
-            label: "Delete",
-            icon: <Trash2 className="h-4 w-4" />,
-            danger: true,
-            disabled: Number(row.paidAmount ?? 0) > 0,
-            onClick: async () => {
-              const reason = await promptDeleteReason({
-                title: `Delete ${row.invoiceNumber}?`,
-                text: "This invoice will be moved to Trash and can be restored later.",
-              });
-              if (reason) deleteMutation.mutate({ id: row.invoiceId, reason });
-            },
-          },
-        ]}
+        serverSide
+        totalCount={totalCount}
+        pageIndex={pageIndex}
+        pageSize={pageSize}
+        onPageChange={setPageIndex}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPageIndex(0);
+        }}
+        renderMobileCard={(row) => (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs font-bold text-brand-600">{row.invoiceNumber}</span>
+              <Badge className={INVOICE_STATUS_STYLES[row.status]} dot>
+                {row.status}
+              </Badge>
+            </div>
+            <p className="font-semibold text-slate-800 dark:text-slate-100">{row.customerName}</p>
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className="font-mono text-slate-700 dark:text-slate-200">
+                {formatCurrency(row.totalAmount, currency)}
+              </span>
+              <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                Bal {formatCurrency(row.balance, currency)}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">{formatDate(row.invoiceDate)}</p>
+          </div>
+        )}
+        actions={(row) => {
+          const canPay =
+            manage &&
+            Number(row.balance) > 0 &&
+            row.status !== "Cancelled" &&
+            row.status !== "Draft" &&
+            row.status !== "Paid";
+          return [
+            { label: "View", icon: <Eye className="h-4 w-4" />, onClick: () => setViewId(row.invoiceId) },
+            ...(canPay
+              ? [
+                  {
+                    label: "Pay",
+                    icon: <Banknote className="h-4 w-4" />,
+                    onClick: () => setPayFor(row),
+                  },
+                  { divider: true },
+                ]
+              : []),
+            { label: "Print", icon: <Printer className="h-4 w-4" />, onClick: () => handlePrint(row) },
+            { label: "Download PDF", icon: <Download className="h-4 w-4" />, onClick: () => handlePrint(row) },
+            ...(manage
+              ? [
+                  { divider: true },
+                  {
+                    label: "Upload Agreement",
+                    icon: <Paperclip className="h-4 w-4" />,
+                    onClick: () => {
+                      setUploads((u) => ({ ...u, [row.invoiceId]: [] }));
+                      setUploadingFor(row);
+                    },
+                  },
+                  {
+                    label: `View Attachments (${row.attachments?.length ?? 0})`,
+                    icon: <Paperclip className="h-4 w-4" />,
+                    onClick: () => setAttachmentFor(row),
+                  },
+                  {
+                    label: "Delete",
+                    icon: <Trash2 className="h-4 w-4" />,
+                    danger: true,
+                    disabled: Number(row.paidAmount ?? 0) > 0,
+                    onClick: async () => {
+                      const reason = await promptDeleteReason({
+                        title: `Delete ${row.invoiceNumber}?`,
+                        text: "This invoice will be moved to Trash.",
+                      });
+                      if (reason) deleteMutation.mutate({ id: row.invoiceId, reason });
+                    },
+                  },
+                ]
+              : []),
+          ];
+        }}
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
+          <>
             <Select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPageIndex(0);
+              }}
               options={[
                 { value: "all", label: "All statuses" },
+                { value: "Draft", label: "Draft" },
                 { value: "Issued", label: "Issued" },
                 { value: "Partial", label: "Partial" },
                 { value: "Paid", label: "Paid" },
                 { value: "Overdue", label: "Overdue" },
-                { value: "Draft", label: "Draft" },
                 { value: "Cancelled", label: "Cancelled" },
               ]}
               className="w-40"
             />
             <DateRangeFilter
               mode={dateMode}
-              onModeChange={setDateMode}
+              onModeChange={(mode) => {
+                setDateMode(mode);
+                setPageIndex(0);
+              }}
               date={day}
               from={from}
               to={to}
-              onDateChange={setDay}
-              onFromChange={setFrom}
-              onToChange={setTo}
+              onDateChange={(value) => {
+                setDay(value);
+                setPageIndex(0);
+              }}
+              onFromChange={(value) => {
+                setFrom(value);
+                setPageIndex(0);
+              }}
+              onToChange={(value) => {
+                setTo(value);
+                setPageIndex(0);
+              }}
             />
-          </div>
+          </>
         }
       />
 
@@ -249,6 +341,26 @@ export default function InvoicesPage() {
         onClose={() => setModalOpen(false)}
         customers={customers}
         projects={projects}
+      />
+
+      <InvoiceViewModal
+        open={!!viewId}
+        onClose={() => setViewId(undefined)}
+        invoiceId={viewId}
+        onPay={(inv) => {
+          setViewId(undefined);
+          setPayFor(inv);
+        }}
+      />
+
+      <RecordPaymentModal
+        open={!!payFor}
+        onClose={() => setPayFor(undefined)}
+        defaultCustomerId={payFor?.customerId}
+        defaultInvoiceId={payFor?.invoiceId}
+        defaultAmount={payFor?.balance}
+        customers={customers}
+        invoices={invoices}
       />
 
       {/* Upload agreement modal */}

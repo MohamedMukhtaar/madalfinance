@@ -2,9 +2,9 @@ import { body, query } from 'express-validator';
 
 export const updateSettingsValidator = [
   body('company_name').optional().trim().notEmpty().withMessage('Company name is required').isLength({ max: 150 }),
-  body('company_phone').optional().trim().isLength({ max: 30 }),
-  body('company_email').optional().isEmail().withMessage('Invalid email address'),
-  body('company_address').optional().trim().isLength({ max: 255 }),
+  body('company_phone').optional({ values: 'falsy' }).trim().isLength({ max: 30 }),
+  body('company_email').optional({ values: 'falsy' }).isEmail().withMessage('Invalid email address'),
+  body('company_address').optional({ values: 'falsy' }).trim().isLength({ max: 255 }),
   body('currency').optional().trim().isLength({ max: 10 }),
   body('default_member_due').optional().isFloat({ min: 0 }).withMessage('Invalid default member due'),
   body('invoice_prefix').optional().trim().isLength({ min: 1, max: 10 }),

@@ -27,8 +27,13 @@ export const qk = {
   duesDetail: (id: number) => ["dues", id] as const,
   expenses: (params?: ListParams) => ["expenses", params] as const,
   expenseCategories: ["expense-categories"] as const,
+  accounts: ["accounts"] as const,
+  accountStatement: (id: number, params?: ListParams) => ["accounts", id, "statement", params] as const,
   transactions: (params?: ListParams) => ["transactions", params] as const,
   members: ["members"] as const,
+  users: (params?: ListParams) => ["users", params] as const,
+  roles: ["roles"] as const,
+  auditLogs: (params?: ListParams) => ["audit-logs", params] as const,
   settings: ["settings"] as const,
   reports: {
     incomeStatement: ["reports", "income-statement"] as const,
@@ -44,6 +49,13 @@ function toastErr(err: unknown, fallback: string) {
   toast.error(getErrorMessage(err, fallback));
 }
 
+type QueryOpts = ListParams & { enabled?: boolean };
+
+function splitQuery(params?: QueryOpts) {
+  const { enabled = true, ...rest } = params ?? {};
+  return { enabled, params: rest };
+}
+
 /* ------------------------------ DASHBOARD ------------------------------ */
 export function useDashboard(params?: { year?: number; month?: number }) {
   return useQuery({
@@ -53,10 +65,12 @@ export function useDashboard(params?: { year?: number; month?: number }) {
 }
 
 /* ------------------------------ CUSTOMERS ------------------------------ */
-export function useCustomers(params?: ListParams) {
+export function useCustomers(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.customers(params),
-    queryFn: () => financeService.customers(params ?? { perPage: 100 }),
+    queryKey: qk.customers(query),
+    queryFn: () => financeService.customers(query ?? { perPage: 100 }),
+    enabled,
   });
 }
 
@@ -151,11 +165,82 @@ export function useUpdateProject() {
   });
 }
 
+export function useUploadProjectLogo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file, onProgress }: { id: number; file: File; onProgress?: (p: number) => void }) =>
+      financeService.uploadProjectLogo(id, file, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Project logo uploaded");
+    },
+    onError: (err) => toastErr(err, "Failed to upload logo"),
+  });
+}
+
+export function useUploadCompanyLogo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (p: number) => void }) =>
+      financeService.uploadCompanyLogo(file, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.settings });
+      toast.success("Company logo uploaded");
+    },
+    onError: (err) => toastErr(err, "Failed to upload logo"),
+  });
+}
+
+export function useRemoveCompanyLogo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => financeService.removeCompanyLogo(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.settings });
+      toast.success("Company logo removed");
+    },
+    onError: (err) => toastErr(err, "Failed to remove logo"),
+  });
+}
+
+export function useUploadProjectAttachment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file, onProgress }: { id: number; file: File; onProgress?: (p: number) => void }) =>
+      financeService.uploadProjectAttachment(id, file, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Attachment uploaded — project marked completed");
+    },
+    onError: (err) => toastErr(err, "Failed to upload attachment"),
+  });
+}
+
 /* ------------------------------ RENTALS ------------------------------ */
 export function useRentals(params?: ListParams) {
   return useQuery({
     queryKey: qk.rentals(params),
     queryFn: () => financeService.rentals(params ?? { perPage: 100 }),
+  });
+}
+
+export function useCreateRental() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      projectId: number;
+      monthlyAmount: number;
+      setupFee?: number;
+      billingDay: number;
+      nextBillingDate?: string;
+    }) => financeService.createRental(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Rental billing created");
+    },
+    onError: (err) => toastErr(err, "Failed to create rental"),
   });
 }
 
@@ -203,8 +288,17 @@ export function useResumeRental() {
 export function useGenerateRentalInvoice() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, force = true }: { id: number; force?: boolean }) =>
-      financeService.generateRentalInvoice(id, { force }),
+    mutationFn: ({
+      id,
+      force = true,
+      month,
+      year,
+    }: {
+      id: number;
+      force?: boolean;
+      month: number;
+      year: number;
+    }) => financeService.generateRentalInvoice(id, { force, month, year }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
@@ -217,7 +311,8 @@ export function useGenerateRentalInvoice() {
 export function useChargeAllRentals() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (opts?: { force?: boolean }) => financeService.chargeAllRentals(opts),
+    mutationFn: (opts: { force?: boolean; month: number; year: number }) =>
+      financeService.chargeAllRentals(opts),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["rentals"] });
@@ -272,10 +367,12 @@ export function useUploadContractSigned() {
 }
 
 /* ------------------------------ INVOICES ------------------------------ */
-export function useInvoices(params?: ListParams) {
+export function useInvoices(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.invoices(params),
-    queryFn: () => financeService.invoices(params ?? { perPage: 100 }),
+    queryKey: qk.invoices(query),
+    queryFn: () => financeService.invoices(query ?? { perPage: 100 }),
+    enabled,
   });
 }
 
@@ -317,10 +414,12 @@ export function useDeleteInvoice() {
 }
 
 /* ------------------------------ PAYMENTS ------------------------------ */
-export function usePayments(params?: ListParams) {
+export function usePayments(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.payments(params),
-    queryFn: () => financeService.payments(params ?? { perPage: 100 }),
+    queryKey: qk.payments(query),
+    queryFn: () => financeService.payments({ sort: "created_at:desc", perPage: 100, ...query }),
+    enabled,
   });
 }
 
@@ -334,9 +433,37 @@ export function useRecordPayment() {
       qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
       toast.success(`Payment ${payment.paymentNumber} recorded`);
     },
     onError: (err) => toastErr(err, "Failed to record payment"),
+  });
+}
+
+export function useUpdatePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...data
+    }: {
+      id: number;
+      amount?: number;
+      accId?: number;
+      paymentDate?: string;
+      paymentMethod?: string;
+      referenceNumber?: string | null;
+      notes?: string | null;
+    }) => financeService.updatePayment(id, data),
+    onSuccess: (payment) => {
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      toast.success(`Payment ${payment.paymentNumber} updated`);
+    },
+    onError: (err) => toastErr(err, "Failed to update payment"),
   });
 }
 
@@ -357,10 +484,12 @@ export function useVoidPayment() {
 }
 
 /* ------------------------------ CONTRIBUTIONS ------------------------------ */
-export function useDues(params?: ListParams) {
+export function useDues(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.dues(params),
-    queryFn: () => financeService.dueBatches(params ?? { perPage: 50 }),
+    queryKey: qk.dues(query),
+    queryFn: () => financeService.dueBatches(query ?? { perPage: 50 }),
+    enabled,
   });
 }
 
@@ -392,13 +521,15 @@ export function useReceiveDue() {
     mutationFn: async ({
       dueId,
       amount,
+      accId,
       receipt,
     }: {
       dueId: number;
       amount: number;
+      accId?: number;
       receipt?: File | null;
     }) => {
-      const due = await financeService.receiveDue(dueId, amount);
+      const due = await financeService.receiveDue(dueId, amount, accId);
       if (receipt) {
         await financeService.uploadContributionAttachment(dueId, receipt);
       }
@@ -408,14 +539,192 @@ export function useReceiveDue() {
       qc.invalidateQueries({ queryKey: ["dues"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
       toast.success("Contribution received");
     },
     onError: (err) => toastErr(err, "Failed to receive contribution"),
   });
 }
 
+export function useGrantMemberCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      memberId,
+      amount,
+      accId,
+      notes,
+      creditDate,
+    }: {
+      memberId: number;
+      amount: number;
+      accId?: number;
+      notes?: string;
+      creditDate?: string;
+    }) => financeService.grantMemberCredit(memberId, { amount, accId, notes, creditDate }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dues"] });
+      qc.invalidateQueries({ queryKey: qk.members });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: qk.reports.cashFlow });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["reports", "member-statement"] });
+      toast.success("Member loan recorded");
+    },
+    onError: (err) => toastErr(err, "Failed to record loan"),
+  });
+}
+
+export function useRepayMemberLoan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      memberId,
+      amount,
+      accId,
+      notes,
+      repayDate,
+    }: {
+      memberId: number;
+      amount: number;
+      accId?: number;
+      notes?: string;
+      repayDate?: string;
+    }) => financeService.repayMemberLoan(memberId, { amount, accId, notes, repayDate }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dues"] });
+      qc.invalidateQueries({ queryKey: qk.members });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: qk.reports.cashFlow });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["reports", "member-statement"] });
+      toast.success("Loan repayment recorded");
+    },
+    onError: (err) => toastErr(err, "Failed to record repayment"),
+  });
+}
+
+export function useApplyMemberCredit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dueId, amount }: { dueId: number; amount?: number }) =>
+      financeService.applyMemberCredit(dueId, amount),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["dues"] });
+      toast.success("Member credit applied");
+    },
+    onError: (err) => toastErr(err, "Failed to apply credit"),
+  });
+}
+
+/* ------------------------------ USERS (SUPER ADMIN) ------------------------------ */
+export function useUsers(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.users(query),
+    queryFn: () => financeService.users(query ?? { perPage: 50 }),
+    enabled,
+  });
+}
+
+export function useRoles(enabled = true) {
+  return useQuery({
+    queryKey: qk.roles,
+    queryFn: () => financeService.roles(),
+    enabled,
+  });
+}
+
+export function useCreateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createRole>[0]) => financeService.createRole(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.roles });
+      toast.success("Role created");
+    },
+    onError: (err) => toastErr(err, "Failed to create role"),
+  });
+}
+
+export function useUpdateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Parameters<typeof financeService.updateRole>[1] }) =>
+      financeService.updateRole(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.roles });
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Role updated");
+    },
+    onError: (err) => toastErr(err, "Failed to update role"),
+  });
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.deleteRole(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.roles });
+      toast.success("Role deleted");
+    },
+    onError: (err) => toastErr(err, "Failed to delete role"),
+  });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createUser>[0]) => financeService.createUser(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("User created");
+    },
+    onError: (err) => toastErr(err, "Failed to create user"),
+  });
+}
+
+export function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Parameters<typeof financeService.updateUser>[1] }) =>
+      financeService.updateUser(id, data),
+    onSuccess: (user) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("User updated");
+      return user;
+    },
+    onError: (err) => toastErr(err, "Failed to update user"),
+  });
+}
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => financeService.deleteUser(id, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["trash"] });
+      toast.success("User moved to trash");
+    },
+    onError: (err) => toastErr(err, "Failed to delete user"),
+  });
+}
+
+export function useAuditLogs(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.auditLogs(query),
+    queryFn: () => financeService.auditLogs(query ?? { perPage: 25, sort: "created_at:desc" }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
 /* ------------------------------ MEMBERS ------------------------------ */
-export function useMembers() {
+export function useMembers(params?: QueryOpts) {
+  const { enabled } = splitQuery(params);
   return useQuery({
     queryKey: qk.members,
     queryFn: async () => {
@@ -426,6 +735,7 @@ export function useMembers() {
         return financeService.members();
       }
     },
+    enabled,
   });
 }
 
@@ -494,7 +804,7 @@ export function useDeactivateMember() {
 export function useExpenses(params?: ListParams) {
   return useQuery({
     queryKey: qk.expenses(params),
-    queryFn: () => financeService.expenses(params ?? { perPage: 100 }),
+    queryFn: () => financeService.expenses({ sort: "created_at:desc", perPage: 100, ...params }),
   });
 }
 
@@ -517,6 +827,78 @@ export function useCreateExpenseCategory() {
   });
 }
 
+/* ------------------------------ ACCOUNTS ------------------------------ */
+export function useAccounts(params?: QueryOpts) {
+  const { enabled } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.accounts,
+    queryFn: () => financeService.accounts(),
+    enabled,
+  });
+}
+
+export function useDefaultAccount() {
+  return useQuery({
+    queryKey: [...qk.accounts, "default"],
+    queryFn: () => financeService.defaultAccount(),
+  });
+}
+
+export function useCreateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { number: string; institution: string; balance?: number; isDefault?: boolean }) =>
+      financeService.createAccount(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      toast.success("Account created");
+    },
+    onError: (err) => toastErr(err, "Failed to create account"),
+  });
+}
+
+export function useSetDefaultAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.setDefaultAccount(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      toast.success("Default account updated");
+    },
+    onError: (err) => toastErr(err, "Failed to set default account"),
+  });
+}
+
+export function useTransferAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { fromAccId: number; toAccId: number; amount: number; transferDate: string; notes?: string }) =>
+      financeService.transferAccount(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: [...qk.accounts, "transfers"] });
+      toast.success("Transfer completed");
+    },
+    onError: (err) => toastErr(err, "Transfer failed"),
+  });
+}
+
+export function useAccountTransfers(params?: { fromDate?: string; toDate?: string; accId?: number }) {
+  return useQuery({
+    queryKey: [...qk.accounts, "transfers", params],
+    queryFn: () => financeService.accountTransfers(params),
+  });
+}
+
+export function useAccountStatement(id: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.accountStatement(id ?? 0, query),
+    queryFn: () => financeService.accountStatement(id as number, query),
+    enabled: !!id && enabled,
+  });
+}
+
 export function useCreateExpense() {
   const qc = useQueryClient();
   return useMutation({
@@ -525,6 +907,7 @@ export function useCreateExpense() {
       qc.invalidateQueries({ queryKey: ["expenses"] });
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
       toast.success("Expense recorded");
     },
     onError: (err) => toastErr(err, "Failed to record expense"),
@@ -573,10 +956,12 @@ export function useRestoreTrash() {
 }
 
 /* ------------------------------ TRANSACTIONS ------------------------------ */
-export function useTransactions(params?: ListParams) {
+export function useTransactions(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.transactions(params),
-    queryFn: () => financeService.transactions(params ?? { perPage: 100 }),
+    queryKey: qk.transactions(query),
+    queryFn: () => financeService.transactions({ sort: "created_at:asc", perPage: 100, ...query }),
+    enabled,
   });
 }
 
@@ -588,46 +973,66 @@ export function useTransactionSummary(params?: ListParams) {
 }
 
 /* ------------------------------ REPORTS ------------------------------ */
-export function useIncomeStatement(params?: ListParams) {
+export function useIncomeStatement(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: [...qk.reports.incomeStatement, params],
-    queryFn: () => financeService.incomeStatement(params),
+    queryKey: [...qk.reports.incomeStatement, query],
+    queryFn: () => financeService.incomeStatement(query),
+    enabled,
   });
 }
 
-export function useOutstandingCustomersReport(params?: ListParams) {
+export function useOutstandingCustomersReport(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: [...qk.reports.outstanding, params],
-    queryFn: () => financeService.outstandingCustomers(params),
+    queryKey: [...qk.reports.outstanding, query],
+    queryFn: () => financeService.outstandingCustomers(query),
+    enabled,
   });
 }
 
-export function useExpenseByCategoryReport(params?: ListParams) {
+export function useExpenseByCategoryReport(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: [...qk.reports.expenses, params],
-    queryFn: () => financeService.expenseByCategory(params),
+    queryKey: [...qk.reports.expenses, query],
+    queryFn: () => financeService.expenseByCategory(query),
+    enabled,
   });
 }
 
-export function useMonthlyRevenueReport(params?: ListParams) {
+export function useMonthlyRevenueReport(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: [...qk.reports.monthly, params],
-    queryFn: () => financeService.monthlyRevenue(params),
+    queryKey: [...qk.reports.monthly, query],
+    queryFn: () => financeService.monthlyRevenue(query),
+    enabled,
   });
 }
 
-export function useCashFlowReport(params?: ListParams) {
+export function useCashFlowReport(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: [...qk.reports.cashFlow, params],
-    queryFn: () => financeService.cashFlow(params),
+    queryKey: [...qk.reports.cashFlow, query],
+    queryFn: () => financeService.cashFlow(query),
+    enabled,
   });
 }
 
-export function useContributionReport(batchId: number | undefined) {
+export function useContributionReport(batchId: number | undefined, params?: QueryOpts) {
+  const { enabled } = splitQuery(params);
   return useQuery({
     queryKey: qk.reports.contributions(batchId),
     queryFn: () => financeService.contributionReport(batchId as number),
-    enabled: !!batchId,
+    enabled: !!batchId && enabled,
+  });
+}
+
+export function useMemberStatement(memberId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["reports", "member-statement", memberId, query],
+    queryFn: () => financeService.memberStatement({ memberId: memberId as number, ...query }),
+    enabled: !!memberId && enabled,
   });
 }
 

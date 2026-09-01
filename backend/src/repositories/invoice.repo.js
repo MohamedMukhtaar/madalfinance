@@ -5,8 +5,27 @@ export const findById = (conn, id) =>
     (rows) => rows[0]
   );
 
+export const findByIdForUpdate = (conn, id) =>
+  run(conn, `SELECT * FROM invoices WHERE invoice_id = ? AND deleted_at IS NULL FOR UPDATE`, [id]).then(
+    (rows) => rows[0]
+  );
+
 export const findByNumber = (conn, number) =>
   run(conn, `SELECT * FROM invoices WHERE invoice_number = ?`, [number]).then((rows) => rows[0]);
+
+/** Find monthly rental invoice for a project + period label (e.g. "Sep 2026"). */
+export const findRentalMonthlyForPeriod = (conn, projectId, periodLabel) =>
+  run(
+    conn,
+    `SELECT i.*
+       FROM invoices i
+       JOIN invoice_items ii ON ii.invoice_id = i.invoice_id
+      WHERE i.project_id = ?
+        AND i.deleted_at IS NULL
+        AND ii.description LIKE ?
+      LIMIT 1`,
+    [projectId, `%(${periodLabel})%`]
+  ).then((rows) => rows[0]);
 
 export const list = (conn, { search, status, customerId, fromDate, toDate, offset, perPage, order }) => {
   const conditions = ['i.deleted_at IS NULL'];
@@ -181,7 +200,9 @@ export const overdue = (conn, today) =>
 
 export default {
   findById,
+  findByIdForUpdate,
   findByNumber,
+  findRentalMonthlyForPeriod,
   list,
   count,
   create,

@@ -57,6 +57,7 @@ export const receiveDue = asyncHandler(async (req, res) => {
     Number(req.params.id),
     req.body.amount,
     req.body.paid_date,
+    req.body.acc_id,
     req.user.id,
     req.ip
   );
@@ -94,6 +95,36 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, null, 'Receipt deleted');
 });
 
+export const grantCredit = asyncHandler(async (req, res) => {
+  const result = await contributionService.grantLoan(
+    Number(req.params.memberId),
+    req.body,
+    req.user.id,
+    req.ip
+  );
+  return ApiResponse.success(res, result, 'Member loan recorded', 201);
+});
+
+export const repayLoan = asyncHandler(async (req, res) => {
+  const result = await contributionService.repayLoan(
+    Number(req.params.memberId),
+    req.body,
+    req.user.id,
+    req.ip
+  );
+  return ApiResponse.success(res, result, 'Loan repayment recorded');
+});
+
+export const applyCredit = asyncHandler(async (req, res) => {
+  const due = await contributionService.applyCreditToDue(
+    Number(req.params.id),
+    req.body.amount,
+    req.user.id,
+    req.ip
+  );
+  return ApiResponse.success(res, due, 'Member credit applied');
+});
+
 export default {
   listBatches,
   getBatch,
@@ -104,4 +135,7 @@ export default {
   listAttachments,
   addAttachment,
   deleteAttachment,
+  grantCredit,
+  repayLoan,
+  applyCredit,
 };

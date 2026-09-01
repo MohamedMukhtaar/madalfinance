@@ -7,6 +7,7 @@ import { parseListQuery, paginationMeta } from '../helpers/queryHelper.js';
 export const list = asyncHandler(async (req, res) => {
   const q = parseListQuery(req.query, {
     allowedSorts: ['expense_id', 'expense_date', 'amount', 'category_name', 'payment_method', 'created_at'],
+    defaultSort: 'created_at:desc',
   });
   const { rows, total } = await expenseService.list({
     search: q.search,

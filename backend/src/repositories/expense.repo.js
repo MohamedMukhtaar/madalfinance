@@ -34,8 +34,10 @@ export const list = (conn, { search, categoryId, method, fromDate, toDate, offse
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
-    `SELECT e.*, ec.category_name
+    `SELECT e.*, ec.category_name,
+            a.number AS account_number, a.institution AS account_institution
        FROM expenses e JOIN expense_categories ec ON ec.expense_category_id = e.expense_category_id
+       LEFT JOIN accounts a ON a.acc_id = e.acc_id
        ${where}
       ORDER BY ${order}
       LIMIT ? OFFSET ?`,
@@ -75,14 +77,14 @@ export const count = (conn, { search, categoryId, method, fromDate, toDate }) =>
 
 export const create = (conn, data) => {
   const {
-    expense_category_id, expense_date, description, amount, paid_by, payment_method,
+    expense_category_id, expense_date, description, amount, acc_id, paid_by, payment_method,
     reference_number, notes, created_by,
   } = data;
   return run(
     conn,
-    `INSERT INTO expenses (expense_category_id, expense_date, description, amount, paid_by, payment_method, reference_number, notes, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [expense_category_id, expense_date, description ?? null, amount, paid_by ?? null, payment_method ?? 'Cash', reference_number ?? null, notes ?? null, created_by]
+    `INSERT INTO expenses (expense_category_id, expense_date, description, amount, acc_id, paid_by, payment_method, reference_number, notes, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [expense_category_id, expense_date, description ?? null, amount, acc_id ?? null, paid_by ?? null, payment_method ?? 'Cash', reference_number ?? null, notes ?? null, created_by]
   ).then((r) => r.insertId);
 };
 

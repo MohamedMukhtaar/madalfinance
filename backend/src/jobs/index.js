@@ -69,13 +69,18 @@ async function runHousekeeping() {
 }
 
 const jobs = [
-  { name: 'rentalBilling', schedule: config.cron.rentalBilling, run: runRentalBilling },
+  ...(config.cron.rentalAutoBillingEnabled
+    ? [{ name: 'rentalBilling', schedule: config.cron.rentalBilling, run: runRentalBilling }]
+    : []),
   { name: 'overdueCheck', schedule: config.cron.overdueCheck, run: runOverdueCheck },
   { name: 'monthlyDues', schedule: config.cron.monthlyDues, run: runMonthlyDues },
   { name: 'housekeeping', schedule: config.cron.reportCache, run: runHousekeeping },
 ];
 
 const startJobs = () => {
+  if (!config.cron.rentalAutoBillingEnabled) {
+    logger.info('Rental auto-billing is disabled — use Rental Billing page (Charge All / Generate)');
+  }
   for (const job of jobs) {
     if (!cron.validate(job.schedule)) {
       logger.warn(`Invalid cron schedule for ${job.name}: ${job.schedule}`);

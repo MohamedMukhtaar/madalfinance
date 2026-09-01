@@ -8,6 +8,7 @@ import paymentRepo from '../repositories/payment.repo.js';
 import expenseRepo from '../repositories/expense.repo.js';
 import incomeRepo from '../repositories/income.repo.js';
 import memberRepo from '../repositories/member.repo.js';
+import userRepo from '../repositories/user.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
@@ -93,10 +94,11 @@ const RESTORE_MAP = {
   member: {
     restore: async (conn, id) => {
       await memberRepo.restore(conn, id);
-      const member = await memberRepo.findMemberById(conn, id);
-      if (member?.user_id) {
-        await memberRepo.updateUserById(conn, member.user_id, { status: 'active' });
-      }
+    },
+  },
+  user: {
+    restore: async (conn, id) => {
+      await userRepo.restore(conn, id);
     },
   },
 };
@@ -125,6 +127,7 @@ export const trashService = {
         userId,
         recordId: item.entity_id,
         ip,
+        details: `${item.entity_type}: ${item.entity_label}`,
       });
 
       return {

@@ -6,12 +6,13 @@ import { validate } from '../middleware/validate.js';
 import { singleUpload } from '../middleware/upload.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { createExpenseValidator, updateExpenseValidator, createCategoryValidator } from '../validators/expense.validator.js';
-import { ROLES } from '../utils/constants.js';
+import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize(...APP_ACCESS));
 
-const MANAGE = [ROLES.SUPER_ADMIN, ROLES.FINANCE_ADMIN];
+const MANAGE = MANAGE_ROLES;
 
 router.get('/', expenseController.list);
 router.get('/categories', expenseController.categories);

@@ -4,12 +4,13 @@ import { authenticate } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { createIncomeValidator, updateIncomeValidator, createIncomeCategoryValidator } from '../validators/income.validator.js';
-import { ROLES } from '../utils/constants.js';
+import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize(...APP_ACCESS));
 
-const MANAGE = [ROLES.SUPER_ADMIN, ROLES.FINANCE_ADMIN];
+const MANAGE = MANAGE_ROLES;
 
 router.get('/', incomeController.list);
 router.get('/categories', incomeController.categories);

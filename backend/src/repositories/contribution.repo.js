@@ -41,7 +41,23 @@ export const createDue = (conn, { batch_id, member_id, amount }) =>
   ]);
 
 export const dueById = (conn, dueId) =>
-  run(conn, `SELECT * FROM member_dues WHERE due_id = ?`, [dueId]).then((rows) => rows[0]);
+  run(
+    conn,
+    `SELECT d.*, b.month, b.year, m.full_name AS member_name
+       FROM member_dues d
+       JOIN member_due_batches b ON b.batch_id = d.batch_id
+       JOIN members m ON m.member_id = d.member_id
+      WHERE d.due_id = ?`,
+    [dueId]
+  ).then((rows) => rows[0]);
+
+export const createDuePayment = (conn, { due_id, amount, acc_id, paid_date, created_by }) =>
+  run(
+    conn,
+    `INSERT INTO member_due_payments (due_id, amount, acc_id, paid_date, created_by)
+     VALUES (?, ?, ?, ?, ?)`,
+    [due_id, amount, acc_id, paid_date, created_by]
+  ).then((r) => r.insertId);
 
 export const listDues = (conn, { batchId, status, memberId, offset, perPage, order }) => {
   const conditions = [];
@@ -61,11 +77,10 @@ export const listDues = (conn, { batchId, status, memberId, offset, perPage, ord
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return run(
     conn,
-    `SELECT d.*, m.position, u.full_name AS member_name,
+    `SELECT d.*, m.position, m.credit_balance, m.full_name AS member_name,
             (SELECT COUNT(*) FROM member_due_attachments a WHERE a.due_id = d.due_id) AS attachment_count
        FROM member_dues d
        JOIN members m ON m.member_id = d.member_id
-       JOIN users u ON u.user_id = m.user_id
        ${where}
       ORDER BY ${order}
       LIMIT ? OFFSET ?`,
@@ -103,8 +118,8 @@ export const applyDuePayment = (conn, dueId, paidAmount, status, paidDate) =>
 export const activeMembers = (conn) =>
   run(
     conn,
-    `SELECT m.*, u.full_name AS member_name, u.user_id, u.email
-       FROM members m JOIN users u ON u.user_id = m.user_id
+    `SELECT m.*, m.full_name AS member_name, m.email
+       FROM members m
       WHERE m.status = 'active'`
   );
 
@@ -131,6 +146,98 @@ export const findAttachment = (conn, attachmentId) =>
 export const deleteAttachment = (conn, attachmentId) =>
   run(conn, `DELETE FROM member_due_attachments WHERE attachment_id = ?`, [attachmentId]);
 
+export const memberStatementDues = (conn, memberId, { fromDate, toDate }) => {
+  const conditions = ['d.member_id = ?'];
+  const params = [memberId];
+  if (fromDate) {
+    conditions.push('DATE(b.generated_date) >= ?');
+    params.push(fromDate);
+  }
+  if (toDate) {
+    conditions.push('DATE(b.generated_date) <= ?');
+    params.push(toDate);
+  }
+  return run(
+    conn,
+    `SELECT d.due_id, d.amount, d.paid_amount, d.status,
+            b.month, b.year, b.generated_date
+       FROM member_dues d
+       JOIN member_due_batches b ON b.batch_id = d.batch_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY b.generated_date ASC, d.due_id ASC`,
+    params
+  );
+};
+
+export const memberStatementPayments = (conn, memberId, { fromDate, toDate }) => {
+  const conditions = ['d.member_id = ?'];
+  const params = [memberId];
+  if (fromDate) {
+    conditions.push('p.paid_date >= ?');
+    params.push(fromDate);
+  }
+  if (toDate) {
+    conditions.push('p.paid_date <= ?');
+    params.push(toDate);
+  }
+  return run(
+    conn,
+    `SELECT p.due_payment_id, p.amount, p.paid_date, p.created_at,
+            b.month, b.year
+       FROM member_due_payments p
+       JOIN member_dues d ON d.due_id = p.due_id
+       JOIN member_due_batches b ON b.batch_id = d.batch_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY p.paid_date ASC, p.due_payment_id ASC`,
+    params
+  );
+};
+
+export const memberOutstanding = (conn, memberId) =>
+  run(
+    conn,
+    `SELECT COALESCE(SUM(d.amount - d.paid_amount), 0) AS outstanding
+       FROM member_dues d
+      WHERE d.member_id = ?`,
+    [memberId]
+  ).then((r) => Number(r[0]?.outstanding ?? 0));
+
+export const getMemberCreditBalance = (conn, memberId) =>
+  run(conn, `SELECT credit_balance FROM members WHERE member_id = ?`, [memberId]).then(
+    (r) => Number(r[0]?.credit_balance ?? 0)
+  );
+
+export const adjustMemberCredit = (conn, memberId, delta) =>
+  run(conn, `UPDATE members SET credit_balance = credit_balance + ? WHERE member_id = ?`, [delta, memberId]);
+
+export const addCreditLedger = (conn, { member_id, amount, description, credit_date, due_id, acc_id, created_by }) =>
+  run(
+    conn,
+    `INSERT INTO member_credit_ledger (member_id, amount, description, credit_date, due_id, acc_id, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [member_id, amount, description, credit_date, due_id ?? null, acc_id ?? null, created_by]
+  ).then((r) => r.insertId);
+
+export const memberCreditLedger = (conn, memberId, { fromDate, toDate }) => {
+  const conditions = ['member_id = ?'];
+  const params = [memberId];
+  if (fromDate) {
+    conditions.push('credit_date >= ?');
+    params.push(fromDate);
+  }
+  if (toDate) {
+    conditions.push('credit_date <= ?');
+    params.push(toDate);
+  }
+  return run(
+    conn,
+    `SELECT * FROM member_credit_ledger
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY credit_date ASC, credit_id ASC`,
+    params
+  );
+};
+
 export default {
   findBatch,
   findBatchByMonth,
@@ -142,7 +249,15 @@ export default {
   listDues,
   countDues,
   applyDuePayment,
+  createDuePayment,
   activeMembers,
+  memberStatementDues,
+  memberStatementPayments,
+  memberOutstanding,
+  getMemberCreditBalance,
+  adjustMemberCredit,
+  addCreditLedger,
+  memberCreditLedger,
   attachments,
   addAttachment,
   findAttachment,

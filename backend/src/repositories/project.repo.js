@@ -110,4 +110,23 @@ export const typeByName = (conn, name) =>
 
 export const listTypes = (conn) => run(conn, `SELECT * FROM project_types ORDER BY project_type_id`);
 
-export default { findById, list, count, create, update, softDelete, restore, typeByName, listTypes };
+export const setLogo = (conn, id, { logo_path, logo_file_name }) =>
+  run(conn, `UPDATE projects SET logo_path = ?, logo_file_name = ? WHERE project_id = ? AND deleted_at IS NULL`, [
+    logo_path,
+    logo_file_name,
+    id,
+  ]);
+
+export const setAttachment = (conn, id, { attachment_path, attachment_file_name }) =>
+  run(
+    conn,
+    `UPDATE projects SET
+        attachment_path = ?,
+        attachment_file_name = ?,
+        status = 'Completed',
+        completed_date = COALESCE(completed_date, CURDATE())
+      WHERE project_id = ? AND deleted_at IS NULL`,
+    [attachment_path, attachment_file_name, id]
+  );
+
+export default { findById, list, count, create, update, softDelete, restore, typeByName, listTypes, setLogo, setAttachment };

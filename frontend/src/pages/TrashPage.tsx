@@ -5,7 +5,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, Select, StatCard, confirmDialog } from "@/components/ui";
 import { useRestoreTrash, useTrash } from "@/hooks/queries";
-import { formatDate, formatTime } from "@/utils/format";
+import { dateTimeColumns } from "@/utils/tableHelpers";
 import type { TrashItem } from "@/services/finance";
 
 const columnHelper = createColumnHelper<TrashItem>();
@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
   expense: "Expense",
   income: "Income",
   member: "Member",
+  user: "User",
 };
 
 const TYPE_STYLES: Record<string, string> = {
@@ -30,6 +31,7 @@ const TYPE_STYLES: Record<string, string> = {
   expense: "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30",
   income: "bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/30",
   member: "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/30",
+  user: "bg-brand-50 text-brand-700 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/30",
 };
 
 export default function TrashPage() {
@@ -74,15 +76,7 @@ export default function TrashPage() {
           <span className="text-sm text-slate-500 dark:text-slate-400">{info.getValue() || "—"}</span>
         ),
       }),
-      columnHelper.accessor("deletedAt", {
-        header: "Deleted",
-        cell: (info) => (
-          <div className="text-xs text-slate-400">
-            <p>{formatDate(info.getValue())}</p>
-            <p>{formatTime(info.getValue())}</p>
-          </div>
-        ),
-      }),
+      ...dateTimeColumns<TrashItem>("deletedAt", "Deleted", (t) => t.deletedAt, (t) => t.deletedAt),
       columnHelper.display({
         id: "actions",
         header: "Actions",

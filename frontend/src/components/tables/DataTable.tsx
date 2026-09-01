@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   flexRender,
   getCoreRowModel,
@@ -48,6 +48,12 @@ export interface DataTableProps<T> {
   getRowId?: (row: T) => string;
   initialSorting?: SortingState;
   className?: string;
+  serverSide?: boolean;
+  totalCount?: number;
+  pageIndex?: number;
+  onPageChange?: (pageIndex: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  renderMobileCard?: (row: T) => ReactNode;
 }
 
 export function DataTable<T>({
@@ -70,6 +76,12 @@ export function DataTable<T>({
   getRowId,
   initialSorting = [],
   className,
+  serverSide = false,
+  totalCount,
+  pageIndex: controlledPageIndex,
+  onPageChange,
+  onPageSizeChange,
+  renderMobileCard,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(initialSorting);
   const [globalFilter, setGlobalFilter] = useState("");
@@ -77,6 +89,14 @@ export function DataTable<T>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [tablePageSize, setTablePageSize] = useState(pageSize);
+  const [localPageIndex, setLocalPageIndex] = useState(0);
+
+  const pageIndex = serverSide ? (controlledPageIndex ?? 0) : localPageIndex;
+  const rowTotal = serverSide ? (totalCount ?? 0) : undefined;
+
+  useEffect(() => {
+    setTablePageSize(pageSize);
+  }, [pageSize]);
 
   const table = useReactTable({
     data,
@@ -87,6 +107,7 @@ export function DataTable<T>({
       columnFilters,
       columnVisibility,
       rowSelection,
+      pagination: { pageIndex, pageSize: tablePageSize },
     },
     getRowId: getRowId as never,
     onSortingChange: setSorting,
@@ -97,18 +118,46 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: tablePageSize } },
+    ...(serverSide
+      ? {
+          manualPagination: true,
+          pageCount: Math.max(1, Math.ceil((rowTotal ?? 0) / tablePageSize) || 1),
+        }
+      : { getPaginationRowModel: getPaginationRowModel() }),
   });
+
+  const goToPage = (next: number) => {
+    if (serverSide) onPageChange?.(next);
+    else setLocalPageIndex(next);
+    table.setPageIndex(next);
+  };
+
+  const changePageSize = (size: number) => {
+    setTablePageSize(size);
+    table.setPageSize(size);
+    if (serverSide) {
+      onPageSizeChange?.(size);
+      onPageChange?.(0);
+    } else {
+      setLocalPageIndex(0);
+    }
+  };
 
   const toggleableColumns = useMemo(
     () => table.getAllLeafColumns().filter((c) => c.getCanHide() && c.id !== "select"),
     [table]
   );
 
-  const { pageIndex } = table.getState().pagination;
-  const totalRows = table.getPrePaginationRowModel().rows.length;
-  const pageCount = table.getPageCount();
+  const { pageIndex: currentPageIndex } = table.getState().pagination;
+  const totalRows = serverSide
+    ? (rowTotal ?? 0)
+    : table.getPrePaginationRowModel().rows.length;
+  const pageCount = serverSide
+    ? Math.max(1, Math.ceil(totalRows / tablePageSize) || 1)
+    : table.getPageCount();
+  const visibleRows = table.getRowModel().rows;
+  const rangeStart = totalRows === 0 ? 0 : currentPageIndex * tablePageSize + 1;
+  const rangeEnd = Math.min((currentPageIndex + 1) * tablePageSize, totalRows);
 
   return (
     <Card className={cn("overflow-hidden", className)}>
@@ -155,8 +204,38 @@ export function DataTable<T>({
         )}
       </div>
 
+      {/* Mobile cards */}
+      {renderMobileCard && !loading && !error && visibleRows.length > 0 && (
+        <div className="divide-y divide-slate-100 p-3 md:hidden dark:divide-slate-800">
+          {visibleRows.map((row) => (
+            <div
+              key={row.id}
+              className={cn("py-3", onRowClick && "cursor-pointer")}
+              onClick={() => onRowClick?.(row.original)}
+            >
+              {renderMobileCard(row.original)}
+              {actions && (
+                <div className="mt-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
+                  <RowActions
+                    actions={actions(row.original)
+                      .filter((action) => !action.divider && action.icon)
+                      .map((action) => ({
+                        label: typeof action.label === "string" ? action.label : "Action",
+                        icon: action.icon,
+                        onClick: action.onClick ?? (() => undefined),
+                        danger: action.danger,
+                        disabled: action.disabled,
+                      }))}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Table */}
-      <div className="overflow-x-auto">
+      <div className={cn("overflow-x-auto", renderMobileCard && "hidden md:block")}>
         <table className="w-full border-collapse text-left">
           <thead className="bg-muted">
             {table.getHeaderGroups().map((hg) => (
@@ -268,7 +347,7 @@ export function DataTable<T>({
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Showing{" "}
             <span className="font-semibold text-slate-700 dark:text-slate-200">
-              {pageIndex * tablePageSize + 1}–{Math.min((pageIndex + 1) * tablePageSize, totalRows)}
+              {rangeStart}–{rangeEnd}
             </span>{" "}
             of <span className="font-semibold text-slate-700 dark:text-slate-200">{totalRows}</span>{" "}
             {Object.keys(rowSelection).length > 0 && (
@@ -280,10 +359,7 @@ export function DataTable<T>({
           <div className="flex items-center gap-3">
             <select
               value={tablePageSize}
-              onChange={(e) => {
-                setTablePageSize(Number(e.target.value));
-                table.setPageSize(Number(e.target.value));
-              }}
+              onChange={(e) => changePageSize(Number(e.target.value))}
               className="h-8 rounded-lg border-0 bg-muted px-2 text-xs font-semibold text-ink-soft ring-1 ring-inset ring-line focus:outline-none"
             >
               {pageSizeOptions.map((n) => (
@@ -294,19 +370,19 @@ export function DataTable<T>({
             </select>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
+                onClick={() => goToPage(Math.max(0, currentPageIndex - 1))}
+                disabled={currentPageIndex <= 0}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:ring-slate-700 dark:hover:bg-slate-800"
                 aria-label="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <span className="min-w-[4.5rem] text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {pageIndex + 1} / {Math.max(pageCount, 1)}
+                {currentPageIndex + 1} / {Math.max(pageCount, 1)}
               </span>
               <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
+                onClick={() => goToPage(currentPageIndex + 1)}
+                disabled={currentPageIndex + 1 >= pageCount}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:ring-slate-700 dark:hover:bg-slate-800"
                 aria-label="Next page"
               >

@@ -3,15 +3,16 @@ import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
-import { useRecordPayment } from "@/hooks/queries";
+import { useRecordPayment, useAccounts, useDefaultAccount } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { PAYMENT_METHODS } from "@/utils/constants";
-import { formatCurrency, todayISO } from "@/utils/format";
+import { formatCurrency, todayISO, formatAccountOptionLabel } from "@/utils/format";
 import type { Customer, Invoice } from "@/types";
 
 interface PaymentForm {
   customerId: string;
   invoiceId: string;
+  accId: string;
   amount: number;
   method: string;
   reference: string;
@@ -23,6 +24,7 @@ export function RecordPaymentModal({
   onClose,
   defaultCustomerId,
   defaultInvoiceId,
+  defaultAmount,
   customers,
   invoices,
 }: {
@@ -30,10 +32,13 @@ export function RecordPaymentModal({
   onClose: () => void;
   defaultCustomerId?: number;
   defaultInvoiceId?: number;
+  defaultAmount?: number;
   customers: Customer[];
   invoices: Invoice[];
 }) {
   const mutation = useRecordPayment();
+  const { data: accounts = [] } = useAccounts();
+  const { data: defaultAccount } = useDefaultAccount();
   const { currency, settings } = useSettings();
 
   const {
@@ -56,32 +61,52 @@ export function RecordPaymentModal({
 
   useEffect(() => {
     if (open) {
+      const defAcc = defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
       reset({
         customerId: defaultCustomerId ? String(defaultCustomerId) : "",
         invoiceId: defaultInvoiceId ? String(defaultInvoiceId) : "",
-        amount: 0,
+        accId: defAcc ? String(defAcc) : "",
+        amount: defaultAmount ?? 0,
         method: "Cash",
         reference: "",
         date: todayISO(),
       });
     }
-  }, [open, defaultCustomerId, defaultInvoiceId, reset]);
+  }, [open, defaultCustomerId, defaultInvoiceId, defaultAmount, defaultAccount, accounts, reset]);
 
   const customerId = watch("customerId");
   const invoiceId = watch("invoiceId");
 
-  const filteredInvoices = useMemo(
-    () =>
-      (customerId
-        ? invoices.filter((i) => i.customerId === Number(customerId) && i.status !== "Paid" && i.status !== "Cancelled")
-        : invoices.filter((i) => i.status !== "Paid" && i.status !== "Cancelled")),
-    [customerId, invoices]
-  );
+  const filteredInvoices = useMemo(() => {
+    const payable = (i: Invoice) =>
+      Number(i.balance) > 0 &&
+      i.status !== "Cancelled" &&
+      i.status !== "Draft" &&
+      i.status !== "Paid";
+    return customerId
+      ? invoices.filter((i) => i.customerId === Number(customerId) && payable(i))
+      : invoices.filter(payable);
+  }, [customerId, invoices]);
+
+  useEffect(() => {
+    if (!customerId) {
+      setValue("invoiceId", "");
+      return;
+    }
+    const stillValid = filteredInvoices.some((i) => String(i.invoiceId) === invoiceId);
+    if (!stillValid) setValue("invoiceId", "");
+  }, [customerId, filteredInvoices, invoiceId, setValue]);
 
   const selectedInvoice = useMemo(
     () => filteredInvoices.find((i) => String(i.invoiceId) === invoiceId),
     [filteredInvoices, invoiceId]
   );
+
+  useEffect(() => {
+    if (selectedInvoice && open) {
+      setValue("amount", Number(selectedInvoice.balance));
+    }
+  }, [selectedInvoice, open, setValue]);
 
   const onSubmit = (data: PaymentForm) => {
     mutation.mutate(
@@ -91,6 +116,7 @@ export function RecordPaymentModal({
         paymentMethod: data.method as typeof PAYMENT_METHODS[number],
         amount: Number(data.amount),
         referenceNumber: data.reference || `${data.method} · manual`,
+        accId: data.accId ? Number(data.accId) : undefined,
         allocations: data.invoiceId
           ? [{ invoiceId: Number(data.invoiceId), amount: Number(data.amount) }]
           : [],
@@ -128,13 +154,19 @@ export function RecordPaymentModal({
             label="Invoice"
             required
             error={errors.invoiceId?.message}
-            options={[{ value: "", label: "Select an invoice…" }, ...filteredInvoices.map((i) => ({ value: String(i.invoiceId), label: `${i.invoiceNumber} · ${formatCurrency(i.balance, currency)}` }))]}
+            options={[
+              { value: "", label: filteredInvoices.length ? "Select an invoice…" : "No unpaid invoices" },
+              ...filteredInvoices.map((i) => ({
+                value: String(i.invoiceId),
+                label: `${i.invoiceNumber} · balance ${formatCurrency(i.balance, currency)}`,
+              })),
+            ]}
             {...register("invoiceId", { required: "Invoice is required" })}
           />
         </div>
 
         {selectedInvoice && (
-          <div className="grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-3 dark:bg-slate-800/50">
+          <div className="grid grid-cols-1 gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-3 dark:bg-slate-800/50">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Total</p>
               <p className="text-sm font-bold text-slate-900 dark:text-white">{formatCurrency(selectedInvoice.totalAmount, currency)}</p>
@@ -150,7 +182,20 @@ export function RecordPaymentModal({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Select
+            label="Deposit to account"
+            required
+            error={errors.accId?.message}
+            options={[
+              { value: "", label: accounts.length ? "Select account…" : "No accounts — create one first" },
+              ...accounts.map((a) => ({
+                value: String(a.accId),
+                label: formatAccountOptionLabel(a, currency),
+              })),
+            ]}
+            {...register("accId", { required: "Account is required" })}
+          />
           <Input
             label="Amount"
             required

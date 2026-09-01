@@ -8,7 +8,7 @@ export const auditService = {
   /**
    * Write an audit entry (best-effort, never throws).
    */
-  async log({ module, action, userId = null, recordId = null, ip = null, device = null }) {
+  async log({ module, action, userId = null, recordId = null, ip = null, device = null, details = null }) {
     try {
       await auditRepo.create(null, {
         user_id: userId,
@@ -17,8 +17,9 @@ export const auditService = {
         record_id: recordId,
         ip_address: ip,
         device,
+        details,
       });
-    } catch (err) {
+    } catch {
       // Auditing must never break a financial operation.
     }
   },

@@ -20,6 +20,18 @@ export default defineConfig({
   },
   build: {
     sourcemap: false,
-    chunkSizeWarningLimit: 1200,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          query: ["@tanstack/react-query"],
+          table: ["@tanstack/react-table"],
+          charts: ["recharts"],
+          motion: ["framer-motion"],
+          ui: ["@headlessui/react", "react-hot-toast"],
+        },
+      },
+    },
   },
 });

@@ -1,5 +1,7 @@
 import expenseRepo from '../repositories/expense.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
+import accountRepo from '../repositories/account.repo.js';
+import accountService from './account.service.js';
 import trashRepo from '../repositories/trash.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
@@ -27,7 +29,14 @@ export const expenseService = {
       const amount = Number(data.amount);
       if (!amount || amount <= 0) throw ApiError.badRequest('Expense amount must be greater than zero');
 
-      const id = await expenseRepo.create(conn, { ...data, amount, created_by: userId });
+      let accId = data.acc_id ? Number(data.acc_id) : null;
+      if (!accId) {
+        const def = await accountRepo.findDefault(conn);
+        if (def) accId = def.acc_id;
+      }
+      if (!accId) throw ApiError.badRequest('Account is required. Create an account or set a default account.');
+
+      const id = await expenseRepo.create(conn, { ...data, amount, acc_id: accId, created_by: userId });
 
       await transactionRepo.create(conn, {
         transaction_date: data.expense_date,
@@ -39,6 +48,8 @@ export const expenseService = {
         expense: amount,
         created_by: userId,
       });
+
+      await accountService.debit(conn, accId, amount);
 
       await auditService.log({ module: 'Expense', action: 'CREATE', userId, recordId: id, ip });
       return expenseRepo.findById(conn, id);
@@ -89,7 +100,11 @@ export const expenseService = {
         created_by: userId,
       });
 
-      await auditService.log({ module: 'Expense', action: 'DELETE', userId, recordId: id, ip });
+      if (expense.acc_id) {
+        await accountService.credit(conn, expense.acc_id, Number(expense.amount));
+      }
+
+      await auditService.log({ module: 'Expense', action: 'DELETE', userId, recordId: id, ip, details: deleteReason });
       return { expense_id: id, deleted: true };
     });
   },

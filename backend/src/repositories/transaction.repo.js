@@ -121,6 +121,17 @@ export const summary = (conn, { fromDate, toDate }) => {
   ).then((r) => r[0]);
 };
 
+export const updateIncomeDateByReference = (conn, referenceType, referenceId, transactionDate) =>
+  run(
+    conn,
+    `UPDATE transactions
+        SET transaction_date = ?
+      WHERE reference_type = ? AND reference_id = ? AND transaction_type = 'Income' AND income > 0
+      ORDER BY transaction_id DESC
+      LIMIT 1`,
+    [transactionDate, referenceType, referenceId]
+  );
+
 export const sumByType = (conn, { type, fromDate, toDate }) => {
   const conditions = ['transaction_type = ?'];
   const params = [type];
@@ -140,4 +151,4 @@ export const sumByType = (conn, { type, fromDate, toDate }) => {
   ).then((r) => Number(r[0]?.total ?? 0));
 };
 
-export default { create, findById, list, count, currentBalance, summary, sumByType };
+export default { create, findById, list, count, currentBalance, summary, sumByType, updateIncomeDateByReference };

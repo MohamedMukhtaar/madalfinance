@@ -16,6 +16,7 @@ import settingsRoutes from './settings.routes.js';
 import filesRoutes from './files.routes.js';
 import publicRoutes from './public.routes.js';
 import trashRoutes from './trash.routes.js';
+import accountRoutes from './account.routes.js';
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.use('/expenses', expenseRoutes);
 router.use('/income', incomeRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/reports', reportRoutes);
+router.use('/accounts', accountRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/trash', trashRoutes);
 router.use('/files', filesRoutes);

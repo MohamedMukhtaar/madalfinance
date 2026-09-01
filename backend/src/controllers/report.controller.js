@@ -1,5 +1,6 @@
 import reportService from '../services/report.service.js';
 import ApiResponse from '../utils/ApiResponse.js';
+import ApiError from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 export const incomeStatement = asyncHandler(async (req, res) => {
@@ -42,6 +43,17 @@ export const projectReport = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, data, 'Project report generated');
 });
 
+export const memberStatement = asyncHandler(async (req, res) => {
+  const memberId = Number(req.query.member_id);
+  if (!memberId) throw ApiError.badRequest('member_id is required');
+  const data = await reportService.memberStatement(
+    memberId,
+    req.query.from_date || '',
+    req.query.to_date || ''
+  );
+  return ApiResponse.success(res, data, 'Member statement generated');
+});
+
 /** Streams a generated PDF/XLSX report as a file download. */
 export const exportReport = asyncHandler(async (req, res) => {
   const { filename, filePath } = await reportService.export(
@@ -51,12 +63,48 @@ export const exportReport = asyncHandler(async (req, res) => {
       toDate: req.query.to_date || '',
       months: Number(req.query.months) || 12,
       batchId: Number(req.query.batch_id) || null,
+      memberId: Number(req.query.member_id) || null,
+      customerId: Number(req.query.customer_id) || null,
+      accId: Number(req.query.acc_id) || null,
     },
     req.query.format || 'pdf',
     req.user.id,
     req.ip
   );
   res.download(filePath, filename);
+});
+
+export const exportReportAsync = asyncHandler(async (req, res) => {
+  const job = await reportService.enqueueExport(
+    req.params.kind,
+    {
+      fromDate: req.query.from_date || '',
+      toDate: req.query.to_date || '',
+      months: Number(req.query.months) || 12,
+      batchId: Number(req.query.batch_id) || null,
+      memberId: Number(req.query.member_id) || null,
+      customerId: Number(req.query.customer_id) || null,
+      accId: Number(req.query.acc_id) || null,
+    },
+    req.query.format || 'pdf',
+    req.user.id,
+    req.ip
+  );
+  return ApiResponse.success(res, job, 'Export queued', 202);
+});
+
+export const exportJobStatus = asyncHandler(async (req, res) => {
+  const job = await reportService.getExportJob(Number(req.params.id), req.user.id);
+  return ApiResponse.success(res, job, 'Export job fetched');
+});
+
+export const downloadExportJob = asyncHandler(async (req, res) => {
+  const job = await reportService.getExportJob(Number(req.params.id), req.user.id);
+  if (job.status !== 'completed' || !job.file_path) {
+    throw ApiError.badRequest('Export is not ready for download');
+  }
+  const filename = job.file_path.split(/[/\\]/).pop();
+  res.download(job.file_path, filename);
 });
 
 export default {
@@ -68,5 +116,9 @@ export default {
   expenseByCategory,
   contributionReport,
   projectReport,
+  memberStatement,
   exportReport,
+  exportReportAsync,
+  exportJobStatus,
+  downloadExportJob,
 };

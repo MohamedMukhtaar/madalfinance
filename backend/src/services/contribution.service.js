@@ -1,10 +1,13 @@
 import contributionRepo from '../repositories/contribution.repo.js';
 import settingsRepo from '../repositories/settings.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
+import accountRepo from '../repositories/account.repo.js';
+import accountService from './account.service.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
 import { deleteStoredFile } from '../helpers/fileHelper.js';
+import dayjs from 'dayjs';
 
 export const contributionService = {
   async listBatches(filters) {
@@ -77,7 +80,7 @@ export const contributionService = {
     });
   },
 
-  async receiveDue(dueId, amount, paidDate, userId, ip) {
+  async receiveDue(dueId, amount, paidDate, accId, userId, ip) {
     return withTransaction(async (conn) => {
       const due = await contributionRepo.dueById(conn, dueId);
       if (!due) throw ApiError.notFound('Member due not found');
@@ -90,24 +93,45 @@ export const contributionService = {
         throw ApiError.badRequest(`Amount exceeds the outstanding balance of ${remaining.toFixed(2)}`);
       }
 
+      let resolvedAccId = accId ? Number(accId) : null;
+      if (!resolvedAccId) {
+        const def = await accountRepo.findDefault(conn);
+        if (def) resolvedAccId = def.acc_id;
+      }
+      if (!resolvedAccId) {
+        throw ApiError.badRequest('Account is required. Create an account or set a default account.');
+      }
+
+      const paidOn = paidDate ?? new Date();
       const newPaid = Number(due.paid_amount) + payAmount;
       const status = newPaid >= Number(due.amount) - 0.001 ? 'Paid' : 'Partial';
-      await contributionRepo.applyDuePayment(conn, dueId, newPaid, status, paidDate ?? new Date());
+      await contributionRepo.applyDuePayment(conn, dueId, newPaid, status, paidOn);
 
-      const member = await contributionRepo
-        .activeMembers(conn)
-        .then((m) => m.find((x) => x.member_id === due.member_id));
+      await contributionRepo.createDuePayment(conn, {
+        due_id: dueId,
+        amount: payAmount,
+        acc_id: resolvedAccId,
+        paid_date: paidOn,
+        created_by: userId,
+      });
+
+      const period =
+        due.month && due.year
+          ? dayjs(`${due.year}-${String(due.month).padStart(2, '0')}-01`).format('MMMM YYYY')
+          : 'contribution';
 
       await transactionRepo.create(conn, {
-        transaction_date: paidDate ?? new Date(),
+        transaction_date: paidOn,
         transaction_type: 'Income',
         reference_type: 'Member Due',
         reference_id: dueId,
-        description: `Member contribution ${due.month}/${due.year} — ${member?.member_name || `member ${due.member_id}`}`,
+        description: `Member contribution ${period} — ${due.member_name || `member ${due.member_id}`}`,
         income: payAmount,
         expense: 0,
         created_by: userId,
       });
+
+      await accountService.credit(conn, resolvedAccId, payAmount);
 
       await auditService.log({ module: 'Contribution', action: 'PAYMENT', userId, recordId: dueId, ip });
       return contributionRepo.dueById(conn, dueId);
@@ -147,6 +171,122 @@ export const contributionService = {
       recordId: dueId,
       ip,
     });
+  },
+
+  async grantCredit(memberId, data, userId, ip) {
+    return this.grantLoan(memberId, data, userId, ip);
+  },
+
+  /** Lend cash to a member — increases their loan balance (they owe the company). */
+  async grantLoan(memberId, data, userId, ip) {
+    return withTransaction(async (conn) => {
+      const amount = Number(data.amount);
+      if (!amount || amount <= 0) throw ApiError.badRequest('Loan amount must be greater than zero');
+
+      const members = await contributionRepo.activeMembers(conn);
+      const member = members.find((m) => m.member_id === Number(memberId));
+      if (!member) throw ApiError.notFound('Member not found');
+
+      let accId = data.acc_id ? Number(data.acc_id) : null;
+      if (!accId) {
+        const def = await accountRepo.findDefault(conn);
+        if (def) accId = def.acc_id;
+      }
+      if (!accId) throw ApiError.badRequest('Account is required. Select the account to lend from.');
+
+      const loanDate = data.credit_date ?? data.loan_date ?? dayjs().format('YYYY-MM-DD');
+      const description = data.notes?.trim() || `Member loan — ${member.member_name}`;
+
+      const loanId = await contributionRepo.addCreditLedger(conn, {
+        member_id: memberId,
+        amount,
+        description,
+        credit_date: loanDate,
+        due_id: null,
+        acc_id: accId,
+        created_by: userId,
+      });
+
+      await accountService.debit(conn, accId, amount);
+
+      await transactionRepo.create(conn, {
+        transaction_date: loanDate,
+        transaction_type: 'Loan',
+        reference_type: 'Member Loan',
+        reference_id: loanId,
+        description: `Member loan to ${member.member_name}`,
+        income: 0,
+        expense: amount,
+        created_by: userId,
+      });
+
+      await contributionRepo.adjustMemberCredit(conn, memberId, amount);
+
+      await auditService.log({ module: 'Contribution', action: 'LOAN', userId, recordId: memberId, ip });
+      const loanBalance = await contributionRepo.getMemberCreditBalance(conn, memberId);
+      return { member_id: memberId, loan_id: loanId, loan_balance: loanBalance, credit_balance: loanBalance };
+    });
+  },
+
+  /** Member repays part or all of an outstanding loan. */
+  async repayLoan(memberId, data, userId, ip) {
+    return withTransaction(async (conn) => {
+      const amount = Number(data.amount);
+      if (!amount || amount <= 0) throw ApiError.badRequest('Repayment amount must be greater than zero');
+
+      const members = await contributionRepo.activeMembers(conn);
+      const member = members.find((m) => m.member_id === Number(memberId));
+      if (!member) throw ApiError.notFound('Member not found');
+
+      const loanBalance = await contributionRepo.getMemberCreditBalance(conn, memberId);
+      if (loanBalance <= 0) throw ApiError.badRequest('Member has no outstanding loan balance');
+      if (amount > loanBalance + 0.01) {
+        throw ApiError.badRequest(`Amount exceeds outstanding loan (${loanBalance.toFixed(2)})`);
+      }
+
+      let accId = data.acc_id ? Number(data.acc_id) : null;
+      if (!accId) {
+        const def = await accountRepo.findDefault(conn);
+        if (def) accId = def.acc_id;
+      }
+      if (!accId) throw ApiError.badRequest('Account is required. Select the account to deposit into.');
+
+      const repayDate = data.repay_date ?? data.credit_date ?? dayjs().format('YYYY-MM-DD');
+      const description = data.notes?.trim() || `Loan repayment — ${member.member_name}`;
+
+      const entryId = await contributionRepo.addCreditLedger(conn, {
+        member_id: memberId,
+        amount: -amount,
+        description,
+        credit_date: repayDate,
+        due_id: null,
+        acc_id: accId,
+        created_by: userId,
+      });
+
+      await accountService.credit(conn, accId, amount);
+
+      await transactionRepo.create(conn, {
+        transaction_date: repayDate,
+        transaction_type: 'Loan',
+        reference_type: 'Member Loan Repayment',
+        reference_id: entryId,
+        description: `Loan repayment from ${member.member_name}`,
+        income: amount,
+        expense: 0,
+        created_by: userId,
+      });
+
+      await contributionRepo.adjustMemberCredit(conn, memberId, -amount);
+
+      await auditService.log({ module: 'Contribution', action: 'LOAN_REPAY', userId, recordId: memberId, ip });
+      const balance = await contributionRepo.getMemberCreditBalance(conn, memberId);
+      return { member_id: memberId, entry_id: entryId, loan_balance: balance, credit_balance: balance };
+    });
+  },
+
+  async applyCreditToDue(dueId, amount, userId, ip) {
+    throw ApiError.badRequest('Apply credit is no longer supported. Record a loan repayment instead.');
   },
 };
 

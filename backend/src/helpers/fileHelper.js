@@ -14,6 +14,7 @@ export const uploadDirs = Object.freeze({
   logos: path.join(env.dirs.uploads, 'logos'),
   contributions: path.join(env.dirs.uploads, 'contributions'),
   members: path.join(env.dirs.uploads, 'members'),
+  projects: path.join(env.dirs.uploads, 'projects'),
 });
 
 const MIME_MAP = Object.freeze({
@@ -24,6 +25,7 @@ const MIME_MAP = Object.freeze({
   logos: ['image/jpeg', 'image/png', 'image/webp'],
   contributions: RECEIPT_MIMES,
   members: ['image/jpeg', 'image/png', 'image/webp'],
+  projects: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
 });
 
 const extensionFor = (mime) =>

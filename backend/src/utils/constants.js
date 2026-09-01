@@ -1,8 +1,22 @@
 export const ROLES = Object.freeze({
   SUPER_ADMIN: 'Super Admin',
-  FINANCE_ADMIN: 'Finance Admin',
-  MEMBER: 'Member',
+  ADMIN: 'Admin',
 });
+
+/** Roles that can use the finance application (read + write). */
+export const APP_ACCESS = [ROLES.SUPER_ADMIN, ROLES.ADMIN];
+
+/** Roles that can manage records (create/update/delete). */
+export const MANAGE_ROLES = APP_ACCESS;
+
+/** Trash is Super Admin only. */
+export const TRASH_ACCESS = [ROLES.SUPER_ADMIN];
+
+/** Settings write (logo, company profile). Super Admin only. */
+export const SETTINGS_WRITE = [ROLES.SUPER_ADMIN];
+
+/** User & role management. Super Admin only. */
+export const USER_MANAGEMENT = [ROLES.SUPER_ADMIN];
 
 /** Module names used by the audit log. */
 export const MODULES = Object.freeze({

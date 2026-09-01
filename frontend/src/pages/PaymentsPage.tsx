@@ -1,15 +1,22 @@
 import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { CreditCard, Eye, Paperclip, Plus, Trash2, UploadCloud } from "lucide-react";
+import { CreditCard, Download, Eye, Pencil, Paperclip, Plus, Printer, Trash2, UploadCloud } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
+import { EditPaymentModal } from "@/features/payments/EditPaymentModal";
 import { useCustomers, useInvoices, usePayments, useVoidPayment } from "@/hooks/queries";
+import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
+import { useAuth } from "@/context/AuthContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
-import { matchesDateFilter } from "@/utils/dateFilter";
+import { monthRangeParams } from "@/utils/monthFilter";
+import { printPayment } from "@/utils/print";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
+import { canManage } from "@/utils/roles";
 import type { Payment } from "@/types";
 import toast from "react-hot-toast";
 
@@ -25,16 +32,16 @@ const methodStyles: Record<string, string> = {
 };
 
 export default function PaymentsPage() {
-  const { data: paymentsData, isLoading, error, refetch } = usePayments();
-  const { data: customersData } = useCustomers();
-  const { data: invoicesData } = useInvoices();
-  const payments = paymentsData?.rows ?? [];
-  const customers = customersData?.rows ?? [];
-  const invoices = invoicesData?.rows ?? [];
+  const { user } = useAuth();
+  const manage = canManage(user?.role);
   const voidMutation = useVoidPayment();
-  const { currency } = useSettings();
+  const { currency, settings } = useSettings();
+  const { month, setMonth } = useSelectedMonth();
 
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(12);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editFor, setEditFor] = useState<Payment | undefined>();
   const [detailFor, setDetailFor] = useState<Payment | undefined>();
   const [receiptFor, setReceiptFor] = useState<Payment | undefined>();
   const [receipts, setReceipts] = useState<Record<number, UploadedFile[]>>({});
@@ -43,24 +50,63 @@ export default function PaymentsPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
-  const filtered = useMemo(
-    () => payments.filter((p) => matchesDateFilter(p.paymentDate, { mode: dateMode, date: day, from, to })),
-    [payments, dateMode, day, from, to]
-  );
+  const listParams = useMemo(() => {
+    const base: Record<string, string | number> = {
+      page: pageIndex + 1,
+      perPage: pageSize,
+      sort: "created_at:desc",
+    };
+    if (dateMode === "day" && day) {
+      base.fromDate = day;
+      base.toDate = day;
+    } else if (dateMode === "range") {
+      if (from) base.fromDate = from;
+      if (to) base.toDate = to;
+    }
+    return base;
+  }, [pageIndex, pageSize, dateMode, day, from, to]);
+
+  const { data: paymentsData, isLoading, error, refetch } = usePayments(listParams);
+  const monthParams = useMemo(() => monthRangeParams(month), [month]);
+  const { data: monthPaymentsData } = usePayments({ ...monthParams, perPage: 500 });
+  const { data: customersData } = useCustomers();
+  const { data: invoicesData } = useInvoices();
+  const payments = paymentsData?.rows ?? [];
+  const totalCount = paymentsData?.total ?? 0;
+  const customers = customersData?.rows ?? [];
+  const invoices = invoicesData?.rows ?? [];
+
+  const monthPayments = monthPaymentsData?.rows ?? [];
+
+  const handlePrint = async (p: Payment) => {
+    if (!settings) {
+      toast.error("Settings not loaded");
+      return;
+    }
+    try {
+      const full = await financeService.payment(p.paymentId);
+      const customer = customers.find((c) => c.customerId === full.customerId);
+      printPayment(full, settings, customer);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to load payment for printing"));
+    }
+  };
+
+  const handleDownloadPdf = async (p: Payment) => {
+    try {
+      await financeService.downloadPaymentPdf(p.paymentId, `${p.paymentNumber}.pdf`);
+      toast.success("PDF downloaded");
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to download PDF"));
+    }
+  };
 
   const totals = useMemo(
     () => ({
-      total: payments.reduce((s, p) => s + p.amount, 0),
-      count: payments.length,
-      thisMonth: payments
-        .filter((p) => {
-          const d = new Date(p.paymentDate);
-          const now = new Date();
-          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-        })
-        .reduce((s, p) => s + p.amount, 0),
+      total: monthPayments.reduce((s, p) => s + p.amount, 0),
+      count: monthPayments.length,
     }),
-    [payments]
+    [monthPayments]
   );
 
   const columns = useMemo<ColumnDef<Payment, any>[]>(
@@ -117,13 +163,27 @@ export default function PaymentsPage() {
     [currency]
   );
 
-  const handleUploadReceipt = (p: Payment) => {
-    if ((receipts[p.paymentId] ?? []).length === 0) {
+  const handleUploadReceipt = async (p: Payment) => {
+    const files = receipts[p.paymentId] ?? [];
+    if (files.length === 0) {
       toast.error("Please select a receipt image");
       return;
     }
-    toast.success(`Receipt uploaded for ${p.paymentNumber}`);
-    setReceiptFor(undefined);
+    try {
+      for (const file of files) {
+        if (!file.file) {
+          toast.error("Invalid file — please re-select the receipt");
+          return;
+        }
+        await financeService.uploadPaymentAttachment(p.paymentId, file.file);
+      }
+      toast.success(`Receipt uploaded for ${p.paymentNumber}`);
+      setReceiptFor(undefined);
+      setReceipts((prev) => ({ ...prev, [p.paymentId]: [] }));
+      void refetch();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to upload receipt"));
+    }
   };
 
   if (error) return <ErrorState onRetry={refetch} />;
@@ -134,51 +194,110 @@ export default function PaymentsPage() {
         title="Payments"
         subtitle="Every payment collected, with receipts and references."
         actions={
-          <Button onClick={() => setModalOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
-            Record Payment
-          </Button>
+          <>
+            <MonthNavigator value={month} onChange={setMonth} />
+            {manage && (
+              <Button onClick={() => setModalOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
+                Record Payment
+              </Button>
+            )}
+          </>
         }
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard index={0} loading={isLoading} label="Total Collected" value={formatCurrency(totals.total, currency)} icon={<CreditCard className="h-5 w-5" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
-        <StatCard index={1} loading={isLoading} label="This Month" value={formatCurrency(totals.thisMonth, currency)} icon={<CreditCard className="h-5 w-5" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
-        <StatCard index={2} loading={isLoading} label="Payments" value={String(totals.count)} icon={<CreditCard className="h-5 w-5" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
-      </div>
+      <StatCardsGrid className="sm:grid-cols-3 xl:grid-cols-3">
+        <StatCard index={0} loading={isLoading} label="Collected" value={formatCurrency(totals.total, currency)} icon={<CreditCard className="h-4 w-4" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
+        <StatCard index={1} loading={isLoading} label="Payments" value={String(totals.count)} icon={<CreditCard className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
+        <StatCard index={2} loading={isLoading} label="Average" value={formatCurrency(totals.count ? totals.total / totals.count : 0, currency)} icon={<CreditCard className="h-4 w-4" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
+      </StatCardsGrid>
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={payments}
         loading={isLoading}
         searchPlaceholder="Search payments…"
+        serverSide
+        totalCount={totalCount}
+        pageIndex={pageIndex}
+        pageSize={pageSize}
+        onPageChange={setPageIndex}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPageIndex(0);
+        }}
+        renderMobileCard={(row) => (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs font-bold text-brand-600">{row.paymentNumber}</span>
+              <Badge className={methodStyles[row.paymentMethod]}>{row.paymentMethod}</Badge>
+            </div>
+            <p className="font-semibold text-slate-800 dark:text-slate-100">{row.customerName}</p>
+            <p className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+              +{formatCurrency(row.amount, currency)}
+            </p>
+            <p className="text-xs text-slate-500">{formatDate(row.paymentDate)}</p>
+          </div>
+        )}
         actions={(row) => [
           { label: "View Details", icon: <Eye className="h-4 w-4" />, onClick: () => setDetailFor(row) },
-          { label: "Upload Receipt", icon: <UploadCloud className="h-4 w-4" />, onClick: () => { setReceipts((r) => ({ ...r, [row.paymentId]: [] })); setReceiptFor(row); } },
-          { divider: true },
+          { label: "Print", icon: <Printer className="h-4 w-4" />, onClick: () => handlePrint(row) },
           {
-            label: "Void / Delete",
-            icon: <Trash2 className="h-4 w-4" />,
-            danger: true,
-            onClick: async () => {
-              const reason = await promptDeleteReason({
-                title: `Void ${row.paymentNumber}?`,
-                text: "This payment will be voided, reversed on invoices, and moved to Trash.",
-                confirmText: "Void payment",
-              });
-              if (reason) voidMutation.mutate({ id: row.paymentId, reason });
+            label: "Download PDF",
+            icon: <Download className="h-4 w-4" />,
+            onClick: () => {
+              void handleDownloadPdf(row);
             },
           },
+          ...(manage
+            ? [
+                { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => setEditFor(row) },
+                {
+                  label: "Upload Receipt",
+                  icon: <UploadCloud className="h-4 w-4" />,
+                  onClick: () => {
+                    setReceipts((r) => ({ ...r, [row.paymentId]: [] }));
+                    setReceiptFor(row);
+                  },
+                },
+                { divider: true },
+                {
+                  label: "Void / Delete",
+                  icon: <Trash2 className="h-4 w-4" />,
+                  danger: true,
+                  onClick: async () => {
+                    const reason = await promptDeleteReason({
+                      title: `Void ${row.paymentNumber}?`,
+                      text: "This payment will be voided, reversed on invoices, and moved to Trash.",
+                      confirmText: "Void payment",
+                    });
+                    if (reason) voidMutation.mutate({ id: row.paymentId, reason });
+                  },
+                },
+              ]
+            : []),
         ]}
         toolbar={
           <DateRangeFilter
             mode={dateMode}
-            onModeChange={setDateMode}
+            onModeChange={(mode) => {
+              setDateMode(mode);
+              setPageIndex(0);
+            }}
             date={day}
             from={from}
             to={to}
-            onDateChange={setDay}
-            onFromChange={setFrom}
-            onToChange={setTo}
+            onDateChange={(value) => {
+              setDay(value);
+              setPageIndex(0);
+            }}
+            onFromChange={(value) => {
+              setFrom(value);
+              setPageIndex(0);
+            }}
+            onToChange={(value) => {
+              setTo(value);
+              setPageIndex(0);
+            }}
           />
         }
       />
@@ -190,6 +309,8 @@ export default function PaymentsPage() {
         invoices={invoices}
       />
 
+      <EditPaymentModal open={!!editFor} onClose={() => setEditFor(undefined)} payment={editFor} />
+
       {/* Payment details modal */}
       <Modal
         open={!!detailFor}
@@ -197,6 +318,22 @@ export default function PaymentsPage() {
         title={detailFor?.paymentNumber}
         subtitle={detailFor?.customerName}
         size="md"
+        footer={
+          detailFor ? (
+            <>
+              <Button variant="secondary" onClick={() => setDetailFor(undefined)}>Close</Button>
+              <Button variant="secondary" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => { setEditFor(detailFor); setDetailFor(undefined); }}>
+                Edit
+              </Button>
+              <Button variant="secondary" leftIcon={<Printer className="h-4 w-4" />} onClick={() => handlePrint(detailFor)}>
+                Print
+              </Button>
+              <Button leftIcon={<Download className="h-4 w-4" />} onClick={() => void handleDownloadPdf(detailFor)}>
+                Download PDF
+              </Button>
+            </>
+          ) : undefined
+        }
       >
         {detailFor && (
           <div className="grid grid-cols-2 gap-3 text-sm">

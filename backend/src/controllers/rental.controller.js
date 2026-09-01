@@ -1,5 +1,6 @@
 import rentalService from '../services/rental.service.js';
 import ApiResponse from '../utils/ApiResponse.js';
+import ApiError from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { parseListQuery, paginationMeta } from '../helpers/queryHelper.js';
 
@@ -39,13 +40,24 @@ export const setStatus = asyncHandler(async (req, res) => {
 
 export const generateInvoice = asyncHandler(async (req, res) => {
   const force = req.body?.force === true || req.query.force === 'true' || req.query.force === '1';
-  const invoice = await rentalService.generateMonthlyInvoice(Number(req.params.id), req.user.id, { force });
+  const month = req.body?.month ? Number(req.body.month) : undefined;
+  const year = req.body?.year ? Number(req.body.year) : undefined;
+  const invoice = await rentalService.generateMonthlyInvoice(Number(req.params.id), req.user.id, {
+    force,
+    month,
+    year,
+  });
   return ApiResponse.success(res, invoice, 'Rental invoice generated', 201);
 });
 
 export const chargeAll = asyncHandler(async (req, res) => {
-  const force = req.body?.force === true || req.query.force === 'true' || req.query.force === '1';
-  const result = await rentalService.processDueBillings(req.user.id, { force });
+  const force = req.body?.force !== false;
+  const month = Number(req.body.month);
+  const year = Number(req.body.year);
+  if (!month || month < 1 || month > 12 || !year || year < 2000) {
+    throw ApiError.badRequest('Valid billing month and year are required');
+  }
+  const result = await rentalService.processDueBillings(req.user.id, { force, month, year });
   return ApiResponse.success(res, result, 'Rental invoices processed');
 });
 

@@ -1,14 +1,16 @@
-﻿import { useMemo, useState, startTransition } from "react";
+﻿import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { History, Paperclip, Receipt, UsersRound, Wallet, AlertTriangle } from "lucide-react";
+import { History, Paperclip, Receipt, UsersRound, Wallet, AlertTriangle, BadgeDollarSign } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import {
   Badge,
   StatCard,
+  StatCardsGrid,
+  MonthNavigator,
   Modal,
   Input,
   Select,
@@ -17,11 +19,14 @@ import {
   FileUpload,
   type UploadedFile,
 } from "@/components/ui";
-import { useChargeMembers, useDueBatch, useDues, useReceiveDue } from "@/hooks/queries";
+import { useAccounts, useChargeMembers, useDefaultAccount, useDueBatch, useDues, useGrantMemberCredit, useReceiveDue, useRepayMemberLoan } from "@/hooks/queries";
+import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { financeService } from "@/services/finance";
 import { DUE_STATUS_STYLES } from "@/utils/constants";
-import { formatCurrency, monthName } from "@/utils/format";
+import { formatCurrency, monthName, todayISO, formatAccountOptionLabel } from "@/utils/format";
+import { formatMonthLabel } from "@/utils/monthFilter";
+import { dateTimeColumns } from "@/utils/tableHelpers";
 import { cn } from "@/utils/cn";
 import type { DueBatch, MemberDue } from "@/types";
 
@@ -38,20 +43,32 @@ export default function ContributionsPage() {
   const batches = data?.rows ?? [];
   const chargeMutation = useChargeMembers();
   const receiveMutation = useReceiveDue();
+  const grantCreditMutation = useGrantMemberCredit();
+  const repayLoanMutation = useRepayMemberLoan();
   const { currency, settings } = useSettings();
+  const { month, setMonth } = useSelectedMonth();
+  const { data: accounts = [] } = useAccounts();
+  const { data: defaultAccount } = useDefaultAccount();
 
-  const [selectedBatch, setSelectedBatch] = useState<string>("latest");
   const [chargeOpen, setChargeOpen] = useState(false);
   const [receiveFor, setReceiveFor] = useState<MemberDue | undefined>();
   const [receiveAmount, setReceiveAmount] = useState<number>(0);
+  const [receiveAccId, setReceiveAccId] = useState<string>("");
   const [receiptFiles, setReceiptFiles] = useState<UploadedFile[]>([]);
   const [historyFor, setHistoryFor] = useState<MemberDue | undefined>();
+  const [creditFor, setCreditFor] = useState<MemberDue | undefined>();
+  const [creditAmount, setCreditAmount] = useState<number>(0);
+  const [creditNotes, setCreditNotes] = useState("");
+  const [creditAccId, setCreditAccId] = useState<string>("");
+  const [repayFor, setRepayFor] = useState<MemberDue | undefined>();
+  const [repayAmount, setRepayAmount] = useState<number>(0);
+  const [repayNotes, setRepayNotes] = useState("");
+  const [repayAccId, setRepayAccId] = useState<string>("");
 
-  const activeBatchMeta = useMemo(() => {
-    if (!batches.length) return undefined;
-    if (selectedBatch === "latest") return batches[0];
-    return batches.find((b) => String(b.batchId) === selectedBatch) ?? batches[0];
-  }, [batches, selectedBatch]);
+  const activeBatchMeta = useMemo(
+    () => batches.find((b) => b.month === month.month && b.year === month.year),
+    [batches, month]
+  );
 
   const { data: batchDetail, isLoading: duesLoading } = useDueBatch(activeBatchMeta?.batchId);
   const activeBatch = useMemo((): DueBatch | undefined => {
@@ -121,6 +138,18 @@ export default function ContributionsPage() {
           </span>
         ),
       }),
+      columnHelper.accessor("creditBalance", {
+        header: "Loan owed",
+        cell: (info) => {
+          const val = Number(info.getValue() ?? 0);
+          return (
+            <span className={cn("font-mono text-xs font-semibold", val > 0 ? "text-brand-600 dark:text-brand-400" : "text-slate-400")}>
+              {val > 0 ? formatCurrency(val, currency) : "—"}
+            </span>
+          );
+        },
+      }),
+      ...dateTimeColumns<MemberDue>("paidDate", "Paid on", (d) => d.paidDate, (d) => d.paidDate),
       columnHelper.accessor("status", {
         header: "Status",
         cell: (info) => {
@@ -142,30 +171,7 @@ export default function ContributionsPage() {
       columnHelper.display({
         id: "actions",
         header: "Actions",
-        cell: (info) => {
-          const due = info.row.original;
-          const paid = due.balance <= 0;
-          return (
-            <div className="flex items-center justify-end gap-1.5">
-              <Button
-                size="sm"
-                variant={paid ? "secondary" : "success"}
-                disabled={paid}
-                onClick={() => {
-                  setReceiveFor(due);
-                  setReceiveAmount(due.balance);
-                  setReceiptFiles([]);
-                }}
-                leftIcon={<Wallet className="h-3.5 w-3.5" />}
-              >
-                {paid ? "Paid" : "Receive"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setHistoryFor(due)}>
-                <History className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          );
-        },
+        cell: () => null,
       }),
     ],
     [currency]
@@ -174,14 +180,90 @@ export default function ContributionsPage() {
   const closeReceive = () => {
     setReceiveFor(undefined);
     setReceiptFiles([]);
+    setReceiveAccId("");
+  };
+
+  const openReceive = (due: MemberDue) => {
+    const defAcc =
+      defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    setReceiveFor(due);
+    setReceiveAmount(due.balance);
+    setReceiveAccId(defAcc ? String(defAcc) : "");
+    setReceiptFiles([]);
+  };
+
+  const closeCredit = () => {
+    setCreditFor(undefined);
+    setCreditAmount(0);
+    setCreditNotes("");
+    setCreditAccId("");
+  };
+
+  const openCredit = (due: MemberDue) => {
+    const defAcc =
+      defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    setCreditFor(due);
+    setCreditAmount(0);
+    setCreditNotes("");
+    setCreditAccId(defAcc ? String(defAcc) : "");
+  };
+
+  const closeRepay = () => {
+    setRepayFor(undefined);
+    setRepayAmount(0);
+    setRepayNotes("");
+    setRepayAccId("");
+  };
+
+  const openRepay = (due: MemberDue) => {
+    const defAcc =
+      defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    const loanOwed = Number(due.creditBalance ?? 0);
+    setRepayFor(due);
+    setRepayAmount(loanOwed);
+    setRepayNotes("");
+    setRepayAccId(defAcc ? String(defAcc) : "");
+  };
+
+  const dueActions = (due: MemberDue) => {
+    const paid = due.balance <= 0;
+    const loanOwed = Number(due.creditBalance ?? 0);
+    return [
+      {
+        label: paid ? "Paid" : "Receive",
+        icon: <Wallet className="h-4 w-4" />,
+        disabled: paid,
+        onClick: () => openReceive(due),
+      },
+      ...(loanOwed > 0
+        ? [
+            {
+              label: "Repay loan",
+              icon: <BadgeDollarSign className="h-4 w-4" />,
+              onClick: () => openRepay(due),
+            },
+          ]
+        : []),
+      {
+        label: "Grant loan",
+        icon: <BadgeDollarSign className="h-4 w-4" />,
+        onClick: () => openCredit(due),
+      },
+      {
+        label: "History",
+        icon: <History className="h-4 w-4" />,
+        onClick: () => setHistoryFor(due),
+      },
+    ];
   };
 
   const handleReceive = () => {
-    if (!receiveFor) return;
+    if (!receiveFor || !receiveAccId) return;
     receiveMutation.mutate(
       {
         dueId: receiveFor.dueId,
         amount: receiveAmount,
+        accId: Number(receiveAccId),
         receipt: receiptFiles[0]?.file ?? null,
       },
       { onSuccess: () => closeReceive() }
@@ -196,19 +278,22 @@ export default function ContributionsPage() {
         title="Member Contributions"
         subtitle="Monthly dues from Madal ICT co-founders."
         actions={
-          <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
-            Charge Members
-          </Button>
+          <>
+            <MonthNavigator value={month} onChange={setMonth} />
+            <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
+              Charge Members
+            </Button>
+          </>
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <StatCardsGrid>
         <StatCard
           index={0}
           loading={isLoading || duesLoading}
           label="Expected"
           value={formatCurrency(batchStats.expected || Number(activeBatchMeta?.expectedAmount ?? 0), currency)}
-          icon={<Receipt className="h-5 w-5" />}
+          icon={<Receipt className="h-4 w-4" />}
           iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
         />
         <StatCard
@@ -216,7 +301,7 @@ export default function ContributionsPage() {
           loading={isLoading || duesLoading}
           label="Collected"
           value={formatCurrency(batchStats.collected || Number(activeBatchMeta?.collectedAmount ?? 0), currency)}
-          icon={<Wallet className="h-5 w-5" />}
+          icon={<Wallet className="h-4 w-4" />}
           iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
         />
         <StatCard
@@ -224,7 +309,7 @@ export default function ContributionsPage() {
           loading={isLoading || duesLoading}
           label="Pending"
           value={formatCurrency(batchStats.pending + batchStats.partial, currency)}
-          icon={<UsersRound className="h-5 w-5" />}
+          icon={<UsersRound className="h-4 w-4" />}
           iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
         />
         <StatCard
@@ -232,33 +317,48 @@ export default function ContributionsPage() {
           loading={isLoading || duesLoading}
           label="Overdue"
           value={formatCurrency(batchStats.overdue, currency)}
-          icon={<AlertTriangle className="h-5 w-5" />}
+          icon={<AlertTriangle className="h-4 w-4" />}
           iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
         />
-      </div>
+      </StatCardsGrid>
 
+      {!activeBatchMeta ? (
+        <EmptyState
+          title="No contributions for this month"
+          description={`Charge members to generate dues for ${formatMonthLabel(month)}.`}
+          action={
+            <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
+              Charge Members
+            </Button>
+          }
+        />
+      ) : (
       <DataTable
         columns={columns}
         data={activeBatch?.dues ?? []}
         loading={isLoading || duesLoading}
         searchPlaceholder="Search members…"
-        toolbar={
-          <Select
-            value={selectedBatch}
-            onChange={(e) => startTransition(() => setSelectedBatch(e.target.value))}
-            options={[
-              { value: "latest", label: "Latest month" },
-              ...batches.map((b: DueBatch) => ({
-                value: String(b.batchId),
-                label: `${monthName(b.month)} ${b.year}`,
-              })),
-            ]}
-            className="w-44"
-          />
-        }
-        emptyTitle="No contributions"
-        emptyDescription="Charge members to generate this month's dues."
+        emptyTitle="No members in batch"
+        emptyDescription="This batch has no member dues."
+        actions={(due) => dueActions(due)}
+        renderMobileCard={(due) => (
+          <div className="space-y-1">
+            <p className="font-semibold text-slate-800 dark:text-slate-100">{due.memberName}</p>
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className="font-mono text-slate-600 dark:text-slate-300">
+                Due {formatCurrency(due.amount, currency)}
+              </span>
+              <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                Bal {formatCurrency(due.balance, currency)}
+              </span>
+            </div>
+            <Badge className={DUE_STATUS_STYLES[due.status]} dot>
+              {due.status}
+            </Badge>
+          </div>
+        )}
       />
+      )}
 
       <ChargeMembersModal
         open={chargeOpen}
@@ -288,7 +388,7 @@ export default function ContributionsPage() {
               Cancel
             </Button>
             <Button
-              disabled={!receiveFor || receiveAmount <= 0 || receiveAmount > (receiveFor?.balance ?? 0)}
+              disabled={!receiveFor || !receiveAccId || receiveAmount <= 0 || receiveAmount > (receiveFor?.balance ?? 0)}
               loading={receiveMutation.isPending}
               onClick={handleReceive}
             >
@@ -326,6 +426,19 @@ export default function ContributionsPage() {
               value={receiveAmount}
               onChange={(e) => setReceiveAmount(Number(e.target.value))}
             />
+            <Select
+              label="Deposit to account"
+              required
+              value={receiveAccId}
+              onChange={(e) => setReceiveAccId(e.target.value)}
+              options={[
+                { value: "", label: accounts.length ? "Select account…" : "No accounts — create one first" },
+                ...accounts.map((a) => ({
+                  value: String(a.accId),
+                  label: formatAccountOptionLabel(a, currency),
+                })),
+              ]}
+            />
             <div>
               <p className="mb-1.5 text-xs font-semibold text-ink-soft">Payment proof (image / PDF)</p>
               <FileUpload
@@ -335,6 +448,149 @@ export default function ContributionsPage() {
                 onChange={setReceiptFiles}
               />
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!creditFor}
+        onClose={closeCredit}
+        title="Grant Member Loan"
+        subtitle={creditFor?.memberName}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeCredit}>Cancel</Button>
+            <Button
+              loading={grantCreditMutation.isPending}
+              disabled={!creditFor || !creditAccId || creditAmount <= 0}
+              onClick={() => {
+                if (!creditFor || !creditAccId) return;
+                grantCreditMutation.mutate(
+                  {
+                    memberId: creditFor.memberId,
+                    amount: creditAmount,
+                    accId: Number(creditAccId),
+                    notes: creditNotes || undefined,
+                    creditDate: todayISO(),
+                  },
+                  { onSuccess: () => closeCredit() }
+                );
+              }}
+            >
+              Grant loan
+            </Button>
+          </>
+        }
+      >
+        {creditFor && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-brand-50 p-4 dark:bg-brand-500/10">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Outstanding loan</p>
+              <p className="text-lg font-bold text-brand-700 dark:text-brand-300">
+                {formatCurrency(Number(creditFor.creditBalance ?? 0), currency)}
+              </p>
+            </div>
+            <Input
+              label="Loan amount"
+              type="number"
+              step="0.01"
+              min={0.01}
+              value={creditAmount || ""}
+              onChange={(e) => setCreditAmount(Number(e.target.value))}
+              placeholder="Amount to lend member"
+            />
+            <Select
+              label="Lend from account"
+              required
+              value={creditAccId}
+              onChange={(e) => setCreditAccId(e.target.value)}
+              options={[
+                { value: "", label: accounts.length ? "Select account…" : "No accounts — create one first" },
+                ...accounts.map((a) => ({
+                  value: String(a.accId),
+                  label: formatAccountOptionLabel(a, currency),
+                })),
+              ]}
+            />
+            <Input
+              label="Notes"
+              value={creditNotes}
+              onChange={(e) => setCreditNotes(e.target.value)}
+              placeholder="Reason for loan (optional)"
+            />
+            <p className="text-xs text-slate-400">
+              Cash leaves the selected account. The member owes this amount back — it is recorded as a loan, not an expense.
+            </p>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!repayFor}
+        onClose={closeRepay}
+        title="Repay Member Loan"
+        subtitle={repayFor?.memberName}
+        footer={
+          <>
+            <Button variant="secondary" onClick={closeRepay}>Cancel</Button>
+            <Button
+              loading={repayLoanMutation.isPending}
+              disabled={!repayFor || !repayAccId || repayAmount <= 0}
+              onClick={() => {
+                if (!repayFor || !repayAccId) return;
+                repayLoanMutation.mutate(
+                  {
+                    memberId: repayFor.memberId,
+                    amount: repayAmount,
+                    accId: Number(repayAccId),
+                    notes: repayNotes || undefined,
+                    repayDate: todayISO(),
+                  },
+                  { onSuccess: () => closeRepay() }
+                );
+              }}
+            >
+              Record repayment
+            </Button>
+          </>
+        }
+      >
+        {repayFor && (
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-500/10">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Loan balance</p>
+              <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">
+                {formatCurrency(Number(repayFor.creditBalance ?? 0), currency)}
+              </p>
+            </div>
+            <Input
+              label="Repayment amount"
+              type="number"
+              step="0.01"
+              min={0.01}
+              max={Number(repayFor.creditBalance ?? 0)}
+              value={repayAmount || ""}
+              onChange={(e) => setRepayAmount(Number(e.target.value))}
+            />
+            <Select
+              label="Deposit to account"
+              required
+              value={repayAccId}
+              onChange={(e) => setRepayAccId(e.target.value)}
+              options={[
+                { value: "", label: accounts.length ? "Select account…" : "No accounts — create one first" },
+                ...accounts.map((a) => ({
+                  value: String(a.accId),
+                  label: formatAccountOptionLabel(a, currency),
+                })),
+              ]}
+            />
+            <Input
+              label="Notes"
+              value={repayNotes}
+              onChange={(e) => setRepayNotes(e.target.value)}
+              placeholder="Repayment notes (optional)"
+            />
           </div>
         )}
       </Modal>
@@ -417,7 +673,7 @@ function ChargeMembersModal({
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Select
             label="Month"
             options={Array.from({ length: 12 }, (_, i) => ({

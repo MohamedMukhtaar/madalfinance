@@ -65,7 +65,7 @@ export const customerService = {
         delete_reason: deleteReason,
         deleted_by: userId,
       });
-      await auditService.log({ module: 'Customer', action: 'DELETE', userId, recordId: id, ip });
+      await auditService.log({ module: 'Customer', action: 'DELETE', userId, recordId: id, ip, details: deleteReason });
       return { customer_id: id };
     });
   },

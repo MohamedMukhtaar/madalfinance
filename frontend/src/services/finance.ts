@@ -13,6 +13,7 @@ import type {
   Project,
   RentalBilling,
   User,
+  AuditLog,
 } from "@/types";
 
 /**
@@ -57,6 +58,7 @@ const toQuery = (params?: ListParams): Record<string, unknown> | undefined => {
     categoryId: "category_id",
     customerId: "customer_id",
     memberId: "member_id",
+    accId: "acc_id",
     batchId: "batch_id",
     projectType: "project_type",
     projectTypeId: "project_type_id",
@@ -207,9 +209,64 @@ export const financeService = {
     return asPaged(res);
   },
 
-  async auditLogs(params?: ListParams): Promise<Paged<Record<string, unknown>>> {
-    const res = await authApi.get<Record<string, unknown>[]>("/users/audit-logs", toQuery(params));
-    return asPaged(res);
+  async roles(): Promise<import("@/types").AppRoleRecord[]> {
+    const res = await authApi.get<import("@/types").AppRoleRecord[]>("/users/roles");
+    return unwrap(res);
+  },
+
+  async createRole(data: { roleName: string }): Promise<import("@/types").AppRoleRecord> {
+    const res = await authApi.post<import("@/types").AppRoleRecord>("/users/roles", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateRole(id: number, data: { roleName: string }): Promise<import("@/types").AppRoleRecord> {
+    const res = await authApi.put<import("@/types").AppRoleRecord>(`/users/roles/${id}`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async deleteRole(id: number): Promise<void> {
+    await authApi.delete(`/users/roles/${id}`);
+  },
+
+  async createUser(data: {
+    username: string;
+    password: string;
+    fullName: string;
+    role: string;
+    phone?: string;
+    email?: string;
+    status?: "active" | "inactive";
+  }): Promise<User> {
+    const res = await authApi.post<User>("/users", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateUser(
+    id: number,
+    data: {
+      username?: string;
+      password?: string;
+      fullName?: string;
+      role?: string;
+      phone?: string;
+      email?: string;
+      status?: "active" | "inactive";
+    }
+  ): Promise<User> {
+    const res = await authApi.put<User>(`/users/${id}`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async deleteUser(id: number, reason: string): Promise<void> {
+    await authApi.delete(`/users/${id}`, { data: { reason } });
+  },
+
+  async auditLogs(params?: ListParams): Promise<Paged<AuditLog>> {
+    const res = await api.get<ApiEnvelope<AuditLog[]>>("/users/audit-logs", {
+      params: toQuery(params),
+      timeout: 45000,
+    });
+    return asPaged(res.data);
   },
 
   async members(): Promise<Member[]> {
@@ -224,8 +281,6 @@ export const financeService = {
   },
 
   async createMember(data: {
-    username: string;
-    password: string;
     fullName: string;
     phone?: string;
     email?: string;
@@ -330,6 +385,22 @@ export const financeService = {
     await authApi.delete(`/projects/${id}`, { reason });
   },
 
+  projectLogoUrl(projectId: number, filename: string): string {
+    return `/api/files/projects/${encodeURIComponent(filename)}`;
+  },
+
+  projectAttachmentUrl(projectId: number, filename: string): string {
+    return `/api/files/projects/${encodeURIComponent(filename)}`;
+  },
+
+  async uploadProjectLogo(id: number, file: File, onProgress?: (p: number) => void): Promise<Project> {
+    return this.upload<Project>(`/projects/${id}/logo`, file, onProgress);
+  },
+
+  async uploadProjectAttachment(id: number, file: File, onProgress?: (p: number) => void): Promise<Project> {
+    return this.upload<Project>(`/projects/${id}/attachment`, file, onProgress);
+  },
+
   /* ------------------------------ CONTRACTS ------------------------------ */
   async contracts(params?: ListParams): Promise<Paged<import("@/types").Contract>> {
     const res = await authApi.get<import("@/types").Contract[]>("/contracts", toQuery(params));
@@ -359,18 +430,34 @@ export const financeService = {
     return asPaged(res);
   },
 
+  async createRental(data: {
+    projectId: number;
+    monthlyAmount: number;
+    setupFee?: number;
+    billingDay: number;
+    nextBillingDate?: string;
+  }): Promise<RentalBilling> {
+    const res = await authApi.post<RentalBilling>("/rentals", toSnakeCase(data));
+    return unwrap(res);
+  },
+
   async setRentalStatus(id: number, status: string): Promise<void> {
     await authApi.patch(`/rentals/${id}/status`, { status });
   },
 
-  async generateRentalInvoice(id: number, options?: { force?: boolean }): Promise<Invoice> {
+  async generateRentalInvoice(
+    id: number,
+    options?: { force?: boolean; month?: number; year?: number }
+  ): Promise<Invoice> {
     const res = await authApi.post<Invoice>(`/rentals/${id}/generate-invoice`, {
       force: options?.force ?? true,
+      ...(options?.month ? { month: options.month } : {}),
+      ...(options?.year ? { year: options.year } : {}),
     });
     return unwrap(res);
   },
 
-  async chargeAllRentals(options?: { force?: boolean }): Promise<{
+  async chargeAllRentals(options?: { force?: boolean; month: number; year: number }): Promise<{
     generated: number;
     skipped: number;
     errors: Array<{ billingId: number; message: string }>;
@@ -379,7 +466,11 @@ export const financeService = {
       generated: number;
       skipped: number;
       errors: Array<{ billingId: number; message: string }>;
-    }>("/rentals/charge-all", { force: options?.force ?? true });
+    }>("/rentals/charge-all", {
+      force: options?.force ?? true,
+      month: options!.month,
+      year: options!.year,
+    });
     return unwrap(res);
   },
 
@@ -454,6 +545,30 @@ export const financeService = {
     return `/api/invoices/${id}/pdf`;
   },
 
+  async paymentPdfUrl(id: number): Promise<string> {
+    return `/api/payments/${id}/pdf`;
+  },
+
+  async downloadPaymentPdf(id: number, filename?: string): Promise<void> {
+    const response = await api.get(`/payments/${id}/pdf`, { responseType: "blob" });
+    const blobUrl = URL.createObjectURL(response.data);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename ?? `payment-${id}.pdf`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
+  },
+
+  async downloadInvoicePdf(id: number, filename?: string): Promise<void> {
+    const response = await api.get(`/invoices/${id}/pdf`, { responseType: "blob" });
+    const blobUrl = URL.createObjectURL(response.data);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename ?? `invoice-${id}.pdf`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
+  },
+
   async uploadInvoiceAttachment(id: number, file: File, onProgress?: (p: number) => void) {
     return this.upload(`/invoices/${id}/attachments`, file, onProgress);
   },
@@ -462,14 +577,81 @@ export const financeService = {
     await authApi.delete(`/invoices/${id}/attachments/${attachmentId}`);
   },
 
+  /* ------------------------------ ACCOUNTS ------------------------------ */
+  async accounts(): Promise<import("@/types").Account[]> {
+    const res = await authApi.get<import("@/types").Account[]>("/accounts");
+    return unwrap(res);
+  },
+
+  async defaultAccount(): Promise<import("@/types").Account | null> {
+    const res = await authApi.get<import("@/types").Account | null>("/accounts/default");
+    return unwrap(res);
+  },
+
+  async createAccount(data: {
+    number: string;
+    institution: string;
+    balance?: number;
+    isDefault?: boolean;
+  }): Promise<import("@/types").Account> {
+    const res = await authApi.post<import("@/types").Account>("/accounts", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateAccount(id: number, data: { number: string; institution: string }): Promise<import("@/types").Account> {
+    const res = await authApi.patch<import("@/types").Account>(`/accounts/${id}`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async setDefaultAccount(id: number): Promise<import("@/types").Account> {
+    const res = await authApi.patch<import("@/types").Account>(`/accounts/${id}/default`);
+    return unwrap(res);
+  },
+
+  async transferAccount(data: {
+    fromAccId: number;
+    toAccId: number;
+    amount: number;
+    transferDate: string;
+    notes?: string;
+  }): Promise<void> {
+    await authApi.post("/accounts/transfer", toSnakeCase(data));
+  },
+
+  async accountTransfers(params?: { fromDate?: string; toDate?: string; accId?: number }): Promise<import("@/types").AccountTransfer[]> {
+    const res = await authApi.get<import("@/types").AccountTransfer[]>("/accounts/transfers", toQuery(params));
+    return unwrap(res);
+  },
+
+  async accountStatement(
+    id: number,
+    params?: { fromDate?: string; toDate?: string }
+  ): Promise<{ account: import("@/types").Account; movements: import("@/types").AccountMovement[] }> {
+    const res = await authApi.get<{ account: import("@/types").Account; movements: import("@/types").AccountMovement[] }>(
+      `/accounts/${id}/statement`,
+      toQuery(params)
+    );
+    return unwrap(res);
+  },
+
   /* ------------------------------ PAYMENTS ------------------------------ */
   async payments(params?: ListParams): Promise<Paged<Payment>> {
     const res = await authApi.get<Payment[]>("/payments", toQuery(params));
     return asPaged(res);
   },
 
+  async payment(id: number): Promise<Payment> {
+    const res = await authApi.get<Payment>(`/payments/${id}`);
+    return unwrap(res);
+  },
+
   async createPayment(data: unknown): Promise<Payment> {
     const res = await authApi.post<Payment>("/payments", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updatePayment(id: number, data: unknown): Promise<Payment> {
+    const res = await authApi.put<Payment>(`/payments/${id}`, toSnakeCase(data));
     return unwrap(res);
   },
 
@@ -582,8 +764,32 @@ export const financeService = {
         paidAmount: Number(d.paidAmount ?? 0),
         amount: Number(d.amount ?? 0),
         balance: Math.max(0, Number(d.amount ?? 0) - Number(d.paidAmount ?? 0)),
+        creditBalance: Number((d as MemberDue & { creditBalance?: number }).creditBalance ?? 0),
       })),
     };
+  },
+
+  async grantMemberCredit(memberId: number, data: { amount: number; accId?: number; notes?: string; creditDate?: string }) {
+    const res = await authApi.post<{ loanBalance: number; creditBalance: number }>(
+      `/contributions/members/${memberId}/credit`,
+      toSnakeCase(data)
+    );
+    return unwrap(res);
+  },
+
+  async repayMemberLoan(memberId: number, data: { amount: number; accId?: number; notes?: string; repayDate?: string }) {
+    const res = await authApi.post<{ loanBalance: number; creditBalance: number }>(
+      `/contributions/members/${memberId}/loan/repay`,
+      toSnakeCase(data)
+    );
+    return unwrap(res);
+  },
+
+  async applyMemberCredit(dueId: number, amount?: number) {
+    const res = await authApi.post<MemberDue>(`/contributions/dues/${dueId}/apply-credit`, {
+      ...(amount !== undefined ? { amount } : {}),
+    });
+    return unwrap(res);
   },
 
   async generateBatch(month: number, year: number, defaultAmount: number): Promise<DueBatch> {
@@ -595,8 +801,11 @@ export const financeService = {
     return unwrap(res);
   },
 
-  async receiveDue(dueId: number, amount: number): Promise<MemberDue> {
-    const res = await authApi.post<MemberDue>(`/contributions/dues/${dueId}/receive`, { amount });
+  async receiveDue(dueId: number, amount: number, accId?: number): Promise<MemberDue> {
+    const res = await authApi.post<MemberDue>(`/contributions/dues/${dueId}/receive`, {
+      amount,
+      ...(accId ? { acc_id: accId } : {}),
+    });
     return unwrap(res);
   },
 
@@ -667,6 +876,11 @@ export const financeService = {
     return unwrap(res);
   },
 
+  async memberStatement(params: ListParams & { memberId: number }): Promise<import("@/types").MemberStatement> {
+    const res = await authApi.get<import("@/types").MemberStatement>("/reports/member-statement", toQuery(params));
+    return unwrap(res);
+  },
+
   async exportReportUrl(kind: string, format: "pdf" | "xlsx", params?: ListParams): Promise<string> {
     const query = new URLSearchParams();
     query.set("format", format);
@@ -698,6 +912,19 @@ export const financeService = {
     return unwrap(res);
   },
 
+  async uploadCompanyLogo(file: File, onProgress?: (p: number) => void): Promise<AppSettings> {
+    return this.upload<AppSettings>("/settings/logo", file, onProgress);
+  },
+
+  async removeCompanyLogo(): Promise<AppSettings> {
+    const res = await authApi.delete<AppSettings>("/settings/logo");
+    return unwrap(res);
+  },
+
+  companyLogoUrl(filename: string): string {
+    return this.fileUrl("logos", filename);
+  },
+
   /* ------------------------------ UPLOADS ------------------------------ */
   async upload<T = unknown>(
     url: string,
@@ -713,6 +940,16 @@ export const financeService = {
   /** Authenticated file URL for downloads (proxied via Vite in development). */
   fileUrl(type: string, filename: string): string {
     return `/api/files/${type}/${encodeURIComponent(filename)}`;
+  },
+
+  /** Fetch an authenticated file as a Blob (used for inline preview in <img>/<iframe>). */
+  async fetchFileBlob(type: string, filename: string, options?: { inline?: boolean }): Promise<Blob> {
+    const inline = options?.inline ? "?inline=1" : "";
+    // api baseURL is already "/api", so this calls GET /api/files/:type/:filename
+    const res = await api.get<Blob>(`/files/${type}/${encodeURIComponent(filename)}${inline}`, {
+      responseType: "blob",
+    });
+    return res.data;
   },
 };
 

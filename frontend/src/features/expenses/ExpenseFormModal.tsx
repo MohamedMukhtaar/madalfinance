@@ -3,15 +3,17 @@ import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select, Textarea } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
-import { useCreateExpense, useExpenseCategories } from "@/hooks/queries";
+import { useCreateExpense, useExpenseCategories, useAccounts, useDefaultAccount } from "@/hooks/queries";
 import { useAuth } from "@/context/AuthContext";
 import { PAYMENT_METHODS } from "@/utils/constants";
-import { todayISO } from "@/utils/format";
+import { formatAccountOptionLabel, todayISO } from "@/utils/format";
+import { useSettings } from "@/context/SettingsContext";
 
 interface ExpenseForm {
   categoryId: string;
   description: string;
   amount: number;
+  accId: string;
   method: string;
   reference: string;
   date: string;
@@ -22,13 +24,28 @@ interface ExpenseForm {
 export function ExpenseFormModal({
   open,
   onClose,
+  defaults,
+  onSuccess,
 }: {
   open: boolean;
   onClose: () => void;
+  defaults?: {
+    categoryId?: number;
+    description?: string;
+    amount?: number;
+    date?: string;
+    method?: string;
+    reference?: string;
+    notes?: string;
+  };
+  onSuccess?: () => void;
 }) {
   const mutation = useCreateExpense();
   const { data: expenseCategories = [] } = useExpenseCategories();
+  const { data: accounts = [] } = useAccounts();
+  const { data: defaultAccount } = useDefaultAccount();
   const { user } = useAuth();
+  const { currency } = useSettings();
   const paidByName = user?.fullName?.trim() || user?.username || "";
 
   const {
@@ -40,18 +57,24 @@ export function ExpenseFormModal({
 
   useEffect(() => {
     if (open) {
+      const defAcc = defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
       reset({
-        categoryId: expenseCategories[0] ? String(expenseCategories[0].id) : "",
-        description: "",
-        amount: 0,
-        method: "Cash",
-        reference: "",
-        date: todayISO(),
+        categoryId: defaults?.categoryId
+          ? String(defaults.categoryId)
+          : expenseCategories[0]
+            ? String(expenseCategories[0].id)
+            : "",
+        description: defaults?.description ?? "",
+        amount: defaults?.amount ?? 0,
+        accId: defAcc ? String(defAcc) : "",
+        method: defaults?.method ?? "Cash",
+        reference: defaults?.reference ?? "",
+        date: defaults?.date ?? todayISO(),
         paidBy: paidByName,
-        notes: "",
+        notes: defaults?.notes ?? "",
       });
     }
-  }, [open, reset, expenseCategories, paidByName]);
+  }, [open, reset, expenseCategories, paidByName, defaults, defaultAccount, accounts]);
 
   const onSubmit = (data: ExpenseForm) => {
     mutation.mutate(
@@ -64,9 +87,13 @@ export function ExpenseFormModal({
         expenseDate: data.date,
         paidBy: paidByName || data.paidBy,
         notes: data.notes,
+        accId: data.accId ? Number(data.accId) : undefined,
         status: "Verified",
       },
-      { onSuccess: () => onClose() }
+      { onSuccess: () => {
+          onSuccess?.();
+          onClose();
+        } }
     );
   };
 
@@ -75,8 +102,8 @@ export function ExpenseFormModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title="Add Expense"
-      subtitle="Record an expense with category and payment method."
+      title={defaults ? "Pay Expense" : "Record Expense Payment"}
+      subtitle="Money is deducted from the selected account."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -88,6 +115,19 @@ export function ExpenseFormModal({
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Pay from account"
+            required
+            error={errors.accId?.message}
+            options={[
+              { value: "", label: accounts.length ? "Select account…" : "No accounts" },
+              ...accounts.map((a) => ({
+                value: String(a.accId),
+                label: formatAccountOptionLabel(a, currency),
+              })),
+            ]}
+            {...register("accId", { required: "Account is required" })}
+          />
           <Select
             label="Category"
             required
@@ -114,7 +154,7 @@ export function ExpenseFormModal({
           error={errors.description?.message}
           {...register("description", { required: "Description is required" })}
         />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Select label="Method" options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))} {...register("method")} />
           <Input label="Reference" placeholder="REF-0001" {...register("reference")} />
           <div className="space-y-1.5">

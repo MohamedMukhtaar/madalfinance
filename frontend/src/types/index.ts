@@ -1,4 +1,24 @@
-export type UserRole = "Super Admin" | "Finance Admin" | "Member";
+export interface AppRoleRecord {
+  roleId: number;
+  roleName: string;
+  userCount?: number;
+}
+
+export type UserRole = string;
+
+export interface AuditLog {
+  logId: number;
+  userId?: number | null;
+  username?: string | null;
+  fullName?: string | null;
+  module: string;
+  action: string;
+  recordId?: number | null;
+  ipAddress?: string | null;
+  device?: string | null;
+  details?: string | null;
+  createdAt: string;
+}
 
 export interface User {
   userId: number;
@@ -20,6 +40,7 @@ export interface Member {
   userId: number;
   memberName: string;
   position: string | null;
+  creditBalance?: number;
   joinedDate: string;
   defaultMonthlyDue: number;
   email?: string | null;
@@ -64,6 +85,10 @@ export interface Project {
   customerName?: string;
   customerCode?: string;
   outstanding: number;
+  logoPath?: string | null;
+  logoFileName?: string | null;
+  attachmentPath?: string | null;
+  attachmentFileName?: string | null;
 }
 
 export interface Contract {
@@ -93,6 +118,12 @@ export interface RentalBilling {
   customerId?: number;
   customerName: string;
   monthlyAmount: number;
+  setupFee?: number;
+  setupInvoiceId?: number | null;
+  setupInvoiceNumber?: string | null;
+  setupInvoiceStatus?: string | null;
+  setupPaidAmount?: number | null;
+  setupTotalAmount?: number | null;
   billingDay: number;
   nextBillingDate: string;
   lastGenerated?: string | null;
@@ -175,14 +206,55 @@ export interface Payment {
   paymentMethod: string;
   referenceNumber?: string | null;
   amount: number;
+  accId?: number | null;
+  accountNumber?: string | null;
+  accountInstitution?: string | null;
   notes?: string | null;
   receivedBy?: number;
   receivedByName?: string;
   createdAt?: string;
-  allocations?: Array<{ allocationId: number; invoiceId: number; amountAllocated: number }>;
+  allocations?: Array<{
+    allocationId: number;
+    invoiceId: number;
+    invoiceNumber?: string;
+    amountAllocated: number;
+    totalAmount?: number;
+    paidAmount?: number;
+  }>;
 }
 
 export type DueStatus = "Pending" | "Partial" | "Paid";
+
+export interface MemberStatementRow {
+  date: string;
+  time: string;
+  description: string;
+  due: number;
+  paid: number;
+  loan: number;
+  balance: number;
+}
+
+export interface MemberStatement {
+  member: {
+    memberId: number;
+    memberName: string;
+    position?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    joinedDate?: string | null;
+    loanBalance?: number;
+  };
+  totals: {
+    charged: number;
+    loans: number;
+    paid: number;
+    outstanding: number;
+    loanBalance: number;
+    closingBalance?: number;
+  };
+  rows: MemberStatementRow[];
+}
 
 export interface MemberDue {
   dueId: number;
@@ -196,6 +268,7 @@ export interface MemberDue {
   paidDate?: string | null;
   position?: string | null;
   attachmentCount?: number;
+  creditBalance?: number;
 }
 
 export interface DueBatch {
@@ -216,12 +289,52 @@ export interface ExpenseCategory {
   name: string;
 }
 
+export interface Account {
+  accId: number;
+  number: string;
+  institution: string;
+  balance: number;
+  isDefault: boolean;
+  createdAt?: string;
+}
+
+export interface AccountTransfer {
+  transferId: number;
+  fromAccId: number;
+  toAccId: number;
+  amount: number;
+  transferDate: string;
+  notes?: string | null;
+  fromNumber?: string;
+  fromInstitution?: string;
+  toNumber?: string;
+  toInstitution?: string;
+  createdByName?: string;
+  createdAt?: string;
+}
+
+export interface AccountMovement {
+  movementDate: string;
+  movementType: "income" | "expense" | "transfer_in" | "transfer_out" | "loan_out" | "loan_repay" | "opening";
+  amount: number;
+  referenceLabel: string;
+  description: string;
+  /** Cash in (receipt) — increases account balance */
+  debit: number;
+  /** Cash out (payment) — decreases account balance */
+  credit: number;
+  balance: number;
+}
+
 export interface Expense {
   expenseId: number;
   categoryId: number;
   categoryName: string;
   description: string;
   amount: number;
+  accId?: number | null;
+  accountNumber?: string | null;
+  accountInstitution?: string | null;
   paymentMethod: string;
   referenceNumber?: string | null;
   expenseDate: string;
@@ -255,6 +368,7 @@ export interface LedgerTransaction {
   expense: number;
   balanceAfter: number;
   createdByName?: string;
+  createdAt?: string;
 }
 
 export interface AppSettings {
@@ -302,8 +416,15 @@ export interface DashboardData {
     currentBalance: number;
     monthIncome: number;
     monthExpense: number;
+    todayIncome: number;
+    weekIncome: number;
+    todayExpense: number;
+    weekExpense: number;
     totalCustomers: number;
     activeCustomers: number;
+    totalProjects: number;
+    totalRentalProjects: number;
+    totalOneTimeProjects: number;
     activeProjects: number;
     completedProjects: number;
     totalOutstanding: number;

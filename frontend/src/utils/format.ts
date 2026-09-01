@@ -13,6 +13,24 @@ export function formatCurrency(
   })}`;
 }
 
+/** Label for account dropdowns: institution, number, live balance, default flag. */
+export function formatAccountOptionLabel(
+  account: { institution: string; number: string; balance?: number; isDefault?: boolean },
+  currency = "$"
+): string {
+  const parts = [`${account.institution} (${account.number})`];
+  if (account.balance !== undefined && account.balance !== null) {
+    parts.push(`bal. ${formatCurrency(account.balance, currency)}`);
+  }
+  if (account.isDefault) parts.push("default");
+  return parts.join(" · ");
+}
+
+/** Member statement running balance — amount only. */
+export function formatMemberStatementBalance(balance: number, currency = "$"): string {
+  return formatCurrency(balance, currency);
+}
+
 export function formatCompactCurrency(value: number | null | undefined, currency = "$"): string {
   const amount = Number(value);
   const safe = Number.isFinite(amount) ? amount : 0;
@@ -41,6 +59,20 @@ export function formatDate(date?: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+/** YYYY-MM-DD for HTML date inputs. */
+export function toDateInput(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 }
 
 export function formatDateTime(date?: string): string {

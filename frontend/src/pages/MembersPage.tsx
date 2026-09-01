@@ -16,14 +16,13 @@ import {
 import { useSettings } from "@/context/SettingsContext";
 import { DUE_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
+import { dateTimeColumns } from "@/utils/tableHelpers";
 import { cn } from "@/utils/cn";
 import type { Member } from "@/types";
 
 const columnHelper = createColumnHelper<Member>();
 
 interface MemberForm {
-  username: string;
-  password: string;
   fullName: string;
   phone: string;
   email: string;
@@ -33,8 +32,6 @@ interface MemberForm {
 }
 
 type CreateMemberPayload = {
-  username: string;
-  password: string;
   fullName: string;
   phone?: string;
   email?: string;
@@ -89,12 +86,7 @@ export default function MembersPage() {
           );
         },
       }),
-      columnHelper.accessor("joinedDate", {
-        header: "Joined",
-        cell: (info) => (
-          <span className="text-xs text-slate-500 dark:text-slate-400">{formatDate(info.getValue())}</span>
-        ),
-      }),
+      ...dateTimeColumns<Member>("joinedDate", "Joined", (m) => m.joinedDate, (m) => m.joinedDate),
       columnHelper.accessor("defaultMonthlyDue", {
         header: "Default Due",
         cell: (info) => (
@@ -278,8 +270,6 @@ function MemberFormModal({
     reset(
       member
         ? {
-            username: "",
-            password: "",
             fullName: member.memberName,
             phone: "",
             email: member.email ?? "",
@@ -288,8 +278,6 @@ function MemberFormModal({
             status: member.status,
           }
         : {
-            username: "",
-            password: "",
             fullName: "",
             phone: "",
             email: "",
@@ -305,7 +293,7 @@ function MemberFormModal({
       open={open}
       onClose={onClose}
       title={isEdit ? "Edit member" : "Add member"}
-      subtitle={isEdit ? "Update member profile and dues." : "Create a login for a new contributing member."}
+      subtitle={isEdit ? "Update member profile and dues." : "Add a co-founder profile for contribution tracking."}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -329,8 +317,6 @@ function MemberFormModal({
                 });
               } else {
                 await onCreate({
-                  username: d.username,
-                  password: d.password,
                   fullName: d.fullName,
                   phone: d.phone || undefined,
                   email: d.email || undefined,
@@ -347,21 +333,6 @@ function MemberFormModal({
       }
     >
       <form className="grid gap-4 sm:grid-cols-2">
-        {!isEdit && (
-          <>
-            <Input
-              label="Username"
-              error={errors.username?.message}
-              {...register("username", { required: "Required", minLength: { value: 3, message: "Min 3 chars" } })}
-            />
-            <Input
-              label="Password"
-              type="password"
-              error={errors.password?.message}
-              {...register("password", { required: "Required", minLength: { value: 8, message: "Min 8 chars" } })}
-            />
-          </>
-        )}
         <Input label="Full name" error={errors.fullName?.message} {...register("fullName", { required: "Required" })} />
         <Input label="Position" {...register("position")} />
         <Input label="Phone" {...register("phone")} />

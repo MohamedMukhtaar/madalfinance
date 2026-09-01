@@ -12,6 +12,7 @@ export const createExpenseValidator = [
     .withMessage('Invalid payment method'),
   body('reference_number').optional().trim().isLength({ max: 50 }),
   body('notes').optional().trim().isLength({ max: 500 }),
+  body('acc_id').optional().isInt({ min: 1 }).withMessage('Invalid account'),
 ];
 
 export const updateExpenseValidator = [

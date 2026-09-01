@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { NAV_ITEMS, type NavItem } from "@/utils/constants";
 import { useAuth } from "@/context/AuthContext";
-import { useDashboard } from "@/hooks/queries";
+import { useDashboardContext } from "@/context/DashboardContext";
+import { canAccessTrash, isSuperAdmin } from "@/utils/roles";
 import { cn } from "@/utils/cn";
 import type { DashboardData } from "@/types";
 
 interface SidebarProps {
   collapsed: boolean;
-  onToggleCollapse: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }
@@ -63,9 +63,19 @@ function activeGroupLabel(pathname: string): string | null {
 
 function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  const { data: dash } = useDashboard();
+  const { logout, user } = useAuth();
+  const { data: dash } = useDashboardContext();
   const location = useLocation();
+
+  const visibleNav = useMemo(
+    () =>
+      NAV_ITEMS.filter((item) => {
+        if (item.superAdminOnly && !isSuperAdmin(user?.role)) return false;
+        if (item.path === "/trash" && !canAccessTrash(user?.role)) return false;
+        return true;
+      }),
+    [user?.role]
+  );
 
   const initialOpen = useMemo(() => activeGroupLabel(location.pathname), []);
   const [openGroup, setOpenGroup] = useState<string | null>(() => {
@@ -105,8 +115,8 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
       "group relative flex items-center rounded-xl text-sm font-semibold transition-colors duration-150",
       collapsed ? "justify-center px-2.5 py-2.5" : nested ? "gap-3 px-3 py-2 pl-10" : "gap-3 px-3 py-2.5",
       active
-        ? "bg-navy text-white shadow-sm"
-        : "text-ink-muted hover:bg-muted hover:text-ink"
+        ? "bg-secondary-500/25 text-white shadow-sm ring-1 ring-inset ring-secondary-400/40"
+        : "text-white/75 hover:bg-white/10 hover:text-white"
     );
 
   const groupClass = (active: boolean, open: boolean) =>
@@ -114,36 +124,37 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
       "group relative flex w-full items-center rounded-xl text-sm font-semibold transition-colors duration-150",
       collapsed ? "justify-center px-2.5 py-2.5" : "gap-3 px-3 py-2.5",
       active && !open
-        ? "bg-navy text-white shadow-sm"
+        ? "bg-secondary-500/25 text-white shadow-sm ring-1 ring-inset ring-secondary-400/40"
         : active && open
-          ? "bg-muted text-ink"
-          : "text-ink-muted hover:bg-muted hover:text-ink"
+          ? "bg-white/10 text-white"
+          : "text-white/75 hover:bg-white/10 hover:text-white"
     );
 
   const badgeClass = (active: boolean) =>
     cn(
       "relative z-10 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-      active ? "bg-white/20 text-white" : "bg-muted text-ink-muted"
+      active ? "bg-white/25 text-white" : "bg-white/10 text-white/80"
     );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col bg-navy text-white">
       <div className={cn("flex shrink-0 flex-col justify-center", collapsed ? "px-3 py-4" : "px-5 pb-5 pt-4")}>
-        <Logo compact={collapsed} />
+        <Logo compact={collapsed} onDark />
       </div>
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 pb-4">
         <ul className="space-y-0.5">
-          {NAV_ITEMS.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             const hasChildren = Boolean(item.children?.length);
             const active = groupActive(location.pathname, item);
             const open = openGroup === item.label;
             const count = badgeFor(item.badgeKey, dash as DashboardData | undefined);
+            const isDashboard = item.path === "/";
 
             if (!hasChildren && item.path) {
               return (
-                <li key={item.label}>
+                <li key={item.label} className={isDashboard ? "mt-3" : undefined}>
                   <NavLink
                     to={item.path}
                     end={item.path === "/"}
@@ -193,7 +204,10 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                         <span className={badgeClass(active && !open)}>{count}</span>
                       )}
                       <ChevronDown
-                        className={cn("relative z-10 h-4 w-4 shrink-0 transition-transform", open && "rotate-180")}
+                        className={cn(
+                          "relative z-10 h-4 w-4 shrink-0 text-white/60 transition-transform",
+                          open && "rotate-180"
+                        )}
                       />
                     </>
                   )}
@@ -238,11 +252,11 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
         </ul>
       </nav>
 
-      <div className="shrink-0 border-t border-line p-3">
+      <div className="shrink-0 border-t border-white/10 p-3">
         <button
           onClick={handleLogout}
           className={cn(
-            "flex w-full items-center rounded-xl text-sm font-semibold text-ink-muted transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10 dark:hover:text-rose-400",
+            "flex w-full items-center rounded-xl text-sm font-semibold text-white/75 transition-colors hover:bg-rose-500/20 hover:text-rose-200",
             collapsed ? "justify-center px-2.5 py-2.5" : "gap-3 px-3 py-2.5"
           )}
           title={collapsed ? "Logout" : undefined}
@@ -267,23 +281,16 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
   );
 }
 
-export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile }: SidebarProps) {
+export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: SidebarProps) {
   return (
     <>
       <aside
         className={cn(
-          "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-line bg-panel transition-[width] duration-300 lg:flex",
+          "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-[#0a1030] bg-navy transition-[width] duration-300 lg:flex",
           collapsed ? "w-[76px]" : "w-[264px]"
         )}
       >
         <NavContent collapsed={collapsed} />
-        <button
-          onClick={onToggleCollapse}
-          className="absolute -right-3 top-16 flex h-6 w-6 items-center justify-center rounded-full bg-panel text-ink-muted shadow-card ring-1 ring-line transition hover:text-navy"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
-        </button>
       </aside>
 
       <AnimatePresence>
@@ -301,11 +308,11 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", stiffness: 350, damping: 32 }}
-              className="fixed inset-y-0 left-0 z-50 w-[280px] bg-panel shadow-pop lg:hidden"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] bg-navy text-white shadow-pop lg:hidden"
             >
               <button
                 onClick={onCloseMobile}
-                className="absolute right-3 top-4 rounded-lg p-1.5 text-ink-muted hover:bg-muted"
+                className="absolute right-3 top-4 rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />

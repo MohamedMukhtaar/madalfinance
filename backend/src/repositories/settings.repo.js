@@ -31,4 +31,19 @@ export const update = (conn, data) => {
   );
 };
 
-export default { get, update };
+export const setLogo = (conn, filename) =>
+  run(
+    conn,
+    `UPDATE settings SET logo = ?
+     WHERE setting_id = (SELECT setting_id FROM (SELECT setting_id FROM settings ORDER BY setting_id ASC LIMIT 1) s)`,
+    [filename]
+  );
+
+export const clearLogo = (conn) =>
+  run(
+    conn,
+    `UPDATE settings SET logo = NULL
+     WHERE setting_id = (SELECT setting_id FROM (SELECT setting_id FROM settings ORDER BY setting_id ASC LIMIT 1) s)`
+  );
+
+export default { get, update, setLogo, clearLogo };

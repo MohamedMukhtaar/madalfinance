@@ -12,11 +12,30 @@ export const findByUsername = (conn, username) =>
             r.role_name AS role
        FROM users u
        JOIN roles r ON r.role_id = u.role_id
-      WHERE u.username = ? AND u.status = 'active'`,
+      WHERE u.username = ? AND u.status = 'active' AND u.deleted_at IS NULL`,
     [username]
   ).then((rows) => rows[0]);
 
+export const findByIdWithPassword = (conn, id) =>
+  run(
+    conn,
+    `SELECT u.user_id, u.username, u.password, u.full_name, u.phone, u.email, u.status,
+            r.role_name AS role
+       FROM users u
+       JOIN roles r ON r.role_id = u.role_id
+      WHERE u.user_id = ? AND u.deleted_at IS NULL`,
+    [id]
+  ).then((rows) => rows[0]);
+
 export const findById = (conn, id) =>
+  run(
+    conn,
+    `SELECT ${publicCols} FROM users u JOIN roles r ON r.role_id = u.role_id
+      WHERE u.user_id = ? AND u.deleted_at IS NULL`,
+    [id]
+  ).then((rows) => rows[0]);
+
+export const findByIdIncludingDeleted = (conn, id) =>
   run(
     conn,
     `SELECT ${publicCols} FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ?`,
@@ -24,10 +43,13 @@ export const findById = (conn, id) =>
   ).then((rows) => rows[0]);
 
 export const list = (conn, { search, offset, perPage, order }) => {
-  const where = search
-    ? `WHERE (u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ?)`
-    : '';
-  const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
+  const conditions = ['u.deleted_at IS NULL'];
+  const params = [];
+  if (search) {
+    conditions.push('(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
     `SELECT ${publicCols}
@@ -40,8 +62,13 @@ export const list = (conn, { search, offset, perPage, order }) => {
 };
 
 export const count = (conn, search) => {
-  const where = search ? `WHERE (username LIKE ? OR full_name LIKE ? OR email LIKE ?)` : '';
-  const params = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
+  const conditions = ['deleted_at IS NULL'];
+  const params = [];
+  if (search) {
+    conditions.push('(username LIKE ? OR full_name LIKE ? OR email LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+  const where = `WHERE ${conditions.join(' AND ')}`;
   return run(conn, `SELECT COUNT(*) AS total FROM users u ${where}`, params).then((r) => r[0].total);
 };
 
@@ -61,13 +88,101 @@ export const updateProfile = (conn, id, { full_name, phone, email }) =>
 export const touchLastLogin = (conn, id) =>
   run(conn, `UPDATE users SET last_login = NOW() WHERE user_id = ?`, [id]);
 
+export const usernameExists = (conn, username, excludeUserId = null) => {
+  const params = [username];
+  let sql = `SELECT user_id FROM users WHERE username = ?`;
+  if (excludeUserId) {
+    sql += ` AND user_id != ?`;
+    params.push(excludeUserId);
+  }
+  return run(conn, sql, params).then((rows) => rows.length > 0);
+};
+
+export const create = (conn, data) =>
+  run(
+    conn,
+    `INSERT INTO users (role_id, username, password, full_name, phone, email, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      data.role_id,
+      data.username,
+      data.password,
+      data.full_name,
+      data.phone ?? null,
+      data.email ?? null,
+      data.status ?? 'active',
+    ]
+  ).then((r) => r.insertId);
+
+export const update = (conn, id, data) =>
+  run(
+    conn,
+    `UPDATE users SET
+        role_id = COALESCE(?, role_id),
+        username = COALESCE(?, username),
+        full_name = COALESCE(?, full_name),
+        phone = COALESCE(?, phone),
+        email = COALESCE(?, email),
+        status = COALESCE(?, status)
+      WHERE user_id = ?`,
+    [
+      data.role_id ?? null,
+      data.username ?? null,
+      data.full_name ?? null,
+      data.phone ?? null,
+      data.email ?? null,
+      data.status ?? null,
+      id,
+    ]
+  );
+
+export const setStatus = (conn, id, status) =>
+  run(conn, `UPDATE users SET status = ? WHERE user_id = ?`, [status, id]);
+
+export const countActiveByRole = (conn, roleName) =>
+  run(
+    conn,
+    `SELECT COUNT(*) AS total
+       FROM users u
+       JOIN roles r ON r.role_id = u.role_id
+      WHERE r.role_name = ? AND u.status = 'active' AND u.deleted_at IS NULL`,
+    [roleName]
+  ).then((rows) => Number(rows[0]?.total ?? 0));
+
+export const softDelete = (conn, id, { reason, deletedBy } = {}) =>
+  run(
+    conn,
+    `UPDATE users
+        SET deleted_at = NOW(), delete_reason = ?, deleted_by = ?, status = 'inactive'
+      WHERE user_id = ?`,
+    [reason ?? null, deletedBy ?? null, id]
+  );
+
+export const restore = (conn, id) =>
+  run(
+    conn,
+    `UPDATE users
+        SET deleted_at = NULL, delete_reason = NULL, deleted_by = NULL, status = 'active'
+      WHERE user_id = ?`,
+    [id]
+  );
+
 export default {
   findByUsername,
+  findByIdWithPassword,
   findById,
+  findByIdIncludingDeleted,
   list,
   count,
   updateUsername,
   updatePassword,
   updateProfile,
   touchLastLogin,
+  usernameExists,
+  create,
+  update,
+  setStatus,
+  countActiveByRole,
+  softDelete,
+  restore,
 };

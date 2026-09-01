@@ -109,6 +109,9 @@ api.interceptors.request.use((config) => {
 
 // Normalize camelCase on every successful response.
 api.interceptors.response.use((response: AxiosResponse) => {
+  // Blob/arraybuffer responses are not JSON envelopes, so don't try to normalize them.
+  const rt = response.config?.responseType;
+  if (rt === "blob" || rt === "arraybuffer") return response;
   response.data = normalizePayload(response.data);
   return response;
 });

@@ -1,12 +1,12 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Bell, Check, LogOut, Menu, Moon, Sun, UserPen } from "lucide-react";
+import { Bell, Check, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun, UserPen, X } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
 import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
-import { useDashboard } from "@/hooks/queries";
+import { useDashboardContext } from "@/context/DashboardContext";
 import { timeAgo } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import { ProfileMenu } from "./ProfileMenu";
@@ -18,13 +18,22 @@ const typeStyles: Record<string, string> = {
   danger: "bg-rose-500/10 text-rose-500",
 };
 
-export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
+export function Topbar({
+  onOpenMobile,
+  collapsed,
+  onToggleCollapse,
+}: {
+  onOpenMobile: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}) {
   const { resolvedTheme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { data: dashboard } = useDashboard();
+  const { data: dashboard } = useDashboardContext();
   const [read, setRead] = useState<number[]>([]);
   const [search, setSearch] = useState("");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const notifications = useMemo(() => [
     ...(dashboard?.recentPayments ?? []).map((payment) => ({
       id: payment.paymentId,
@@ -69,9 +78,35 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-4 sm:px-6">
-      {/* Mobile menu + search */}
-      <div className="flex flex-1 items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 flex-col border-b border-line bg-panel sm:h-16">
+      {mobileSearchOpen && (
+        <form
+          className="flex items-center gap-2 border-b border-line px-4 py-2 sm:hidden"
+          onSubmit={(event) => {
+            submitSearch(event);
+            setMobileSearchOpen(false);
+          }}
+        >
+          <input
+            autoFocus
+            placeholder="Search customers, invoices…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-10 flex-1 rounded-xl border-0 bg-muted px-3 text-sm text-ink ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <button
+            type="button"
+            onClick={() => setMobileSearchOpen(false)}
+            className="rounded-xl p-2 text-ink-muted hover:bg-muted"
+            aria-label="Close search"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </form>
+      )}
+      <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
+      {/* Mobile menu + collapse + search */}
+      <div className="flex flex-1 items-center gap-2 sm:gap-3">
         <button
           onClick={onOpenMobile}
           className="rounded-xl p-2 text-ink-muted transition hover:bg-muted lg:hidden"
@@ -79,6 +114,23 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
         >
           <Menu className="h-5 w-5" />
         </button>
+        <button
+          type="button"
+          onClick={() => setMobileSearchOpen(true)}
+          className="rounded-xl p-2 text-ink-muted transition hover:bg-muted sm:hidden"
+          aria-label="Search"
+        >
+          <Search className="h-5 w-5" />
+        </button>
+        {onToggleCollapse && (
+          <button
+            onClick={onToggleCollapse}
+            className="hidden rounded-xl p-2 text-ink-muted transition hover:bg-muted hover:text-ink lg:flex"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+          </button>
+        )}
         <form className="relative hidden w-full max-w-md sm:block" onSubmit={submitSearch}>
           <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted">
             <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
@@ -192,6 +244,7 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
             </button>
           }
         />
+      </div>
       </div>
     </header>
   );

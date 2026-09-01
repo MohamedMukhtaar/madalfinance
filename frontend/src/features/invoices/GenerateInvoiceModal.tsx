@@ -140,7 +140,7 @@ export function GenerateInvoiceModal({
           error={errors.description?.message}
           {...register("description", { required: "Description is required" })}
         />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Input label="Qty" type="number" step="0.01" {...register("quantity", { min: 1 })} />
           <Input label="Unit Price" type="number" step="0.01" {...register("unitPrice", { min: 0 })} />
           <Input label="Tax %" type="number" step="0.1" {...register("taxRate", { min: 0 })} />

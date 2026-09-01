@@ -1,8 +1,11 @@
 import run from './_base.js';
 
+/** P&L uses operating income/expense only — member loans are balance-sheet cash movements. */
+const PNL_EXCLUDE_TYPES = `'Loan'`;
+
 /** Income / expense totals between dates (income statement). */
 export const incomeStatement = (conn, { fromDate, toDate }) => {
-  const conditions = [];
+  const conditions = [`transaction_type NOT IN (${PNL_EXCLUDE_TYPES})`];
   const params = [];
   if (fromDate) {
     conditions.push('transaction_date >= ?');
@@ -12,7 +15,7 @@ export const incomeStatement = (conn, { fromDate, toDate }) => {
     conditions.push('transaction_date <= ?');
     params.push(toDate);
   }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
     `SELECT COALESCE(SUM(income), 0) AS total_income,
@@ -32,7 +35,8 @@ export const monthlySummary = (conn, months) =>
             COALESCE(SUM(expense), 0) AS expense,
             COALESCE(SUM(income), 0) - COALESCE(SUM(expense), 0) AS net
        FROM transactions
-      WHERE transaction_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+      WHERE transaction_type NOT IN (${PNL_EXCLUDE_TYPES})
+        AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
       GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
       ORDER BY month ASC`,
     [months]
@@ -64,17 +68,30 @@ export const cashFlow = (conn, fromDate, toDate) => {
 };
 
 /** Rental revenue = income booked against Rental Billing / rental invoices. */
-export const rentalRevenue = (conn, fromDate, toDate) =>
-  run(
+export const rentalRevenue = (conn, fromDate, toDate) => {
+  const conditions = [
+    `transaction_type = 'Income'`,
+    `reference_type IN ('Rental Billing', 'Payment')`,
+  ];
+  const params = [];
+  if (fromDate) {
+    conditions.push('transaction_date >= ?');
+    params.push(fromDate);
+  }
+  if (toDate) {
+    conditions.push('transaction_date <= ?');
+    params.push(toDate);
+  }
+  const where = `WHERE ${conditions.join(' AND ')}`;
+  return run(
     conn,
     `SELECT COALESCE(SUM(income), 0) AS total,
             COUNT(*) AS billings
        FROM transactions
-      WHERE transaction_type = 'Income'
-        AND reference_type IN ('Rental Billing', 'Payment')
-        AND transaction_date BETWEEN ? AND ?`,
-    [fromDate, toDate]
-  );
+       ${where}`,
+    params
+  ).then((r) => r[0]);
+};
 
 export const outstandingCustomers = (conn) =>
   run(

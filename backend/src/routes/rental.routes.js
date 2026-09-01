@@ -4,12 +4,13 @@ import { authenticate } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { createRentalValidator, updateRentalValidator, setRentalStatusValidator } from '../validators/rental.validator.js';
-import { ROLES } from '../utils/constants.js';
+import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
+router.use(authorize(...APP_ACCESS));
 
-const MANAGE = [ROLES.SUPER_ADMIN, ROLES.FINANCE_ADMIN];
+const MANAGE = MANAGE_ROLES;
 
 router.get('/', rentalController.list);
 router.post('/charge-all', authorize(...MANAGE), rentalController.chargeAll);

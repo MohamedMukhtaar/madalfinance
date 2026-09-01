@@ -1,4 +1,8 @@
-import Swal from "sweetalert2";
+import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import { Modal } from "./Modal";
+import { Button } from "./Button";
+import { Textarea } from "./FormField";
 
 export interface ConfirmOptions {
   title: string;
@@ -8,63 +12,6 @@ export interface ConfirmOptions {
   icon?: "warning" | "success" | "question" | "info";
 }
 
-export async function confirmDialog({
-  title,
-  text,
-  confirmText = "Confirm",
-  cancelText = "Cancel",
-  icon = "question",
-}: ConfirmOptions): Promise<boolean> {
-  const isDark = document.documentElement.classList.contains("dark");
-
-  const result = await Swal.fire({
-    title,
-    text,
-    icon,
-    confirmButtonText: confirmText,
-    cancelButtonText: cancelText,
-    showCancelButton: true,
-    reverseButtons: true,
-    background: isDark ? "#0f172a" : "#ffffff",
-    color: isDark ? "#e2e8f0" : "#0f172a",
-    iconColor: icon === "warning" ? "#f59e0b" : icon === "success" ? "#22c55e" : "#101848",
-    confirmButtonColor: "#101848",
-    cancelButtonColor: isDark ? "#334155" : "#e2e8f0",
-    buttonsStyling: true,
-    customClass: {
-      popup: "rounded-2xl shadow-pop font-sans",
-      title: "text-lg font-semibold",
-      htmlContainer: "text-sm text-slate-500",
-      confirmButton: "rounded-xl px-5 py-2 text-sm font-semibold",
-      cancelButton: "rounded-xl px-5 py-2 text-sm font-semibold !text-slate-600 dark:!text-slate-300",
-    },
-    backdrop: "rgba(2, 6, 23, 0.45)",
-    showClass: { popup: "swal2-popup-show-anim" },
-    hideClass: { popup: "swal2-popup-hide-anim" },
-  });
-
-  return result.isConfirmed;
-}
-
-export async function toastSuccess(title: string, text?: string) {
-  const isDark = document.documentElement.classList.contains("dark");
-  return Swal.fire({
-    title,
-    text,
-    icon: "success",
-    timer: 2200,
-    timerProgressBar: true,
-    showConfirmButton: false,
-    background: isDark ? "#0f172a" : "#ffffff",
-    color: isDark ? "#e2e8f0" : "#0f172a",
-    confirmButtonColor: "#22c55e",
-    customClass: { popup: "rounded-2xl shadow-pop font-sans", title: "text-lg font-semibold" },
-    backdrop: "rgba(2, 6, 23, 0.35)",
-  });
-}
-
-const MIN_DELETE_REASON = 25;
-
 export interface DeleteReasonOptions {
   title: string;
   text?: string;
@@ -72,103 +19,150 @@ export interface DeleteReasonOptions {
   cancelText?: string;
 }
 
-function syncDeleteReasonUi(popup: HTMLElement, min: number) {
-  const input = popup.querySelector("textarea.swal2-textarea") as HTMLTextAreaElement | null;
-  const confirmBtn = Swal.getConfirmButton();
-  const counter = popup.querySelector("[data-reason-counter]") as HTMLElement | null;
-  if (!input || !confirmBtn || !counter) return;
+const MIN_DELETE_REASON = 25;
 
-  const len = String(input.value ?? "").trim().length;
-  const remaining = Math.max(0, min - len);
-  const ready = remaining === 0;
+type ConfirmRequest = {
+  kind: "confirm";
+  options: ConfirmOptions;
+  resolve: (value: boolean) => void;
+};
 
-  if (ready) {
-    counter.textContent = `${len} characters · ready to delete`;
-    counter.className =
-      "mt-2 text-center text-xs font-medium text-emerald-600 dark:text-emerald-400";
-  } else {
-    counter.textContent = `${remaining} character${remaining === 1 ? "" : "s"} remaining`;
-    counter.className = "mt-2 text-center text-xs font-medium text-amber-600 dark:text-amber-400";
+type DeleteRequest = {
+  kind: "delete";
+  options: DeleteReasonOptions;
+  resolve: (value: string | null) => void;
+};
+
+type PendingRequest = ConfirmRequest | DeleteRequest;
+
+let dispatchRequest: ((request: PendingRequest) => void) | null = null;
+
+export function ConfirmHost() {
+  const [request, setRequest] = useState<PendingRequest | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+
+  useEffect(() => {
+    dispatchRequest = setRequest;
+    return () => {
+      dispatchRequest = null;
+    };
+  }, []);
+
+  const close = useCallback(() => {
+    setRequest(null);
+    setDeleteReason("");
+  }, []);
+
+  if (!request) return null;
+
+  if (request.kind === "confirm") {
+    const { title, text, confirmText = "Confirm", cancelText = "Cancel", icon } = request.options;
+    const danger = icon === "warning";
+
+    return (
+      <Modal
+        open
+        onClose={() => {
+          request.resolve(false);
+          close();
+        }}
+        title={title}
+        subtitle={text}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { request.resolve(false); close(); }}>
+              {cancelText}
+            </Button>
+            <Button variant={danger ? "danger" : "primary"} onClick={() => { request.resolve(true); close(); }}>
+              {confirmText}
+            </Button>
+          </>
+        }
+      >
+        <span className="sr-only">Confirm dialog</span>
+      </Modal>
+    );
   }
 
-  confirmBtn.disabled = !ready;
-  confirmBtn.setAttribute("aria-disabled", ready ? "false" : "true");
-  confirmBtn.style.opacity = ready ? "1" : "0.45";
-  confirmBtn.style.pointerEvents = ready ? "auto" : "none";
-  confirmBtn.style.cursor = ready ? "pointer" : "not-allowed";
+  const { title, text, confirmText = "Move to trash", cancelText = "Cancel" } = request.options;
+  const trimmed = deleteReason.trim();
+  const remaining = Math.max(0, MIN_DELETE_REASON - trimmed.length);
+  const ready = remaining === 0;
+
+  return (
+    <Modal
+      open
+      onClose={() => {
+        request.resolve(null);
+        close();
+      }}
+      title={title}
+      subtitle={text ?? "Please explain why this record is being deleted. This cannot be undone without restoring from Trash."}
+      size="md"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => { request.resolve(null); close(); }}>
+            {cancelText}
+          </Button>
+          <Button variant="danger" disabled={!ready} onClick={() => { request.resolve(trimmed); close(); }}>
+            {confirmText}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <p className="text-xs text-slate-400">Reason (minimum {MIN_DELETE_REASON} characters)</p>
+        <Textarea
+          value={deleteReason}
+          onChange={(e) => setDeleteReason(e.target.value)}
+          rows={4}
+          maxLength={500}
+          placeholder="Describe why you are deleting this…"
+          autoFocus
+        />
+        <p
+          className={
+            ready
+              ? "text-xs font-medium text-emerald-600 dark:text-emerald-400"
+              : "text-xs font-medium text-amber-600 dark:text-amber-400"
+          }
+        >
+          {ready
+            ? `${trimmed.length} characters · ready to delete`
+            : `${remaining} character${remaining === 1 ? "" : "s"} remaining`}
+        </p>
+      </div>
+    </Modal>
+  );
 }
 
-/** Prompt for a delete reason (min 25 chars). Returns the reason or null if cancelled. */
-export async function promptDeleteReason({
-  title,
-  text = "Please explain why this record is being deleted. This cannot be undone without restoring from Trash.",
-  confirmText = "Move to trash",
-  cancelText = "Cancel",
-}: DeleteReasonOptions): Promise<string | null> {
-  const isDark = document.documentElement.classList.contains("dark");
-
-  const result = await Swal.fire({
-    title,
-    html: `<p class="text-sm text-slate-500 mb-3">${text}</p>
-      <p class="text-xs text-slate-400 mb-2 text-left">Reason (minimum ${MIN_DELETE_REASON} characters)</p>
-      <p data-reason-counter class="mt-2 text-center text-xs font-medium text-amber-600">${MIN_DELETE_REASON} characters remaining</p>`,
-    input: "textarea",
-    inputPlaceholder: "Describe why you are deleting this…",
-    inputAttributes: {
-      "aria-label": "Delete reason",
-      maxlength: "500",
-    },
-    preConfirm: (value) => {
-      const trimmed = String(value ?? "").trim();
-      if (trimmed.length < MIN_DELETE_REASON) {
-        Swal.showValidationMessage(
-          `${Math.max(0, MIN_DELETE_REASON - trimmed.length)} character(s) remaining`
-        );
-        return false;
-      }
-      return trimmed;
-    },
-    confirmButtonText: confirmText,
-    cancelButtonText: cancelText,
-    showCancelButton: true,
-    reverseButtons: true,
-    focusConfirm: false,
-    allowEnterKey: false,
-    background: isDark ? "#0f172a" : "#ffffff",
-    color: isDark ? "#e2e8f0" : "#0f172a",
-    icon: "warning",
-    iconColor: "#f59e0b",
-    confirmButtonColor: "#101848",
-    cancelButtonColor: isDark ? "#334155" : "#e2e8f0",
-    buttonsStyling: true,
-    customClass: {
-      popup: "rounded-2xl shadow-pop font-sans",
-      title: "text-lg font-semibold",
-      htmlContainer: "text-sm text-slate-500",
-      confirmButton: "rounded-xl px-5 py-2 text-sm font-semibold swal-delete-confirm",
-      cancelButton: "rounded-xl px-5 py-2 text-sm font-semibold !text-slate-600 dark:!text-slate-300",
-      input: "rounded-xl text-sm !mt-0",
-    },
-    backdrop: "rgba(2, 6, 23, 0.45)",
-    showClass: { popup: "swal2-popup-show-anim" },
-    hideClass: { popup: "swal2-popup-hide-anim" },
-    didOpen: () => {
-      const popup = Swal.getPopup();
-      if (!popup) return;
-
-      // Move counter under the textarea (SweetAlert renders input after html)
-      const counter = popup.querySelector("[data-reason-counter]");
-      const input = popup.querySelector("textarea.swal2-textarea") as HTMLTextAreaElement | null;
-      if (counter && input?.parentElement) {
-        input.parentElement.appendChild(counter);
-      }
-
-      syncDeleteReasonUi(popup, MIN_DELETE_REASON);
-      input?.addEventListener("input", () => syncDeleteReasonUi(popup, MIN_DELETE_REASON));
-      input?.focus();
-    },
+function enqueue<T>(build: (resolve: (value: T) => void) => PendingRequest): Promise<T> {
+  return new Promise((resolve) => {
+    if (!dispatchRequest) {
+      resolve(false as T);
+      return;
+    }
+    dispatchRequest(build(resolve));
   });
+}
 
-  if (!result.isConfirmed) return null;
-  return String(result.value ?? "").trim();
+export async function confirmDialog(options: ConfirmOptions): Promise<boolean> {
+  if (!dispatchRequest) {
+    return window.confirm([options.title, options.text].filter(Boolean).join("\n\n"));
+  }
+  return enqueue((resolve) => ({ kind: "confirm", options, resolve }));
+}
+
+export function toastSuccess(title: string, text?: string) {
+  toast.success(text ? `${title} — ${text}` : title);
+}
+
+export async function promptDeleteReason(options: DeleteReasonOptions): Promise<string | null> {
+  if (!dispatchRequest) {
+    const reason = window.prompt(`${options.title}\n\n${options.text ?? ""}`);
+    if (!reason || reason.trim().length < MIN_DELETE_REASON) return null;
+    return reason.trim();
+  }
+  return enqueue((resolve) => ({ kind: "delete", options, resolve }));
 }

@@ -86,7 +86,7 @@ export const incomeService = {
         created_by: userId,
       });
 
-      await auditService.log({ module: 'Income', action: 'DELETE', userId, recordId: id, ip });
+      await auditService.log({ module: 'Income', action: 'DELETE', userId, recordId: id, ip, details: deleteReason });
       return { income_id: id, deleted: true };
     });
   },

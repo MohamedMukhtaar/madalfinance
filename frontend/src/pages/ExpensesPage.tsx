@@ -1,17 +1,18 @@
 import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Paperclip, Plus, Receipt, Trash2, TrendingDown, UploadCloud } from "lucide-react";
+import { Paperclip, Receipt, TrendingDown, UploadCloud } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, Select, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, FileUpload, ErrorState, type UploadedFile } from "@/components/ui";
 import { DonutChart } from "@/components/charts/Charts";
 import { ChartCard } from "@/components/charts/Charts";
-import { ExpenseFormModal } from "@/features/expenses/ExpenseFormModal";
-import { useDeleteExpense, useExpenses } from "@/hooks/queries";
+import { useExpenses } from "@/hooks/queries";
+import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
+import { matchesMonth } from "@/utils/monthFilter";
 import { EXPENSE_CATEGORY_COLORS } from "@/utils/constants";
 import { cn } from "@/utils/cn";
 import type { Expense } from "@/types";
@@ -28,9 +29,8 @@ const methodStyles: Record<string, string> = {
 export default function ExpensesPage() {
   const { data, isLoading, error, refetch } = useExpenses();
   const expenses = data?.rows ?? [];
-  const deleteMutation = useDeleteExpense();
   const { currency } = useSettings();
-  const [modalOpen, setModalOpen] = useState(false);
+  const { month, setMonth } = useSelectedMonth();
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [receiptFor, setReceiptFor] = useState<Expense | undefined>();
   const [receipts, setReceipts] = useState<Record<number, UploadedFile[]>>({});
@@ -49,29 +49,30 @@ export default function ExpensesPage() {
     [expenses, categoryFilter, dateMode, day, from, to]
   );
 
+  const monthExpenses = useMemo(
+    () => expenses.filter((e) => matchesMonth(e.expenseDate, month)),
+    [expenses, month]
+  );
+
   const totals = useMemo(() => {
-    const now = new Date();
-    const thisMonth = expenses.filter((e) => {
-      const d = new Date(e.expenseDate);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
+    const source = monthExpenses;
     return {
-      total: expenses.reduce((s, e) => s + e.amount, 0),
-      thisMonth: thisMonth.reduce((s, e) => s + e.amount, 0),
-      categories: new Set(expenses.map((e) => e.categoryName)).size,
-      largest: expenses.length ? Math.max(...expenses.map((e) => e.amount)) : 0,
+      total: source.reduce((s, e) => s + e.amount, 0),
+      count: source.length,
+      categories: new Set(source.map((e) => e.categoryName)).size,
+      largest: source.length ? Math.max(...source.map((e) => e.amount)) : 0,
     };
-  }, [expenses]);
+  }, [monthExpenses]);
 
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    expenses.forEach((e) => map.set(e.categoryName, (map.get(e.categoryName) ?? 0) + e.amount));
+    monthExpenses.forEach((e) => map.set(e.categoryName, (map.get(e.categoryName) ?? 0) + e.amount));
     return [...map.entries()].map(([name, value]) => ({
       name,
       value: Math.round(value),
       color: EXPENSE_CATEGORY_COLORS[name] ?? "#64748b",
     }));
-  }, [expenses]);
+  }, [monthExpenses]);
 
   const categories = useMemo(
     () => [...new Set(expenses.map((e) => e.categoryName))],
@@ -142,34 +143,31 @@ export default function ExpensesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Expenses"
-        subtitle="Track every expense, category and receipt."
-        actions={
-          <Button onClick={() => setModalOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
-            Add Expense
-          </Button>
-        }
+        title="Expense Payments"
+        subtitle="View-only log of paid expenses. Add charges in Expense Charges, then Pay."
+        actions={<MonthNavigator value={month} onChange={setMonth} />}
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard index={0} loading={isLoading} label="Total Expenses" value={formatCurrency(totals.total, currency)} icon={<Receipt className="h-5 w-5" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
-        <StatCard index={1} loading={isLoading} label="This Month" value={formatCurrency(totals.thisMonth, currency)} icon={<Receipt className="h-5 w-5" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
-        <StatCard index={2} loading={isLoading} label="Categories" value={String(totals.categories)} icon={<TrendingDown className="h-5 w-5" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
-        <StatCard index={3} loading={isLoading} label="Largest Expense" value={formatCurrency(totals.largest, currency)} icon={<TrendingDown className="h-5 w-5" />} iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" />
-      </div>
+      <StatCardsGrid>
+        <StatCard index={0} loading={isLoading} label="Month spend" value={formatCurrency(totals.total, currency)} icon={<Receipt className="h-4 w-4" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />
+        <StatCard index={1} loading={isLoading} label="Payments" value={String(totals.count)} icon={<Receipt className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
+        <StatCard index={2} loading={isLoading} label="Categories" value={String(totals.categories)} icon={<TrendingDown className="h-4 w-4" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
+        <StatCard index={3} loading={isLoading} label="Largest" value={formatCurrency(totals.largest, currency)} icon={<TrendingDown className="h-4 w-4" />} iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" />
+      </StatCardsGrid>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <ChartCard title="Spending by Category" subtitle="Distribution across expense categories" className="xl:col-span-1">
+      {byCategory.length > 0 && (
+        <ChartCard title="Spending by Category" subtitle="Selected month" className="max-w-xs">
           <DonutChart
             data={byCategory}
             centerValue={formatCurrency(byCategory.reduce((s, d) => s + d.value, 0), currency)}
             centerLabel="Total"
-            height={250}
+            height={160}
             loading={!expenses}
           />
         </ChartCard>
-        <div className="xl:col-span-2">
-          <DataTable
+      )}
+
+      <DataTable
             columns={columns}
             data={filtered}
             loading={isLoading}
@@ -203,25 +201,8 @@ export default function ExpensesPage() {
                   setReceiptFor(row);
                 },
               },
-              { divider: true },
-              {
-                label: "Delete",
-                icon: <Trash2 className="h-4 w-4" />,
-                danger: true,
-                onClick: async () => {
-                  const reason = await promptDeleteReason({
-                    title: "Delete expense?",
-                    text: "This expense will be reversed on the ledger and moved to Trash.",
-                  });
-                  if (reason) deleteMutation.mutate({ id: row.expenseId, reason });
-                },
-              },
             ]}
           />
-        </div>
-      </div>
-
-      <ExpenseFormModal open={modalOpen} onClose={() => setModalOpen(false)} />
 
       <Modal
         open={!!receiptFor}

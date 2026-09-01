@@ -7,6 +7,7 @@ import { parseListQuery, paginationMeta } from '../helpers/queryHelper.js';
 export const list = asyncHandler(async (req, res) => {
   const q = parseListQuery(req.query, {
     allowedSorts: ['payment_id', 'payment_number', 'payment_date', 'payment_method', 'amount', 'created_at'],
+    defaultSort: 'created_at:desc',
   });
   const { rows, total } = await paymentService.list({
     search: q.search,
@@ -31,6 +32,11 @@ export const create = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, payment, 'Payment recorded', 201);
 });
 
+export const update = asyncHandler(async (req, res) => {
+  const payment = await paymentService.update(Number(req.params.id), req.body, req.user.id, req.ip);
+  return ApiResponse.success(res, payment, 'Payment updated');
+});
+
 export const voidPayment = asyncHandler(async (req, res) => {
   const result = await paymentService.void(Number(req.params.id), req.body?.reason, req.user.id, req.ip);
   return ApiResponse.success(res, result, 'Payment voided');
@@ -47,4 +53,9 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, null, 'Receipt deleted');
 });
 
-export default { list, getById, create, voidPayment, addAttachment, deleteAttachment };
+export const generatePdf = asyncHandler(async (req, res) => {
+  const { filename, filePath } = await paymentService.generatePdf(Number(req.params.id));
+  res.download(filePath, filename);
+});
+
+export default { list, getById, create, update, voidPayment, addAttachment, deleteAttachment, generatePdf };

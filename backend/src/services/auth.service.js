@@ -72,7 +72,8 @@ export const authService = {
       accessToken,
       refreshToken: newRefresh,
       expiresAt,
-    };  },
+    };
+  },
 
   async logout(refreshToken, userId) {
     if (!refreshToken) return;
@@ -82,7 +83,7 @@ export const authService = {
   },
 
   async changePassword(userId, currentPassword, newPassword, ip) {
-    const user = await userRepo.findById(null, userId);
+    const user = await userRepo.findByIdWithPassword(null, userId);
     if (!user) throw ApiError.notFound('User not found');
 
     const passwordOk = await bcrypt.compare(currentPassword, user.password);
@@ -90,21 +91,20 @@ export const authService = {
 
     const hashed = await bcrypt.hash(newPassword, 12);
     await userRepo.updatePassword(null, userId, hashed);
-    // Force re-login everywhere after a password change.
     await refreshTokenRepo.revokeAllForUser(null, userId);
 
     await auditService.log({ module: 'Auth', action: 'CHANGE_PASSWORD', userId, recordId: userId, ip });
   },
 
   async changeUsername(userId, currentPassword, newUsername, ip) {
-    const user = await userRepo.findById(null, userId);
+    const user = await userRepo.findByIdWithPassword(null, userId);
     if (!user) throw ApiError.notFound('User not found');
 
     const passwordOk = await bcrypt.compare(currentPassword, user.password);
     if (!passwordOk) throw ApiError.unauthorized('Current password is incorrect');
 
-    const existing = await userRepo.findByUsername(null, newUsername);
-    if (existing && existing.user_id !== userId) throw ApiError.conflict('Username already taken');
+    const existing = await userRepo.usernameExists(null, newUsername, userId);
+    if (existing) throw ApiError.conflict('Username already taken');
 
     await userRepo.updateUsername(null, userId, newUsername);
     await auditService.log({ module: 'Auth', action: 'CHANGE_USERNAME', userId, recordId: userId, ip });

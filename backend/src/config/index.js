@@ -54,6 +54,8 @@ const env = {
   },
 
   cron: {
+    /** Nightly rental invoice generation — off by default; use Charge All / Generate in the UI. */
+    rentalAutoBillingEnabled: parseBool(process.env.RENTAL_AUTO_BILLING_ENABLED),
     rentalBilling: process.env.RENTAL_BILLING_CRON || '5 0 * * *',
     overdueCheck: process.env.OVERDUE_CHECK_CRON || '30 0 * * *',
     monthlyDues: process.env.MONTHLY_DUES_CRON || '0 1 1 * *',

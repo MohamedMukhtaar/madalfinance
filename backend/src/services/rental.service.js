@@ -18,6 +18,13 @@ const nextBillingDate = (billingDay, from) => {
   return next.format('YYYY-MM-DD');
 };
 
+const periodBillingDate = (year, month, billingDay) => {
+  const day = Math.min(Number(billingDay) || 1, 28);
+  return dayjs(`${year}-${String(month).padStart(2, '0')}-01`)
+    .date(day)
+    .format('YYYY-MM-DD');
+};
+
 export const rentalService = {
   async list(filters) {
     const rows = await rentalRepo.list(null, filters);
@@ -48,8 +55,8 @@ export const rentalService = {
     };
   },
 
-  async create(data, userId, ip) {
-    return withTransaction(async (conn) => {
+  async create(data, userId, ip, existingConn = null) {
+    const runInTx = async (conn) => {
       const project = await projectRepo.findById(conn, data.project_id);
       if (!project) throw ApiError.notFound('Project not found');
       if (project.project_type !== 'Rental') {
@@ -61,17 +68,50 @@ export const rentalService = {
 
       const billingDay = Number(data.billing_day) || 1;
       const next = data.next_billing_date || nextBillingDate(billingDay, dayjs().format('YYYY-MM-DD'));
+      const setupFee = Number(data.setup_fee ?? 0);
 
       const id = await rentalRepo.create(conn, {
         project_id: data.project_id,
         monthly_amount: Number(data.monthly_amount),
+        setup_fee: setupFee,
         billing_day: billingDay,
         next_billing_date: next,
         status: 'Active',
       });
+
+      if (setupFee > 0) {
+        const today = dayjs().format('YYYY-MM-DD');
+        const invoice_number = await generateNumber(conn, 'invoices', 'invoice_number', 'INV-');
+        const invoiceId = await invoiceRepo.create(conn, {
+          invoice_number,
+          customer_id: project.customer_id,
+          project_id: project.project_id,
+          contract_id: null,
+          invoice_date: today,
+          due_date: dayjs(today).add(rentalDueDays, 'day').format('YYYY-MM-DD'),
+          subtotal: setupFee,
+          discount: 0,
+          tax: 0,
+          total_amount: setupFee,
+          status: 'Issued',
+          created_by: userId,
+        });
+        await invoiceRepo.replaceItems(conn, invoiceId, [
+          {
+            description: `Setup / installation fee — ${project.project_name}`,
+            quantity: 1,
+            unit_price: setupFee,
+          },
+        ]);
+        await rentalRepo.setSetupInvoice(conn, id, invoiceId);
+      }
+
       await auditService.log({ module: 'Rental', action: 'CREATE', userId, recordId: id, ip });
       return rentalRepo.findById(conn, id);
-    });
+    };
+
+    if (existingConn) return runInTx(existingConn);
+    return withTransaction(runInTx);
   },
 
   async update(id, data, userId, ip) {
@@ -109,11 +149,15 @@ export const rentalService = {
 
       const today = dayjs().format('YYYY-MM-DD');
       const force = Boolean(options.force);
-      if (!force && billing.next_billing_date > today) {
+      const hasPeriod = options.month && options.year;
+      const periodDate = hasPeriod
+        ? periodBillingDate(options.year, options.month, billing.billing_day)
+        : null;
+
+      if (!force && !hasPeriod && billing.next_billing_date > today) {
         throw ApiError.badRequest('This billing is not due yet');
       }
 
-      // Scheduled runs have no authenticated user; fall back to the system admin.
       let actorId = userId;
       if (!actorId) {
         const admin = await userRepo.findByUsername(conn, 'admin');
@@ -124,31 +168,21 @@ export const rentalService = {
       const project = await projectRepo.findById(conn, billing.project_id);
       if (!project) throw ApiError.notFound('Project not found');
 
-      const billDate = force && billing.next_billing_date > today
-        ? today
-        : billing.next_billing_date;
+      const billingPeriodDate = periodDate ?? billing.next_billing_date;
+      const periodLabel = dayjs(billingPeriodDate).format('MMM YYYY');
 
-      // Idempotency guard: never create two invoices for the same rental period.
-      if (billing.last_generated && billing.last_generated <= billing.next_billing_date) {
-        const samePeriod = await invoiceRepo.list(conn, {
-          search: '',
-          status: '',
-          customerId: project.customer_id,
-          fromDate: billing.next_billing_date,
-          toDate: billing.next_billing_date,
-          offset: 0,
-          perPage: 10,
-          order: 'invoice_date ASC',
-        });
-        const dup = samePeriod.find(
-          (i) => i.project_id === project.project_id && i.total_amount === Number(billing.monthly_amount)
-        );
-        if (dup) {
-          throw ApiError.conflict(`Invoice ${dup.invoice_number} already exists for this rental period`);
-        }
+      const existing = await invoiceRepo.findRentalMonthlyForPeriod(conn, project.project_id, periodLabel);
+      if (existing) {
+        throw ApiError.conflict(`Invoice ${existing.invoice_number} already exists for ${periodLabel}`);
       }
 
-      const periodLabel = dayjs(billing.next_billing_date).format('MMM YYYY');
+      const billDate =
+        hasPeriod && periodDate
+          ? periodDate
+          : force && billing.next_billing_date > today
+            ? today
+            : billing.next_billing_date;
+
       const invoice_number = await generateNumber(conn, 'invoices', 'invoice_number', 'INV-');
 
       const invoiceId = await invoiceRepo.create(conn, {
@@ -173,30 +207,39 @@ export const rentalService = {
         },
       ]);
 
-      await rentalRepo.advanceBilling(conn, billingId, {
-        next_billing_date: nextBillingDate(billing.billing_day, billing.next_billing_date),
-        last_generated: billing.next_billing_date,
-      });
+      const periodMonth = dayjs(billingPeriodDate).startOf('month');
+      const nextMonth = dayjs(billing.next_billing_date).startOf('month');
+      if (!periodMonth.isBefore(nextMonth)) {
+        await rentalRepo.advanceBilling(conn, billingId, {
+          next_billing_date: nextBillingDate(billing.billing_day, billing.next_billing_date),
+          last_generated: billingPeriodDate,
+        });
+      }
 
       await auditService.log({ module: 'Rental', action: 'BILLING', userId, recordId: billingId, ip: null });
       return invoiceRepo.findById(conn, invoiceId);
     });
   },
 
-  /** Used by the cron job / Charge All: generate due invoices for all active billings. */
-  async processDueBillings(userId = null, { force = false } = {}) {
+  /** Used by the cron job / Charge All: generate invoices for active billings for a billing period. */
+  async processDueBillings(userId = null, { force = false, month, year } = {}) {
     const today = dayjs().format('YYYY-MM-DD');
-    const due = force
-      ? await rentalRepo.list(null, { status: 'Active', offset: 0, perPage: 10000, order: 'next_billing_date ASC' })
-      : await rentalRepo.dueForBilling(null, today);
+    const due =
+      force || (month && year)
+        ? await rentalRepo.list(null, { status: 'Active', offset: 0, perPage: 10000, order: 'next_billing_date ASC' })
+        : await rentalRepo.dueForBilling(null, today);
     const results = { generated: 0, skipped: 0, errors: [] };
     for (const billing of due) {
       try {
-        await this.generateMonthlyInvoice(billing.billing_id, userId, { force });
+        await this.generateMonthlyInvoice(billing.billing_id, userId, {
+          force: true,
+          month: month ?? undefined,
+          year: year ?? undefined,
+        });
         results.generated += 1;
       } catch (err) {
-        if (err instanceof ApiError && (err.statusCode === 409)) {
-          results.skipped += 1; // already billed this month
+        if (err instanceof ApiError && err.statusCode === 409) {
+          results.skipped += 1;
         } else {
           results.errors.push({ billingId: billing.billing_id, message: err.message });
         }

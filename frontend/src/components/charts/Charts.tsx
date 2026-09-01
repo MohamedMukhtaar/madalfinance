@@ -209,12 +209,21 @@ export function IncomeExpenseBarChart({
   data,
   currency = "$",
   height = 300,
+  loading,
 }: {
   data: ChartDatum[];
   currency?: string;
   height?: number;
+  loading?: boolean;
 }) {
   const t = useChartTheme();
+  if (loading) {
+    return (
+      <div style={{ height }}>
+        <Skeleton className="h-full w-full" />
+      </div>
+    );
+  }
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -14 }} barGap={5}>
@@ -230,6 +239,203 @@ export function IncomeExpenseBarChart({
         <Legend formatter={(v: string) => <span style={{ color: t.legendText, fontSize: 12 }}>{v}</span>} />
         <Bar dataKey="income" name="Income" fill="#74bcf8" radius={[6, 6, 0, 0]} maxBarSize={18} />
         <Bar dataKey="expense" name="Expense" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={18} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Horizontal bar ranking (e.g. customers by outstanding, expense categories). */
+export function HorizontalBarChart({
+  data,
+  currency = "$",
+  height = 300,
+  loading,
+  valueKey = "value",
+  nameKey = "name",
+  color = "#101848",
+}: {
+  data: Array<Record<string, string | number>>;
+  currency?: string;
+  height?: number;
+  loading?: boolean;
+  valueKey?: string;
+  nameKey?: string;
+  color?: string;
+}) {
+  const t = useChartTheme();
+  if (loading) {
+    return (
+      <div style={{ height }}>
+        <Skeleton className="h-full w-full" />
+      </div>
+    );
+  }
+  if (!data.length) {
+    return <p className="py-16 text-center text-sm text-slate-400">No data to chart.</p>;
+  }
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} layout="vertical" margin={{ top: 8, right: 24, bottom: 0, left: 8 }}>
+        <CartesianGrid stroke={t.grid} strokeDasharray="3 3" horizontal={false} />
+        <XAxis
+          type="number"
+          tick={{ fill: t.axis, fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => formatCompactCurrency(v, currency)}
+        />
+        <YAxis
+          type="category"
+          dataKey={nameKey}
+          width={110}
+          tick={{ fill: t.axis, fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <Tooltip content={<ChartTooltip currency={currency} />} cursor={{ fill: "rgba(100,116,139,0.06)" }} />
+        <Bar dataKey={valueKey} name="Amount" fill={color} radius={[0, 6, 6, 0]} maxBarSize={18}>
+          {data.map((entry, i) => (
+            <Cell key={i} fill={String(entry.color ?? color)} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Full pie (not donut) for mix views. */
+export function FullPieChart({
+  data,
+  height = 280,
+  loading,
+  currency = "$",
+}: {
+  data: Array<{ name: string; value: number; color: string }>;
+  height?: number;
+  loading?: boolean;
+  currency?: string;
+}) {
+  if (loading) {
+    return (
+      <div style={{ height }}>
+        <Skeleton className="h-full w-full" />
+      </div>
+    );
+  }
+  const total = data.reduce((s, d) => s + d.value, 0);
+  return (
+    <div>
+      <ResponsiveContainer width="100%" height={height}>
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="name"
+            cx="50%"
+            cy="50%"
+            outerRadius="88%"
+            paddingAngle={2}
+            strokeWidth={0}
+          >
+            {data.map((entry) => (
+              <Cell key={entry.name} fill={entry.color} />
+            ))}
+          </Pie>
+          <Tooltip content={<ChartTooltip currency={currency} showPercent />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+        {data.map((d) => (
+          <span key={d.name} className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: d.color }} />
+            {d.name}
+            <span className="font-semibold text-slate-700 dark:text-slate-200">
+              {formatCurrency(d.value, currency)}
+              {total ? ` · ${Math.round((d.value / total) * 100)}%` : ""}
+            </span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Net profit/loss line for income statement. */
+export function NetTrendLineChart({
+  data,
+  currency = "$",
+  height = 280,
+  loading,
+}: {
+  data: ChartDatum[];
+  currency?: string;
+  height?: number;
+  loading?: boolean;
+}) {
+  const t = useChartTheme();
+  if (loading) {
+    return (
+      <div style={{ height }}>
+        <Skeleton className="h-full w-full" />
+      </div>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -14 }}>
+        <CartesianGrid stroke={t.grid} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="month" tick={{ fill: t.axis, fontSize: 11 }} axisLine={false} tickLine={false} dy={6} />
+        <YAxis
+          tick={{ fill: t.axis, fontSize: 11 }}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={(v: number) => formatCompactCurrency(v, currency)}
+        />
+        <Tooltip content={<ChartTooltip currency={currency} />} cursor={{ stroke: t.grid }} />
+        <Legend formatter={(v: string) => <span style={{ color: t.legendText, fontSize: 12 }}>{v}</span>} />
+        <Line
+          type="monotone"
+          dataKey="profit"
+          name="Net profit"
+          stroke="#101848"
+          strokeWidth={2.5}
+          dot={{ r: 3, fill: "#101848", strokeWidth: 0 }}
+          activeDot={{ r: 5 }}
+        />
+      </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Stacked bars for member dues status (counts). */
+export function StackedStatusBarChart({
+  data,
+  height = 280,
+  loading,
+}: {
+  data: ChartDatum[];
+  height?: number;
+  loading?: boolean;
+}) {
+  const t = useChartTheme();
+  if (loading) {
+    return (
+      <div style={{ height }}>
+        <Skeleton className="h-full w-full" />
+      </div>
+    );
+  }
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -14 }}>
+        <CartesianGrid stroke={t.grid} strokeDasharray="3 3" vertical={false} />
+        <XAxis dataKey="name" tick={{ fill: t.axis, fontSize: 11 }} axisLine={false} tickLine={false} dy={6} />
+        <YAxis tick={{ fill: t.axis, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+        <Tooltip cursor={{ fill: "rgba(100,116,139,0.06)" }} />
+        <Legend formatter={(v: string) => <span style={{ color: t.legendText, fontSize: 12 }}>{v}</span>} />
+        <Bar dataKey="paid" name="Paid" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={36} />
+        <Bar dataKey="partial" name="Partial" stackId="a" fill="#f59e0b" maxBarSize={36} />
+        <Bar dataKey="pending" name="Pending" stackId="a" fill="#f43f5e" radius={[6, 6, 0, 0]} maxBarSize={36} />
       </BarChart>
     </ResponsiveContainer>
   );
