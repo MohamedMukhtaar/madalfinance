@@ -6,11 +6,11 @@ import {
   FilePlus2,
   FileText,
   Paperclip,
-  Plus,
   Printer,
   Download,
   Trash2,
   Banknote,
+  Receipt,
 } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -18,8 +18,9 @@ import { Button } from "@/components/ui/Button";
 import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { GenerateInvoiceModal } from "@/features/invoices/GenerateInvoiceModal";
 import { InvoiceViewModal } from "@/features/invoices/InvoiceViewModal";
+import { BillingPeriodPicker, MONTHS } from "@/features/invoices/BillingPeriodPicker";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
-import { useCustomers, useDeleteInvoice, useInvoices, useProjects } from "@/hooks/queries";
+import { useChargeAllRentals, useCustomers, useDeleteInvoice, useInvoices, useProjects, useRentals } from "@/hooks/queries";
 import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
@@ -35,15 +36,20 @@ import toast from "react-hot-toast";
 const columnHelper = createColumnHelper<Invoice>();
 
 export default function InvoicesPage() {
+  const now = new Date();
   const { user } = useAuth();
   const manage = canManage(user?.role);
   const deleteMutation = useDeleteInvoice();
+  const chargeAllMutation = useChargeAllRentals();
   const { currency, settings } = useSettings();
   const { month, setMonth } = useSelectedMonth();
 
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(12);
   const [modalOpen, setModalOpen] = useState(false);
+  const [chargeRentOpen, setChargeRentOpen] = useState(false);
+  const [billingMonth, setBillingMonth] = useState(String(now.getMonth() + 1));
+  const [billingYear, setBillingYear] = useState(String(now.getFullYear()));
   const [viewId, setViewId] = useState<number | undefined>();
   const [payFor, setPayFor] = useState<Invoice | undefined>();
   const [statusFilter, setStatusFilter] = useState("all");
@@ -77,11 +83,28 @@ export default function InvoicesPage() {
   const { data: monthInvoicesData } = useInvoices({ ...monthParams, perPage: 500 });
   const { data: customersData } = useCustomers();
   const { data: projectsData } = useProjects();
+  const { data: rentalsData } = useRentals();
   const invoices = invoicesData?.rows ?? [];
   const totalCount = invoicesData?.total ?? 0;
   const customers = customersData?.rows ?? [];
   const projects = projectsData?.rows ?? [];
   const monthInvoices = monthInvoicesData?.rows ?? [];
+  const activeRentals = useMemo(
+    () => (rentalsData?.rows ?? []).filter((r) => r.status === "Active"),
+    [rentalsData]
+  );
+  const totalMonthlyRent = useMemo(
+    () => activeRentals.reduce((s, r) => s + r.monthlyAmount, 0),
+    [activeRentals]
+  );
+  const periodLabel = `${MONTHS[Number(billingMonth) - 1]?.label ?? billingMonth} ${billingYear}`;
+
+  const openChargeRent = () => {
+    const d = new Date();
+    setBillingMonth(String(d.getMonth() + 1));
+    setBillingYear(String(d.getFullYear()));
+    setChargeRentOpen(true);
+  };
 
   const totals = useMemo(
     () => ({
@@ -183,14 +206,24 @@ export default function InvoicesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Invoices"
-        subtitle="Customer charges. Use Pay on each line to record payment."
+        subtitle="All customer charges — setup, monthly rent, and one-time invoices. Use Charge rent for monthly billing."
         actions={
           <>
             <MonthNavigator value={month} onChange={setMonth} />
             {manage && (
-              <Button onClick={() => setModalOpen(true)} leftIcon={<FilePlus2 className="h-4 w-4" />}>
-                Generate Invoice
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={openChargeRent}
+                  leftIcon={<Receipt className="h-4 w-4" />}
+                  disabled={activeRentals.length === 0}
+                >
+                  Charge rent ({activeRentals.length})
+                </Button>
+                <Button onClick={() => setModalOpen(true)} leftIcon={<FilePlus2 className="h-4 w-4" />}>
+                  Generate Invoice
+                </Button>
+              </>
             )}
           </>
         }
@@ -342,6 +375,51 @@ export default function InvoicesPage() {
         customers={customers}
         projects={projects}
       />
+
+      <Modal
+        open={chargeRentOpen}
+        onClose={() => setChargeRentOpen(false)}
+        title="Charge rent"
+        subtitle="Create monthly rent invoices for every active rental for the selected period."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setChargeRentOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              loading={chargeAllMutation.isPending}
+              onClick={() =>
+                chargeAllMutation.mutate(
+                  { force: true, month: Number(billingMonth), year: Number(billingYear) },
+                  { onSuccess: () => setChargeRentOpen(false) }
+                )
+              }
+            >
+              Charge {activeRentals.length} for {periodLabel}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300">
+          <BillingPeriodPicker
+            month={billingMonth}
+            year={billingYear}
+            onMonthChange={setBillingMonth}
+            onYearChange={setBillingYear}
+          />
+          <p>
+            Creates one <span className="font-semibold">monthly rent</span> invoice per active rental for{" "}
+            <span className="font-semibold text-slate-900 dark:text-white">{periodLabel}</span>. Setup fees are not
+            included — they were already invoiced when the rental project was created.
+          </p>
+          <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Estimated total</p>
+            <p className="font-mono text-lg font-bold text-brand-600 dark:text-brand-400">
+              {formatCurrency(totalMonthlyRent, currency)}
+            </p>
+          </div>
+        </div>
+      </Modal>
 
       <InvoiceViewModal
         open={!!viewId}

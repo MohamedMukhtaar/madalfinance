@@ -858,6 +858,14 @@ export const financeService = {
     return unwrap(res);
   },
 
+  async customerPaymentStatus(params?: ListParams) {
+    const res = await authApi.get<Record<string, unknown>>(
+      "/reports/customer-payment-status",
+      toQuery(params)
+    );
+    return unwrap(res);
+  },
+
   async expenseByCategory(params?: ListParams) {
     const res = await authApi.get<Record<string, unknown>>(
       "/reports/expenses-by-category",

@@ -18,7 +18,6 @@ const UsersPage = lazy(() => import("@/pages/UsersPage"));
 const CustomersPage = lazy(() => import("@/pages/CustomersPage"));
 const CustomerDetailPage = lazy(() => import("@/pages/CustomerDetailPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
-const RentalsPage = lazy(() => import("@/pages/RentalsPage"));
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
 const PaymentsPage = lazy(() => import("@/pages/PaymentsPage"));
 const ContributionsPage = lazy(() => import("@/pages/ContributionsPage"));
@@ -60,8 +59,8 @@ export const router = createBrowserRouter([
       { path: "projects", element: <Navigate to="/projects/customers" replace /> },
       { path: "projects/customers", element: withLoader(ProjectsPage) },
       { path: "projects/one-time", element: <Navigate to="/projects/customers" replace /> },
-      { path: "projects/rental", element: withLoader(RentalsPage) },
-      { path: "rentals", element: <Navigate to="/projects/rental" replace /> },
+      { path: "projects/rental", element: <Navigate to="/projects/customers" replace /> },
+      { path: "rentals", element: <Navigate to="/projects/customers" replace /> },
       { path: "invoices", element: withLoader(InvoicesPage) },
       { path: "invoices/:id", element: <Navigate to="/invoices" replace /> },
       { path: "payments", element: withLoader(PaymentsPage) },

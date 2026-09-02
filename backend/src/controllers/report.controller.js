@@ -28,6 +28,11 @@ export const outstandingCustomers = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, data, 'Outstanding customers generated');
 });
 
+export const customerPaymentStatus = asyncHandler(async (req, res) => {
+  const data = await reportService.customerPaymentStatus();
+  return ApiResponse.success(res, data, 'Customer payment status generated');
+});
+
 export const expenseByCategory = asyncHandler(async (req, res) => {
   const data = await reportService.expenseByCategory(req.query.from_date || '', req.query.to_date || '');
   return ApiResponse.success(res, data, 'Expense breakdown generated');
@@ -113,6 +118,7 @@ export default {
   cashFlow,
   rentalRevenue,
   outstandingCustomers,
+  customerPaymentStatus,
   expenseByCategory,
   contributionReport,
   projectReport,

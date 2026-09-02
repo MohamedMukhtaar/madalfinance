@@ -3,7 +3,6 @@ import {
   LayoutDashboard,
   Users,
   FolderKanban,
-  KeyRound,
   FileText,
   CreditCard,
   UsersRound,
@@ -60,12 +59,9 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Projects",
+    path: "/projects/customers",
     icon: FolderKanban,
     badgeKey: "projects",
-    children: [
-      { label: "Projects", path: "/projects/customers", icon: FolderKanban },
-      { label: "Project Charges", path: "/projects/rental", icon: KeyRound, badgeKey: "rentals" },
-    ],
   },
   { label: "Payments", path: "/payments", icon: CreditCard },
   { label: "Accounts", path: "/accounts", icon: Landmark },

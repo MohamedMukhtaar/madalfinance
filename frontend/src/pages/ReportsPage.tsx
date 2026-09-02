@@ -56,7 +56,7 @@ import {
   useMemberStatement,
   useMembers,
   useMonthlyRevenueReport,
-  useOutstandingCustomersReport,
+  useCustomerPaymentReport,
   usePayments,
   useTransactions,
 } from "@/hooks/queries";
@@ -124,6 +124,7 @@ export default function ReportsPage() {
   const { month, setMonth } = useSelectedMonth();
 
   const [displayMode, setDisplayMode] = useState<"charts" | "table">("charts");
+  const [customerPayFilter, setCustomerPayFilter] = useState<"all" | "unpaid" | "partial" | "paid">("all");
   const charts = useLazyReportCharts(displayMode === "charts");
   const ChartCard = charts?.ChartCard ?? ((props: { title?: string; subtitle?: string; className?: string; children?: React.ReactNode }) => (
     <Card className={props.className}>
@@ -153,7 +154,7 @@ export default function ReportsPage() {
   const allInvoices = invoicesData?.rows ?? [];
   const allPayments = paymentsData?.rows ?? [];
   const { data: income, isLoading: incomeLoading } = useIncomeStatement({ ...reportParams, enabled: view === "income-statement" });
-  const { data: customers, isLoading: customersLoading } = useOutstandingCustomersReport({ ...reportParams, enabled: view === "customers" });
+  const { data: customers, isLoading: customersLoading } = useCustomerPaymentReport({ enabled: view === "customers" });
   const { data: expenses, isLoading: expensesLoading } = useExpenseByCategoryReport({ ...reportParams, enabled: view === "expenses" });
   const { data: monthly, isLoading: monthlyLoading } = useMonthlyRevenueReport({
     months: 12,
@@ -329,10 +330,53 @@ export default function ReportsPage() {
   }, [cashFlow]);
 
   const customerRowsRaw = asRows<Record<string, unknown>>(customers);
-  const expenseRows = asRows<{ categoryName: string; total: number; count: number }>(expenses);
 
-  // Outstanding balances are point-in-time — do not client-filter by invoice dates.
-  const customerRows = customerRowsRaw;
+  const customerRowsAll = useMemo(
+    () =>
+      customerRowsRaw.filter((c) => {
+        const invoiced = Number(c.totalInvoiced ?? c.total_invoiced ?? 0);
+        return invoiced > 0 || Number(c.outstanding ?? 0) > 0;
+      }),
+    [customerRowsRaw]
+  );
+
+  const customerRows = useMemo(() => {
+    if (customerPayFilter === "unpaid") {
+      return customerRowsAll.filter(
+        (c) => String(c.paymentStatus ?? c.payment_status ?? "") === "Unpaid"
+      );
+    }
+    if (customerPayFilter === "partial") {
+      return customerRowsAll.filter(
+        (c) => String(c.paymentStatus ?? c.payment_status ?? "") === "Partial"
+      );
+    }
+    if (customerPayFilter === "paid") {
+      return customerRowsAll.filter(
+        (c) => String(c.paymentStatus ?? c.payment_status ?? "") === "Paid"
+      );
+    }
+    return customerRowsAll;
+  }, [customerRowsAll, customerPayFilter]);
+
+  const customerPaySummary = useMemo(() => {
+    const statusOf = (c: Record<string, unknown>) =>
+      String(c.paymentStatus ?? c.payment_status ?? "");
+    const unpaidOnly = customerRowsAll.filter((c) => statusOf(c) === "Unpaid");
+    const partial = customerRowsAll.filter((c) => statusOf(c) === "Partial");
+    const paid = customerRowsAll.filter((c) => statusOf(c) === "Paid");
+    const totalOutstanding = customerRowsAll.reduce((s, c) => s + (Number(c.outstanding) || 0), 0);
+    const totalCollected = customerRowsAll.reduce((s, c) => s + (Number(c.totalPaid ?? c.total_paid) || 0), 0);
+    return {
+      unpaidCount: unpaidOnly.length,
+      partialCount: partial.length,
+      paidCount: paid.length,
+      totalOutstanding,
+      totalCollected,
+    };
+  }, [customerRowsAll]);
+
+  const expenseRows = asRows<{ categoryName: string; total: number; count: number }>(expenses);
 
   const contributionData = contribution as {
     summary?: {
@@ -373,14 +417,27 @@ export default function ReportsPage() {
 
   const customerChart = useMemo(
     () =>
-      customerRows.slice(0, 8).map((c, index) => ({
-        name: String(c.customerName ?? "Customer").slice(0, 18),
-        value: Number(c.outstanding) || 0,
-        color: CHART_PALETTE[index % CHART_PALETTE.length],
-      })),
-    [customerRows]
+      customerRowsAll
+        .filter((c) => Number(c.outstanding) > 0)
+        .slice(0, 8)
+        .map((c, index) => ({
+          name: String(c.customerName ?? c.customer_name ?? "Customer").slice(0, 18),
+          value: Number(c.outstanding) || 0,
+          color: CHART_PALETTE[index % CHART_PALETTE.length],
+        })),
+    [customerRowsAll]
   );
-  const totalOutstanding = customerRows.reduce((s, c) => s + (Number(c.outstanding) || 0), 0);
+  const totalOutstanding = customerPaySummary.totalOutstanding;
+
+  const customerStatusChart = useMemo(
+    () =>
+      [
+        { name: "Unpaid", value: customerPaySummary.unpaidCount, color: "#f43f5e" },
+        { name: "Partial", value: customerPaySummary.partialCount, color: "#f59e0b" },
+        { name: "Paid", value: customerPaySummary.paidCount, color: "#10b981" },
+      ].filter((d) => d.value > 0),
+    [customerPaySummary]
+  );
 
   const memberStatusChart = useMemo(() => {
     const s = contributionData?.summary;
@@ -437,7 +494,7 @@ export default function ReportsPage() {
   const exportConfig = useMemo(() => {
     switch (view) {
       case "customers":
-        return { kind: "outstandingCustomers" };
+        return { kind: "customerPaymentStatus" };
       case "expenses":
         return { kind: "expenseByCategory" };
       case "members":
@@ -1501,30 +1558,44 @@ export default function ReportsPage() {
 
       {view === "customers" && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <ReportStat index={0} label="Customers owing" value={String(customerRows.length)} icon={<Users className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={customersLoading} />
-            <ReportStat index={1} label="Total outstanding" value={formatCurrency(totalOutstanding, currency)} icon={<Wallet className="h-5 w-5" />} className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" loading={customersLoading} />
-            <ReportStat
-              index={2}
-              label="Largest balance"
-              value={formatCurrency(Number(customerRows[0]?.outstanding ?? 0), currency)}
-              icon={<TrendingUp className="h-5 w-5" />}
-              className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
-              loading={customersLoading}
-            />
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {(["all", "unpaid", "partial", "paid"] as const).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setCustomerPayFilter(filter)}
+                className={cn(
+                  "rounded-xl px-3 py-1.5 text-xs font-semibold capitalize transition",
+                  customerPayFilter === filter
+                    ? "bg-navy text-white dark:bg-brand-500"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                )}
+              >
+                {filter === "all" ? "All" : filter}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+            <ReportStat index={0} label="Unpaid" value={String(customerPaySummary.unpaidCount)} icon={<Users className="h-5 w-5" />} className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" loading={customersLoading} />
+            <ReportStat index={1} label="Partial" value={String(customerPaySummary.partialCount)} icon={<Users className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={customersLoading} />
+            <ReportStat index={2} label="Paid" value={String(customerPaySummary.paidCount)} icon={<Users className="h-5 w-5" />} className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" loading={customersLoading} />
+            <ReportStat index={3} label="Outstanding" value={formatCurrency(customerPaySummary.totalOutstanding, currency)} icon={<Wallet className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={customersLoading} />
+            <ReportStat index={4} label="Collected" value={formatCurrency(customerPaySummary.totalCollected, currency)} icon={<TrendingUp className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={customersLoading} />
           </div>
           {displayMode === "charts" ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <ChartCard title="Outstanding mix" subtitle="Pie of top customer balances">
+              <ChartCard title="Payment status" subtitle="Unpaid, partial, and paid customers">
                 <DonutChart
-                  data={customerChart}
-                  centerValue={formatCompactCurrency(totalOutstanding, currency)}
-                  centerLabel="Owed"
+                  data={customerStatusChart}
+                  centerValue={String(
+                    customerPaySummary.unpaidCount + customerPaySummary.partialCount + customerPaySummary.paidCount
+                  )}
+                  centerLabel="Customers"
                   height={260}
                   loading={customersLoading}
                 />
               </ChartCard>
-              <ChartCard title="Who owes the most" subtitle="Horizontal bar ranking" className="xl:col-span-2">
+              <ChartCard title="Who owes the most" subtitle="Horizontal bar — outstanding balances" className="xl:col-span-2">
                 <HorizontalBarChart
                   data={customerChart}
                   currency={currency}
@@ -1537,10 +1608,10 @@ export default function ReportsPage() {
           ) : (
             <Card>
               <CardHeader
-                title="Outstanding customers"
-                subtitle="Unpaid invoice balances by customer"
+                title="Customer payment status"
+                subtitle="Unpaid, partial, and paid — with last payment date"
                 action={
-                  <Button size="sm" variant="secondary" onClick={() => exportReport("outstandingCustomers", "xlsx")}>
+                  <Button size="sm" variant="secondary" onClick={() => exportReport("customerPaymentStatus", "xlsx")}>
                     Export
                   </Button>
                 }
@@ -1550,44 +1621,56 @@ export default function ReportsPage() {
                   <thead>
                     <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800">
                       <th className="px-3 py-2">Customer</th>
-                      <th className="px-3 py-2">Code</th>
+                      <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Last payment</th>
+                      <th className="px-3 py-2 text-right">Invoiced</th>
+                      <th className="px-3 py-2 text-right">Paid</th>
                       <th className="px-3 py-2 text-right">Outstanding</th>
-                      <th className="px-3 py-2 text-right">Share</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {customerRows.map((c) => {
+                      const status = String(c.paymentStatus ?? c.payment_status ?? "—");
+                      const invoiced = Number(c.totalInvoiced ?? c.total_invoiced ?? 0);
+                      const paid = Number(c.totalPaid ?? c.total_paid ?? 0);
                       const amt = Number(c.outstanding) || 0;
+                      const lastPaid = (c.lastPaymentAt ?? c.last_payment_at) as string | undefined;
+                      const statusStyle =
+                        status === "Paid"
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300"
+                          : status === "Partial"
+                            ? "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300"
+                            : "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300";
                       return (
                         <tr key={String(c.customerId ?? c.customer_id)} className="text-slate-600 dark:text-slate-300">
-                          <td className="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{String(c.customerName)}</td>
-                          <td className="px-3 py-2.5 text-slate-400">{String(c.customerCode ?? "—")}</td>
-                          <td className="px-3 py-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">
-                            {formatCurrency(amt, currency)}
+                          <td className="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{String(c.customerName ?? c.customer_name)}</td>
+                          <td className="px-3 py-2.5">
+                            <Badge className={statusStyle}>{status}</Badge>
                           </td>
-                          <td className="px-3 py-2.5 text-right font-mono">
-                            {totalOutstanding ? Math.round((amt / totalOutstanding) * 100) : 0}%
+                          <td className="px-3 py-2.5 text-xs text-slate-500">
+                            {lastPaid ? (
+                              <>
+                                <span className="font-medium text-slate-700 dark:text-slate-200">
+                                  {formatDate(lastPaid)}
+                                </span>
+                                <span className="ml-1.5 text-slate-400">{formatTime(lastPaid)}</span>
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono">{formatCurrency(invoiced, currency)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400">{formatCurrency(paid, currency)}</td>
+                          <td className={cn("px-3 py-2.5 text-right font-mono font-bold", amt > 0 ? "text-rose-600 dark:text-rose-400" : "text-slate-400")}>
+                            {formatCurrency(amt, currency)}
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
-                  {customerRows.length > 0 && (
-                    <tfoot>
-                      <tr className="border-t-2 border-slate-200 font-bold dark:border-slate-700">
-                        <td className="px-3 py-2.5" colSpan={2}>
-                          Total
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-rose-600">
-                          {formatCurrency(totalOutstanding, currency)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono">100%</td>
-                      </tr>
-                    </tfoot>
-                  )}
                 </table>
                 {!customersLoading && customerRows.length === 0 && (
-                  <p className="px-5 py-8 text-center text-sm text-slate-400">All customers are settled. Nice work!</p>
+                  <p className="px-5 py-8 text-center text-sm text-slate-400">No customers match this filter.</p>
                 )}
               </div>
             </Card>

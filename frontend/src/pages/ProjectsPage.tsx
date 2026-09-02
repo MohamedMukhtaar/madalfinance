@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, ImageOff, Pencil, Paperclip, Plus } from "lucide-react";
+import { CalendarDays, ImageOff, Pause, Pencil, Paperclip, Play, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -13,31 +13,42 @@ import {
   EmptyState,
   ErrorState,
   FileUpload,
+  Tabs,
   type UploadedFile,
 } from "@/components/ui";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectFormModal } from "@/features/projects/ProjectFormModal";
 import {
   useCustomers,
+  usePauseRental,
   useProjects,
+  useRentals,
+  useResumeRental,
   useUploadProjectAttachment,
 } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { financeService } from "@/services/finance";
-import { PROJECT_STATUS_STYLES } from "@/utils/constants";
+import { PROJECT_STATUS_STYLES, RENTAL_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
 import { cn } from "@/utils/cn";
-import type { Project } from "@/types";
+import type { Project, RentalBilling } from "@/types";
+
+type ProjectTab = "one-time" | "rental";
 
 export default function ProjectsPage() {
   const { data: projectsData, isLoading, error, refetch } = useProjects();
   const { data: customersData } = useCustomers();
+  const { data: rentalsData } = useRentals({ perPage: 200 });
   const projects = projectsData?.rows ?? [];
   const customers = customersData?.rows ?? [];
+  const rentals = rentalsData?.rows ?? [];
   const { currency } = useSettings();
   const uploadAttachment = useUploadProjectAttachment();
+  const pauseMutation = usePauseRental();
+  const resumeMutation = useResumeRental();
 
+  const [tab, setTab] = useState<ProjectTab>("one-time");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Project | undefined>();
   const [attachFor, setAttachFor] = useState<Project | undefined>();
@@ -53,6 +64,12 @@ export default function ProjectsPage() {
   const attachmentFileName = attachFor?.attachmentFileName ?? "";
   const isPdfAttachment = attachmentFileName.toLowerCase().endsWith(".pdf");
   const isImageAttachment = /\.(png|jpe?g|webp)$/i.test(attachmentFileName);
+
+  const rentalByProjectId = useMemo(() => {
+    const map = new Map<number, RentalBilling>();
+    for (const r of rentals) map.set(r.projectId, r);
+    return map;
+  }, [rentals]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,12 +107,23 @@ export default function ProjectsPage() {
     };
   }, []);
 
+  const oneTimeProjects = useMemo(
+    () => projects.filter((p) => String(p.projectType).toLowerCase() !== "rental"),
+    [projects]
+  );
+  const rentalProjects = useMemo(
+    () => projects.filter((p) => String(p.projectType).toLowerCase() === "rental"),
+    [projects]
+  );
+
+  const tabProjects = tab === "rental" ? rentalProjects : oneTimeProjects;
+
   const filtered = useMemo(
     () =>
-      projects.filter((p) =>
+      tabProjects.filter((p) =>
         matchesDateFilter(p.startDate ?? p.createdAt, { mode: dateMode, date: day, from, to })
       ),
-    [projects, dateMode, day, from, to]
+    [tabProjects, dateMode, day, from, to]
   );
 
   const customerName = (id: number) => customers.find((c) => c.customerId === id)?.customerName ?? "Unknown";
@@ -105,8 +133,8 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Projects"
-        subtitle="Register one-time and rental projects for each customer. Charges and payments are managed from Project Charges and Invoices."
+        title="Customer Projects"
+        subtitle="One-time projects invoice on create. Rental setup invoices on create; monthly rent is charged from Invoices."
         actions={
           <Button
             onClick={() => {
@@ -118,6 +146,15 @@ export default function ProjectsPage() {
             New Project
           </Button>
         }
+      />
+
+      <Tabs
+        active={tab}
+        onChange={(value) => setTab(value as ProjectTab)}
+        tabs={[
+          { label: "One-time", value: "one-time", count: oneTimeProjects.length },
+          { label: "Rental", value: "rental", count: rentalProjects.length },
+        ]}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -142,8 +179,12 @@ export default function ProjectsPage() {
       ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
-            title="No projects found"
-            description="Create a new project to get started."
+            title={tab === "rental" ? "No rental projects" : "No one-time projects"}
+            description={
+              tab === "rental"
+                ? "Create a rental project to start monthly billing."
+                : "Create a one-time project to invoice the customer."
+            }
             action={
               <Button onClick={() => setFormOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
                 New Project
@@ -157,6 +198,9 @@ export default function ProjectsPage() {
             const isRental = String(p.projectType).toLowerCase() === "rental";
             const hasAttachment = Boolean(p.attachmentPath);
             const statusStyle = PROJECT_STATUS_STYLES[p.status] ?? PROJECT_STATUS_STYLES.Pending;
+            const billing = isRental ? rentalByProjectId.get(p.projectId) : undefined;
+            const billingActive = billing?.status === "Active";
+            const billingPaused = billing?.status === "Paused";
 
             return (
               <motion.div
@@ -188,12 +232,14 @@ export default function ProjectsPage() {
                         </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <Badge className="bg-brand-50 text-brand-700 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/30">
-                          {p.projectType}
-                        </Badge>
                         <Badge className={statusStyle.badge} dot>
                           {p.status}
                         </Badge>
+                        {billing && (
+                          <Badge className={RENTAL_STATUS_STYLES[billing.status] ?? RENTAL_STATUS_STYLES.Active} dot>
+                            {billing.status}
+                          </Badge>
+                        )}
                       </div>
                     </div>
 
@@ -229,7 +275,18 @@ export default function ProjectsPage() {
                       </div>
                     )}
 
-                    <div className="mt-4 grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+                    {billing?.nextBillingDate && (
+                      <p className="mt-1 text-xs text-slate-400">
+                        Next bill {formatDate(billing.nextBillingDate)}
+                      </p>
+                    )}
+
+                    <div
+                      className={cn(
+                        "mt-4 grid gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800",
+                        isRental && billing ? "grid-cols-3" : "grid-cols-2"
+                      )}
+                    >
                       <CardAction
                         label="Edit"
                         icon={<Pencil className="h-3.5 w-3.5" />}
@@ -241,12 +298,28 @@ export default function ProjectsPage() {
                       <CardAction
                         label={hasAttachment ? "View" : "Attach"}
                         icon={<Paperclip className="h-3.5 w-3.5" />}
-                        disabled={false}
                         onClick={() => {
                           setAttachmentFiles([]);
                           setAttachFor(p);
                         }}
                       />
+                      {isRental && billing && (
+                        <CardAction
+                          label={billingPaused ? "Resume" : "Pause"}
+                          icon={
+                            billingPaused ? (
+                              <Play className="h-3.5 w-3.5" />
+                            ) : (
+                              <Pause className="h-3.5 w-3.5" />
+                            )
+                          }
+                          disabled={pauseMutation.isPending || resumeMutation.isPending}
+                          onClick={() => {
+                            if (billingPaused) resumeMutation.mutate(billing.billingId);
+                            else if (billingActive) pauseMutation.mutate(billing.billingId);
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 </Card>

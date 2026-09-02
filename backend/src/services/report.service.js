@@ -91,6 +91,20 @@ const REPORT_DEFINITIONS = {
     ],
     build: (rows) => rows,
   },
+  customerPaymentStatus: {
+    title: 'Customer Payment Status',
+    columns: [
+      { header: 'Customer', key: 'customer_name' },
+      { header: 'Code', key: 'customer_code' },
+      { header: 'Status', key: 'payment_status' },
+      { header: 'Invoiced', key: 'total_invoiced' },
+      { header: 'Paid', key: 'total_paid' },
+      { header: 'Outstanding', key: 'outstanding' },
+      { header: 'Last payment', key: 'last_payment_at' },
+      { header: 'Open Invoices', key: 'open_invoices' },
+    ],
+    build: (rows) => rows,
+  },
   expenseByCategory: {
     title: 'Expenses by Category',
     columns: [
@@ -393,6 +407,22 @@ export const reportService = {
     return reportRepo.outstandingCustomers(null);
   },
 
+  async customerPaymentStatus() {
+    const rows = await reportRepo.customerPaymentStatus(null);
+    return rows.map((row) => {
+      const outstanding = Number(row.outstanding ?? 0);
+      const totalInvoiced = Number(row.total_invoiced ?? 0);
+      const totalPaid = Number(row.total_paid ?? 0);
+      let payment_status = 'Clear';
+      if (outstanding > 0) {
+        payment_status = totalPaid > 0 ? 'Partial' : 'Unpaid';
+      } else if (totalInvoiced > 0) {
+        payment_status = 'Paid';
+      }
+      return { ...row, payment_status };
+    });
+  },
+
   async expenseByCategory(fromDate, toDate) {
     return reportRepo.expenseByCategory(null, fromDate, toDate);
   },
@@ -539,6 +569,9 @@ export const reportService = {
         break;
       case 'outstandingCustomers':
         data = await this.outstandingCustomers();
+        break;
+      case 'customerPaymentStatus':
+        data = await this.customerPaymentStatus();
         break;
       case 'expenseByCategory':
         data = await this.expenseByCategory(fromDate, toDate);

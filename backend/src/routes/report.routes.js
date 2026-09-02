@@ -16,6 +16,7 @@ router.get('/monthly-revenue', reportController.monthlyRevenue);
 router.get('/cash-flow', reportController.cashFlow);
 router.get('/rental-revenue', reportController.rentalRevenue);
 router.get('/outstanding-customers', reportController.outstandingCustomers);
+router.get('/customer-payment-status', reportController.customerPaymentStatus);
 router.get('/expenses-by-category', reportController.expenseByCategory);
 router.get('/contributions/:batchId', reportController.contributionReport);
 router.get('/projects', reportController.projectReport);

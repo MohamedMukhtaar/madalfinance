@@ -38,6 +38,7 @@ export const qk = {
   reports: {
     incomeStatement: ["reports", "income-statement"] as const,
     outstanding: ["reports", "outstanding"] as const,
+    customerPayment: ["reports", "customer-payment"] as const,
     expenses: ["reports", "expenses"] as const,
     contributions: (batchId?: number) => ["reports", "contributions", batchId] as const,
     monthly: ["reports", "monthly"] as const,
@@ -320,7 +321,7 @@ export function useChargeAllRentals() {
       const errCount = result.errors?.length ?? 0;
       if (result.generated > 0) {
         toast.success(
-          `Generated ${result.generated} invoice${result.generated === 1 ? "" : "s"}${
+          `Charged ${result.generated} rental${result.generated === 1 ? "" : "s"}${
             result.skipped ? ` · ${result.skipped} skipped` : ""
           }`
         );
@@ -987,6 +988,15 @@ export function useOutstandingCustomersReport(params?: QueryOpts) {
   return useQuery({
     queryKey: [...qk.reports.outstanding, query],
     queryFn: () => financeService.outstandingCustomers(query),
+    enabled,
+  });
+}
+
+export function useCustomerPaymentReport(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: [...qk.reports.customerPayment, query],
+    queryFn: () => financeService.customerPaymentStatus(query),
     enabled,
   });
 }

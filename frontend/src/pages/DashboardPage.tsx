@@ -351,7 +351,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card animated={false}>
-          <CardHeader title="Rental renewals" subtitle="Upcoming" className="px-4 pt-4" action={<Link to="/projects/rental" className="text-[11px] font-semibold text-brand-600 hover:underline">View</Link>} />
+          <CardHeader title="Rental renewals" subtitle="Upcoming" className="px-4 pt-4" action={<Link to="/projects/customers" className="text-[11px] font-semibold text-brand-600 hover:underline">View</Link>} />
           <CardBody className="space-y-0.5 p-3 pt-2">
             {upcomingRenewals.length === 0 ? (
               <p className="py-4 text-center text-xs text-slate-400">No upcoming renewals.</p>

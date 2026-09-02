@@ -107,6 +107,27 @@ export const outstandingCustomers = (conn) =>
       ORDER BY outstanding DESC`
   );
 
+/** All customers with invoiced / paid / outstanding totals and payment status. */
+export const customerPaymentStatus = (conn) =>
+  run(
+    conn,
+    `SELECT c.customer_id, c.customer_code, c.customer_name, c.company_name, c.phone, c.email,
+            COALESCE(SUM(i.total_amount), 0) AS total_invoiced,
+            COALESCE(SUM(i.paid_amount), 0) AS total_paid,
+            COALESCE(SUM(CASE WHEN i.status IN ('Issued','Partial','Overdue') THEN i.total_amount - i.paid_amount ELSE 0 END), 0) AS outstanding,
+            COUNT(CASE WHEN i.status IN ('Issued','Partial','Overdue') THEN 1 END) AS open_invoices,
+            (
+              SELECT MAX(p.created_at)
+                FROM payments p
+               WHERE p.customer_id = c.customer_id AND p.deleted_at IS NULL
+            ) AS last_payment_at
+       FROM customers c
+       LEFT JOIN invoices i ON i.customer_id = c.customer_id AND i.deleted_at IS NULL AND i.status NOT IN ('Draft','Cancelled')
+      WHERE c.deleted_at IS NULL
+      GROUP BY c.customer_id, c.customer_code, c.customer_name, c.company_name, c.phone, c.email
+      ORDER BY outstanding DESC, c.customer_name ASC`
+  );
+
 /** Per-category expense breakdown. Dates optional — omit for all-time. */
 export const expenseByCategory = (conn, fromDate, toDate) => {
   const joinConds = ['e.expense_category_id = ec.expense_category_id', 'e.deleted_at IS NULL'];
@@ -166,6 +187,7 @@ export default {
   cashFlow,
   rentalRevenue,
   outstandingCustomers,
+  customerPaymentStatus,
   expenseByCategory,
   contributionReport,
   projectReport,
