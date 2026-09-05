@@ -1,10 +1,22 @@
 import run from './_base.js';
 
 const memberCols = `
-  m.member_id, m.full_name AS member_name, m.phone, m.email,
-  m.joined_date, m.default_monthly_due, m.position, m.credit_balance,
-  m.avatar_path, m.avatar_name, m.status, m.created_at
+  m.member_id, m.member_code, m.full_name AS member_name, m.phone, m.email,
+  m.address, m.joined_date, m.default_monthly_due, m.job_title_id,
+  COALESCE(jt.title_name, m.position) AS position, m.credit_balance,
+  m.ownership_percentage, m.avatar_path, m.avatar_name, m.status, m.created_at
 `;
+
+const memberJoin = `
+       FROM members m
+  LEFT JOIN job_titles jt ON jt.job_title_id = m.job_title_id
+`;
+
+const nextMemberCode = async (conn) => {
+  const rows = await run(conn, `SELECT COALESCE(MAX(member_id), 0) AS max_id FROM members`);
+  const next = Number(rows[0]?.max_id ?? 0) + 1;
+  return `MEM-${String(next).padStart(4, '0')}`;
+};
 
 export const listMembers = (conn, { search, status, offset, perPage, order }) => {
   const conditions = ['m.deleted_at IS NULL'];
@@ -14,14 +26,17 @@ export const listMembers = (conn, { search, status, offset, perPage, order }) =>
     params.push(status);
   }
   if (search) {
-    conditions.push('(m.full_name LIKE ? OR m.email LIKE ? OR m.phone LIKE ? OR m.position LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push(
+      `(m.full_name ILIKE ? OR m.email ILIKE ? OR m.phone ILIKE ?
+        OR COALESCE(jt.title_name, m.position) ILIKE ? OR m.member_code ILIKE ?)`
+    );
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
     `SELECT ${memberCols}
-       FROM members m
+      ${memberJoin}
        ${where}
       ORDER BY ${order}
       LIMIT ? OFFSET ?`,
@@ -37,18 +52,21 @@ export const countMembers = (conn, { search, status }) => {
     params.push(status);
   }
   if (search) {
-    conditions.push('(m.full_name LIKE ? OR m.email LIKE ? OR m.phone LIKE ? OR m.position LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    conditions.push(
+      `(m.full_name ILIKE ? OR m.email ILIKE ? OR m.phone ILIKE ?
+        OR COALESCE(jt.title_name, m.position) ILIKE ? OR m.member_code ILIKE ?)`
+    );
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
-  return run(conn, `SELECT COUNT(*) AS total FROM members m ${where}`, params).then((r) => r[0].total);
+  return run(conn, `SELECT COUNT(*) AS total ${memberJoin} ${where}`, params).then((r) => r[0].total);
 };
 
 export const findMemberById = (conn, id) =>
   run(
     conn,
     `SELECT ${memberCols}
-       FROM members m
+      ${memberJoin}
       WHERE m.member_id = ? AND m.deleted_at IS NULL`,
     [id]
   ).then((rows) => rows[0]);
@@ -57,7 +75,7 @@ export const findMemberByIdIncludingDeleted = (conn, id) =>
   run(
     conn,
     `SELECT ${memberCols}
-       FROM members m
+      ${memberJoin}
       WHERE m.member_id = ?`,
     [id]
   ).then((rows) => rows[0]);
@@ -76,21 +94,26 @@ export const restore = (conn, id) =>
     [id]
   );
 
-export const createMember = (conn, data) =>
-  run(
+export const createMember = async (conn, data) => {
+  const member_code = data.member_code || (await nextMemberCode(conn));
+  return run(
     conn,
-    `INSERT INTO members (full_name, phone, email, joined_date, default_monthly_due, position, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO members (member_code, full_name, phone, email, address, joined_date, default_monthly_due, position, job_title_id, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
+      member_code,
       data.full_name,
       data.phone ?? null,
       data.email ?? null,
+      data.address ?? null,
       data.joined_date,
       data.default_monthly_due ?? 10,
       data.position ?? null,
+      data.job_title_id ?? null,
       data.status ?? 'active',
     ]
   ).then((r) => r.insertId);
+};
 
 export const updateMember = (conn, id, data) =>
   run(
@@ -100,6 +123,7 @@ export const updateMember = (conn, id, data) =>
         phone = COALESCE(?, phone),
         email = COALESCE(?, email),
         position = COALESCE(?, position),
+        job_title_id = ?,
         default_monthly_due = COALESCE(?, default_monthly_due),
         status = COALESCE(?, status),
         joined_date = COALESCE(?, joined_date),
@@ -111,6 +135,7 @@ export const updateMember = (conn, id, data) =>
       data.phone ?? null,
       data.email ?? null,
       data.position ?? null,
+      data.job_title_id,
       data.default_monthly_due ?? null,
       data.status ?? null,
       data.joined_date ?? null,
@@ -130,8 +155,10 @@ export const saveAvatar = (conn, id, { avatar_path, avatar_name }) =>
 export const listPublicTeam = (conn) =>
   run(
     conn,
-    `SELECT m.member_id, m.full_name AS member_name, m.position, m.avatar_path, m.avatar_name
+    `SELECT m.member_id, m.full_name AS member_name, COALESCE(jt.title_name, m.position) AS position,
+            m.avatar_path, m.avatar_name
        FROM members m
+  LEFT JOIN job_titles jt ON jt.job_title_id = m.job_title_id
       WHERE m.status = 'active' AND m.deleted_at IS NULL
       ORDER BY m.member_id ASC
       LIMIT 12`

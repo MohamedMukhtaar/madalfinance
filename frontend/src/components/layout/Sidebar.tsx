@@ -6,7 +6,7 @@ import { Logo } from "@/components/ui/Logo";
 import { NAV_ITEMS, type NavItem } from "@/utils/constants";
 import { useAuth } from "@/context/AuthContext";
 import { useDashboardContext } from "@/context/DashboardContext";
-import { canAccessTrash, isSuperAdmin } from "@/utils/roles";
+import { isSuperAdmin } from "@/utils/roles";
 import { cn } from "@/utils/cn";
 import type { DashboardData } from "@/types";
 
@@ -71,7 +71,6 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
     () =>
       NAV_ITEMS.filter((item) => {
         if (item.superAdminOnly && !isSuperAdmin(user?.role)) return false;
-        if (item.path === "/trash" && !canAccessTrash(user?.role)) return false;
         return true;
       }),
     [user?.role]

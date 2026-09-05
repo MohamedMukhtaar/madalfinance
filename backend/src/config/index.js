@@ -19,11 +19,14 @@ const env = {
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
-    port: parseNum(process.env.DB_PORT, 3306),
-    user: process.env.DB_USER || 'root',
+    port: parseNum(process.env.DB_PORT, 5432),
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     name: process.env.DB_NAME || 'finance_system',
+    schema: process.env.DB_SCHEMA || 'public',
     connectionLimit: parseNum(process.env.DB_CONNECTION_LIMIT, 10),
+    ssl: parseBool(process.env.DB_SSL),
+    logging: parseBool(process.env.DB_LOGGING),
   },
 
   jwt: {

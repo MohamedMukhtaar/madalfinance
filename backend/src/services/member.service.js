@@ -1,11 +1,25 @@
 import dayjs from 'dayjs';
 import memberRepo from '../repositories/member.repo.js';
+import hrLookupRepo from '../repositories/hrLookup.repo.js';
 import trashRepo from '../repositories/trash.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
 import { deleteStoredFile } from '../helpers/fileHelper.js';
 import { requireDeleteReason } from '../helpers/deleteReason.js';
+
+const toId = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+const resolveTitle = async (conn, id) => {
+  if (!id) return { id: null, name: null };
+  const row = await hrLookupRepo.findById(conn, 'titles', id);
+  if (!row) throw ApiError.badRequest('Invalid title');
+  return { id, name: row.title_name };
+};
 
 export const memberService = {
   async list({ search, status, offset, perPage, order }) {
@@ -36,13 +50,16 @@ export const memberService = {
       const fullName = String(data.full_name || '').trim();
       if (!fullName) throw ApiError.badRequest('Full name is required');
 
+      const title = await resolveTitle(conn, toId(data.job_title_id));
+
       const memberId = await memberRepo.createMember(conn, {
         full_name: fullName,
         phone: data.phone ?? null,
         email: data.email ?? null,
         joined_date: data.joined_date || dayjs().format('YYYY-MM-DD'),
         default_monthly_due: data.default_monthly_due ?? 10,
-        position: data.position ?? null,
+        position: title.name ?? (data.position ? String(data.position).trim() : null),
+        job_title_id: title.id,
         status: 'active',
       });
 
@@ -63,11 +80,17 @@ export const memberService = {
       const member = await memberRepo.findMemberById(conn, id);
       if (!member) throw ApiError.notFound('Member not found');
 
+      const title = await resolveTitle(
+        conn,
+        data.job_title_id !== undefined ? toId(data.job_title_id) : member.job_title_id
+      );
+
       await memberRepo.updateMember(conn, id, {
         full_name: data.full_name,
         phone: data.phone,
         email: data.email,
-        position: data.position,
+        position: title.name ?? (data.position !== undefined ? data.position : member.position),
+        job_title_id: title.id,
         default_monthly_due: data.default_monthly_due,
         status: data.status,
         joined_date: data.joined_date,

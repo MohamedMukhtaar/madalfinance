@@ -200,26 +200,26 @@ export default function DashboardPage() {
 
       <div className="space-y-2">
       <StatCardsGrid cols={5}>
-        <StatCard compact index={0} loading={dashLoading} label="Today income" value={compact(dash?.stats.todayIncome ?? 0)} icon={<Zap className="h-3.5 w-3.5" />} iconClassName="bg-emerald-50 text-emerald-600" />
-        <StatCard compact index={1} loading={dashLoading} label="Weekly income" value={compact(dash?.stats.weekIncome ?? 0)} icon={<CalendarDays className="h-3.5 w-3.5" />} iconClassName="bg-teal-50 text-teal-600" />
-        <StatCard compact index={2} loading={dashLoading} label="Month income" value={compact(dash?.stats.monthIncome ?? 0)} icon={<TrendingUp className="h-3.5 w-3.5" />} iconClassName="bg-emerald-50 text-emerald-600" />
-        <StatCard compact index={3} loading={dashLoading} label="Collected" value={compact(dash?.stats.totalCollected ?? 0)} icon={<CreditCard className="h-3.5 w-3.5" />} iconClassName="bg-sky-50 text-sky-600" />
-        <StatCard compact index={4} loading={dashLoading} label="Cash balance" value={compact(dash?.stats.currentBalance ?? 0)} icon={<Wallet className="h-3.5 w-3.5" />} iconClassName="bg-brand-50 text-brand-600" />
+        <StatCard compact index={0} loading={dashLoading} label="Today income" value={compact(dash?.stats.todayIncome ?? 0)} hint="Received today" icon={<Zap className="h-4 w-4" />} iconClassName="emerald" />
+        <StatCard compact index={1} loading={dashLoading} label="Weekly income" value={compact(dash?.stats.weekIncome ?? 0)} hint="This week" icon={<CalendarDays className="h-4 w-4" />} iconClassName="teal" />
+        <StatCard compact index={2} loading={dashLoading} label="Month income" value={compact(dash?.stats.monthIncome ?? 0)} hint={monthLabel} icon={<TrendingUp className="h-4 w-4" />} iconClassName="emerald" />
+        <StatCard compact index={3} loading={dashLoading} label="Collected" value={compact(dash?.stats.totalCollected ?? 0)} hint="Customer payments" icon={<CreditCard className="h-4 w-4" />} iconClassName="sky" />
+        <StatCard compact index={4} loading={dashLoading} label="Cash balance" value={compact(dash?.stats.currentBalance ?? 0)} hint="All accounts" icon={<Wallet className="h-4 w-4" />} iconClassName="navy" />
       </StatCardsGrid>
 
       <StatCardsGrid cols={5}>
-        <StatCard compact index={5} loading={dashLoading} label="Today expense" value={compact(dash?.stats.todayExpense ?? 0)} icon={<TrendingDown className="h-3.5 w-3.5" />} iconClassName="bg-orange-50 text-orange-600" />
-        <StatCard compact index={6} loading={dashLoading} label="Weekly expense" value={compact(dash?.stats.weekExpense ?? 0)} icon={<CalendarDays className="h-3.5 w-3.5" />} iconClassName="bg-amber-50 text-amber-600" />
-        <StatCard compact index={7} loading={dashLoading} label="Month expense" value={compact(dash?.stats.monthExpense ?? 0)} icon={<ArrowUpRight className="h-3.5 w-3.5" />} iconClassName="bg-amber-50 text-amber-600" />
-        <StatCard compact index={8} loading={dashLoading} label="Outstanding" value={compact(dash?.stats.totalOutstanding ?? 0)} icon={<CircleDollarSign className="h-3.5 w-3.5" />} iconClassName="bg-rose-50 text-rose-600" />
-        <StatCard compact index={9} loading={dashLoading} label="Dues balance" value={compact(dash?.stats.totalDuesBalance ?? 0)} icon={<Banknote className="h-3.5 w-3.5" />} iconClassName="bg-red-50 text-red-600" />
+        <StatCard compact index={5} loading={dashLoading} label="Today expense" value={compact(dash?.stats.todayExpense ?? 0)} hint="Paid today" icon={<TrendingDown className="h-4 w-4" />} iconClassName="orange" />
+        <StatCard compact index={6} loading={dashLoading} label="Weekly expense" value={compact(dash?.stats.weekExpense ?? 0)} hint="This week" icon={<CalendarDays className="h-4 w-4" />} iconClassName="amber" />
+        <StatCard compact index={7} loading={dashLoading} label="Month expense" value={compact(dash?.stats.monthExpense ?? 0)} hint={monthLabel} icon={<ArrowUpRight className="h-4 w-4" />} iconClassName="amber" />
+        <StatCard compact index={8} loading={dashLoading} label="Outstanding" value={compact(dash?.stats.totalOutstanding ?? 0)} hint="Unpaid invoices" icon={<CircleDollarSign className="h-4 w-4" />} iconClassName="rose" />
+        <StatCard compact index={9} loading={dashLoading} label="Dues balance" value={compact(dash?.stats.totalDuesBalance ?? 0)} hint="Member dues" icon={<Banknote className="h-4 w-4" />} iconClassName="red" />
       </StatCardsGrid>
 
       <StatCardsGrid>
-        <StatCard compact index={10} loading={dashLoading} label="Total customers" value={String(dash?.stats.totalCustomers ?? 0)} icon={<Users className="h-3.5 w-3.5" />} iconClassName="bg-sky-50 text-sky-600" />
-        <StatCard compact index={11} loading={dashLoading} label="Total projects" value={String(dash?.stats.totalProjects ?? 0)} icon={<FolderKanban className="h-3.5 w-3.5" />} iconClassName="bg-violet-50 text-violet-600" />
-        <StatCard compact index={12} loading={dashLoading} label="Rental projects" value={String(dash?.stats.totalRentalProjects ?? 0)} icon={<KeyRound className="h-3.5 w-3.5" />} iconClassName="bg-indigo-50 text-indigo-600" />
-        <StatCard compact index={13} loading={dashLoading} label="One-time projects" value={String(dash?.stats.totalOneTimeProjects ?? 0)} icon={<FolderKanban className="h-3.5 w-3.5" />} iconClassName="bg-slate-100 text-slate-600" />
+        <StatCard compact index={10} loading={dashLoading} label="Total customers" value={String(dash?.stats.totalCustomers ?? 0)} hint="All customers" icon={<Users className="h-4 w-4" />} iconClassName="sky" />
+        <StatCard compact index={11} loading={dashLoading} label="Total projects" value={String(dash?.stats.totalProjects ?? 0)} hint="Active work" icon={<FolderKanban className="h-4 w-4" />} iconClassName="violet" />
+        <StatCard compact index={12} loading={dashLoading} label="Rental projects" value={String(dash?.stats.totalRentalProjects ?? 0)} hint="Recurring" icon={<KeyRound className="h-4 w-4" />} iconClassName="indigo" />
+        <StatCard compact index={13} loading={dashLoading} label="One-time projects" value={String(dash?.stats.totalOneTimeProjects ?? 0)} hint="Fixed scope" icon={<FolderKanban className="h-4 w-4" />} iconClassName="slate" />
       </StatCardsGrid>
       </div>
 

@@ -46,6 +46,7 @@ export const expenseService = {
         description: `Expense — ${data.description || expenseCategoryName(data.category_id)}`,
         income: 0,
         expense: amount,
+        acc_id: accId,
         created_by: userId,
       });
 

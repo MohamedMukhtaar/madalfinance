@@ -1,6 +1,7 @@
 import customerRepo from '../repositories/customer.repo.js';
 import invoiceRepo from '../repositories/invoice.repo.js';
 import trashRepo from '../repositories/trash.repo.js';
+import statementRepo from '../repositories/statement.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
@@ -73,24 +74,16 @@ export const customerService = {
   async statement(id, fromDate, toDate) {
     const customer = await customerRepo.findById(null, id);
     if (!customer) throw ApiError.notFound('Customer not found');
-    const [invoices, payments, history] = await Promise.all([
-      customerRepo.statementInvoices(null, id),
-      customerRepo.statementPayments(null, id),
-      customerRepo.transactionHistory(null, id),
-    ]);
-    const filteredInvoices = fromDate
-      ? invoices.filter((i) => !fromDate || i.invoice_date >= fromDate)
-      : invoices;
-    const filteredHistory = fromDate ? history.filter((t) => t.transaction_date >= fromDate) : history;
+    const rows = await statementRepo.customer(null, id, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
     return {
       customer,
-      invoices: filteredInvoices,
-      payments,
-      transactions: filteredHistory,
+      rows,
       totals: {
-        invoiced: filteredInvoices.reduce((s, i) => s + Number(i.total_amount), 0),
-        paid: filteredInvoices.reduce((s, i) => s + Number(i.paid_amount), 0),
-        outstanding: filteredInvoices.reduce((s, i) => s + Number(i.balance), 0),
+        invoiced: fnTotals.debit,
+        paid: fnTotals.credit,
+        outstanding: fnTotals.closing_balance,
+        closing_balance: fnTotals.closing_balance,
       },
     };
   },

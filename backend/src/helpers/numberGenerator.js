@@ -5,7 +5,7 @@ import ApiError from '../utils/ApiError.js';
  * using the configured prefix. Must run inside a transaction so the
  * UNIQUE constraint on the column protects against races.
  *
- * @param {object} conn mysql2 connection (transaction)
+ * @param {object} conn transaction connection (pg wrapper)
  * @param {string} table
  * @param {string} column  e.g. invoice_number
  * @param {string} prefix  e.g. INV-
@@ -19,10 +19,10 @@ export const generateNumber = async (conn, table, column, prefix, pad = 6) => {
   const [row] = await conn.query(
     `SELECT ${safeCol} AS last_number
        FROM ${safeTable}
-      WHERE ${safeCol} LIKE CONCAT(?, '%')
+      WHERE ${safeCol} LIKE $1
       ORDER BY ${safeCol} DESC
       LIMIT 1`,
-    [prefix]
+    [`${prefix}%`]
   );
 
   let seq = 1;

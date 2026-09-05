@@ -22,7 +22,7 @@ export const findRentalMonthlyForPeriod = (conn, projectId, periodLabel) =>
        JOIN invoice_items ii ON ii.invoice_id = i.invoice_id
       WHERE i.project_id = ?
         AND i.deleted_at IS NULL
-        AND ii.description LIKE ?
+        AND ii.description ILIKE ?
       LIMIT 1`,
     [projectId, `%(${periodLabel})%`]
   ).then((rows) => rows[0]);
@@ -47,13 +47,14 @@ export const list = (conn, { search, status, customerId, fromDate, toDate, offse
     params.push(toDate);
   }
   if (search) {
-    conditions.push('(i.invoice_number LIKE ? OR c.customer_name LIKE ?)');
+    conditions.push('(i.invoice_number ILIKE ? OR c.customer_name ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
     `SELECT i.*, c.customer_name, COALESCE(p.project_name, '') AS project_name,
+            (SELECT ii.description FROM invoice_items ii WHERE ii.invoice_id = i.invoice_id ORDER BY ii.item_id LIMIT 1) AS first_item_description,
             (SELECT COALESCE(SUM(pa.amount_allocated), 0) FROM payment_allocations pa WHERE pa.invoice_id = i.invoice_id) AS allocated
        FROM invoices i
        JOIN customers c ON c.customer_id = i.customer_id
@@ -85,7 +86,7 @@ export const count = (conn, { search, status, customerId, fromDate, toDate }) =>
     params.push(toDate);
   }
   if (search) {
-    conditions.push('(i.invoice_number LIKE ? OR c.customer_name LIKE ?)');
+    conditions.push('(i.invoice_number ILIKE ? OR c.customer_name ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   return run(
@@ -102,11 +103,11 @@ export const create = (conn, data) => {
   } = data;
   return run(
     conn,
-    `INSERT INTO invoices (invoice_number, customer_id, project_id, contract_id, invoice_date, due_date,
+    `INSERT INTO invoices (invoice_number, customer_id, project_id, invoice_date, due_date,
                            subtotal, discount, tax, total_amount, status, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      invoice_number, customer_id, project_id ?? null, contract_id ?? null, invoice_date,
+      invoice_number, customer_id, project_id ?? null, invoice_date,
       due_date ?? null, subtotal, discount, tax, total_amount, status ?? 'Draft', created_by,
     ]
   ).then((r) => r.insertId);
@@ -155,8 +156,8 @@ export const replaceItems = async (conn, invoiceId, items) => {
     const total = Number(item.quantity || 1) * Number(item.unit_price || 0);
     await run(
       conn,
-      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?)`,
-      [invoiceId, item.description, item.quantity ?? 1, item.unit_price ?? 0, total]
+      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price) VALUES (?, ?, ?, ?)`,
+      [invoiceId, item.description, item.quantity ?? 1, item.unit_price ?? 0]
     );
   }
 };

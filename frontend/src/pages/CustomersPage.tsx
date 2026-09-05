@@ -5,15 +5,13 @@ import { Download, Eye, Pencil, Plus, Trash2, Users, CircleCheck, ReceiptText } 
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, Avatar, DateRangeFilter, type DateFilterMode, Select, StatCard, StatCardsGrid, MonthNavigator, promptDeleteReason } from "@/components/ui";
+import { Badge, Avatar, DateRangeFilter, type DateFilterMode, Select, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
 import { CustomerFormModal } from "@/features/customers/CustomerFormModal";
 import { useCustomers, useDeleteCustomer, usePayments } from "@/hooks/queries";
-import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { CUSTOMER_STATUS_STYLES } from "@/utils/constants";
 import { downloadCSV, formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
-import { matchesMonth } from "@/utils/monthFilter";
 import type { Customer } from "@/types";
 import { cn } from "@/utils/cn";
 
@@ -27,7 +25,6 @@ export default function CustomersPage() {
   const deleteMutation = useDeleteCustomer();
   const navigate = useNavigate();
   const { currency } = useSettings();
-  const { month, setMonth } = useSelectedMonth();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | undefined>();
   const [statusFilter, setStatusFilter] = useState("all");
@@ -37,15 +34,16 @@ export default function CustomersPage() {
   const [to, setTo] = useState("");
 
   const monthStats = useMemo(() => {
-    const newThisMonth = customers.filter((c) => matchesMonth(c.createdAt, month));
-    const monthPayments = payments.filter((p) => matchesMonth(p.paymentDate, month));
+    const dateOpts = { mode: dateMode, date: day, from, to };
+    const inPeriod = customers.filter((c) => matchesDateFilter(c.createdAt, dateOpts));
+    const periodPayments = payments.filter((p) => matchesDateFilter(p.paymentDate, dateOpts));
     return {
-      newCount: newThisMonth.length,
+      newCount: inPeriod.length,
       active: customers.filter((c) => c.status === "active").length,
-      collected: monthPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0),
+      collected: periodPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0),
       outstanding: customers.reduce((s, c) => s + c.outstandingBalance, 0),
     };
-  }, [customers, payments, month]);
+  }, [customers, payments, dateMode, day, from, to]);
 
   const filtered = useMemo(
     () =>
@@ -181,7 +179,6 @@ export default function CustomersPage() {
         subtitle="Manage your client base, balances and records."
         actions={
           <>
-            <MonthNavigator value={month} onChange={setMonth} />
             <Button variant="secondary" onClick={exportCSV} leftIcon={<Download className="h-4 w-4" />}>
               Export
             </Button>
@@ -199,7 +196,7 @@ export default function CustomersPage() {
       />
 
       <StatCardsGrid className="sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard index={0} loading={isLoading} label="New this month" value={String(monthStats.newCount)} icon={<Users className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
+        <StatCard index={0} loading={isLoading} label="Customers" value={String(monthStats.newCount)} icon={<Users className="h-4 w-4" />} iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" />
         <StatCard index={1} loading={isLoading} label="Active" value={String(monthStats.active)} icon={<CircleCheck className="h-4 w-4" />} iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" />
         <StatCard index={2} loading={isLoading} label="Collected" value={formatCurrency(monthStats.collected, currency)} icon={<ReceiptText className="h-4 w-4" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
         <StatCard index={3} loading={isLoading} label="Outstanding" value={formatCurrency(monthStats.outstanding, currency)} icon={<ReceiptText className="h-4 w-4" />} iconClassName="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" />

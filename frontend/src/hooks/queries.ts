@@ -19,6 +19,7 @@ export const qk = {
   customers: (params?: ListParams) => ["customers", params] as const,
   customer: (id: number) => ["customers", id] as const,
   projects: (params?: ListParams) => ["projects", params] as const,
+  projectTemplates: ["project-templates"] as const,
   rentals: (params?: ListParams) => ["rentals", params] as const,
   invoices: (params?: ListParams) => ["invoices", params] as const,
   invoice: (id: number) => ["invoices", id] as const,
@@ -31,6 +32,12 @@ export const qk = {
   accountStatement: (id: number, params?: ListParams) => ["accounts", id, "statement", params] as const,
   transactions: (params?: ListParams) => ["transactions", params] as const,
   members: ["members"] as const,
+  employees: (params?: ListParams) => ["employees", params] as const,
+  employeeOrg: (kind: string) => ["employee-org", kind] as const,
+  salaryCharges: (params?: ListParams) => ["salary-charges", params] as const,
+  salaryPayments: (params?: ListParams) => ["salary-payments", params] as const,
+  income: (params?: ListParams) => ["income", params] as const,
+  incomeCategories: ["income-categories"] as const,
   users: (params?: ListParams) => ["users", params] as const,
   roles: ["roles"] as const,
   auditLogs: (params?: ListParams) => ["audit-logs", params] as const,
@@ -124,10 +131,12 @@ export function useDeleteCustomer() {
 }
 
 /* ------------------------------ PROJECTS ------------------------------ */
-export function useProjects(params?: ListParams) {
+export function useProjects(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: qk.projects(params),
-    queryFn: () => financeService.projects(params ?? { perPage: 100 }),
+    queryKey: qk.projects(query),
+    queryFn: () => financeService.projects(Object.keys(query).length ? query : { perPage: 100 }),
+    enabled,
   });
 }
 
@@ -138,15 +147,75 @@ export function useProjectTypes() {
   });
 }
 
+export function useProjectTemplates(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: [...qk.projectTemplates, query],
+    queryFn: () => financeService.projectTemplates(Object.keys(query).length ? query : undefined),
+    enabled,
+  });
+}
+
+export function useCreateProjectTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) => financeService.createProjectTemplate(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.projectTemplates });
+      toast.success("Project registered");
+    },
+    onError: (err) => toastErr(err, "Failed to register project"),
+  });
+}
+
+export function useUpdateProjectTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Record<string, unknown> }) =>
+      financeService.updateProjectTemplate(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.projectTemplates });
+      toast.success("Registered project updated");
+    },
+    onError: (err) => toastErr(err, "Failed to update registered project"),
+  });
+}
+
+export function useDeleteProjectTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.deleteProjectTemplate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.projectTemplates });
+      toast.success("Registered project deleted");
+    },
+    onError: (err) => toastErr(err, "Failed to delete registered project"),
+  });
+}
+
+export function useUploadProjectTemplateLogo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file, onProgress }: { id: number; file: File; onProgress?: (p: number) => void }) =>
+      financeService.uploadProjectTemplateLogo(id, file, onProgress),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.projectTemplates });
+      toast.success("Logo uploaded");
+    },
+    onError: (err) => toastErr(err, "Failed to upload logo"),
+  });
+}
+
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: Record<string, unknown>) => financeService.createProject(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: qk.projectTemplates });
       qc.invalidateQueries({ queryKey: ["customers"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
-      toast.success("Project created");
+      toast.success("Customer project created");
     },
     onError: (err) => toastErr(err, "Failed to create project"),
   });
@@ -489,7 +558,7 @@ export function useDues(params?: QueryOpts) {
   const { enabled, params: query } = splitQuery(params);
   return useQuery({
     queryKey: qk.dues(query),
-    queryFn: () => financeService.dueBatches(query ?? { perPage: 50 }),
+    queryFn: () => financeService.dueBatches({ perPage: 100, sort: "batch_id:desc", ...query }),
     enabled,
   });
 }
@@ -801,6 +870,240 @@ export function useDeactivateMember() {
   });
 }
 
+/* ------------------------------ EMPLOYEES / SALARY ------------------------------ */
+export function useEmployees(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.employees(query),
+    queryFn: () => financeService.employees({ perPage: 100, sort: "first_name:asc", ...query }),
+    enabled,
+  });
+}
+
+export function useCreateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createEmployee>[0]) => financeService.createEmployee(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee created");
+    },
+    onError: (err) => toastErr(err, "Failed to create employee"),
+  });
+}
+
+export function useUpdateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Parameters<typeof financeService.updateEmployee>[1] }) =>
+      financeService.updateEmployee(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee updated");
+    },
+    onError: (err) => toastErr(err, "Failed to update employee"),
+  });
+}
+
+export function useDeleteEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.deleteEmployee(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      toast.success("Employee removed");
+    },
+    onError: (err) => toastErr(err, "Failed to remove employee"),
+  });
+}
+
+export function useEmployeeOrg(kind: import("@/types").EmployeeOrgKind, enabled = true) {
+  return useQuery({
+    queryKey: qk.employeeOrg(kind),
+    queryFn: () => financeService.employeeOrg(kind),
+    enabled,
+  });
+}
+
+export function useCreateEmployeeOrg(kind: import("@/types").EmployeeOrgKind) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createEmployeeOrg>[1]) =>
+      financeService.createEmployeeOrg(kind, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-org"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: qk.members });
+      toast.success("Created");
+    },
+    onError: (err) => toastErr(err, "Failed to create"),
+  });
+}
+
+export function useUpdateEmployeeOrg(kind: import("@/types").EmployeeOrgKind) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: number; patch: Parameters<typeof financeService.updateEmployeeOrg>[2] }) =>
+      financeService.updateEmployeeOrg(kind, id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-org"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: qk.members });
+      toast.success("Updated");
+    },
+    onError: (err) => toastErr(err, "Failed to update"),
+  });
+}
+
+export function useDeleteEmployeeOrg(kind: import("@/types").EmployeeOrgKind) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.deleteEmployeeOrg(kind, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-org"] });
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: qk.members });
+      toast.success("Deleted");
+    },
+    onError: (err) => toastErr(err, "Failed to delete"),
+  });
+}
+
+export function useSalaryCharges(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.salaryCharges(query),
+    queryFn: () => financeService.salaryCharges({ perPage: 100, ...query }),
+    enabled,
+  });
+}
+
+export function useCreateSalaryCharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createSalaryCharge>[0]) =>
+      financeService.createSalaryCharge(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["salary-charges"] });
+      toast.success("Salary charge created");
+    },
+    onError: (err) => toastErr(err, "Failed to create salary charge"),
+  });
+}
+
+export function useGenerateSalaryCharges() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { year: number; month: number }) => financeService.generateSalaryCharges(data),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["salary-charges"] });
+      toast.success(
+        result.created
+          ? `Generated ${result.created} salary charge${result.created === 1 ? "" : "s"}`
+          : "No new charges — all active employees already billed"
+      );
+    },
+    onError: (err) => toastErr(err, "Failed to generate salary charges"),
+  });
+}
+
+export function useDeleteSalaryCharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => financeService.deleteSalaryCharge(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["salary-charges"] });
+      toast.success("Salary charge deleted");
+    },
+    onError: (err) => toastErr(err, "Failed to delete salary charge"),
+  });
+}
+
+export function usePaySalaryCharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: Parameters<typeof financeService.paySalaryCharge>[1];
+    }) => financeService.paySalaryCharge(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["salary-charges"] });
+      qc.invalidateQueries({ queryKey: ["salary-payments"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success("Salary payment recorded");
+    },
+    onError: (err) => toastErr(err, "Failed to record salary payment"),
+  });
+}
+
+export function useSalaryPayments(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.salaryPayments(query),
+    queryFn: () => financeService.salaryPayments({ perPage: 100, sort: "payment_date:desc", ...query }),
+    enabled,
+  });
+}
+
+/* ------------------------------ OTHER INCOME ------------------------------ */
+export function useIncome(params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: qk.income(query),
+    queryFn: () => financeService.income({ sort: "income_date:desc", perPage: 100, ...query }),
+    enabled,
+  });
+}
+
+export function useIncomeCategories() {
+  return useQuery({
+    queryKey: qk.incomeCategories,
+    queryFn: () => financeService.incomeCategories(),
+  });
+}
+
+export function useCreateIncome() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Parameters<typeof financeService.createIncome>[0]) => financeService.createIncome(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["income"] });
+      qc.invalidateQueries({ queryKey: qk.incomeCategories });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: qk.reports.incomeStatement });
+      qc.invalidateQueries({ queryKey: qk.reports.cashFlow });
+      toast.success("Income recorded");
+    },
+    onError: (err) => toastErr(err, "Failed to record income"),
+  });
+}
+
+export function useDeleteIncome() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => financeService.deleteIncome(id, reason),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["income"] });
+      qc.invalidateQueries({ queryKey: qk.incomeCategories });
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["trash"] });
+      qc.invalidateQueries({ queryKey: qk.accounts });
+      qc.invalidateQueries({ queryKey: qk.reports.incomeStatement });
+      qc.invalidateQueries({ queryKey: qk.reports.cashFlow });
+      toast.success("Income moved to trash");
+    },
+    onError: (err) => toastErr(err, "Failed to delete income"),
+  });
+}
+
 /* ------------------------------ EXPENSES ------------------------------ */
 export function useExpenses(params?: ListParams) {
   return useQuery({
@@ -1043,6 +1346,51 @@ export function useMemberStatement(memberId: number | undefined, params?: QueryO
     queryKey: ["reports", "member-statement", memberId, query],
     queryFn: () => financeService.memberStatement({ memberId: memberId as number, ...query }),
     enabled: !!memberId && enabled,
+  });
+}
+
+export function useCustomerStatement(customerId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["reports", "customer-statement", customerId, query],
+    queryFn: () => financeService.reportCustomerStatement({ customerId: customerId as number, ...query }),
+    enabled: !!customerId && enabled,
+  });
+}
+
+export function useProjectStatement(projectId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["reports", "project-statement", projectId, query],
+    queryFn: () => financeService.projectStatement({ projectId: projectId as number, ...query }),
+    enabled: !!projectId && enabled,
+  });
+}
+
+export function useExpenseStatement(expenseId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["reports", "expense-statement", expenseId, query],
+    queryFn: () => financeService.expenseStatement({ expenseId: expenseId as number, ...query }),
+    enabled: !!expenseId && enabled,
+  });
+}
+
+export function useSalaryStatement(employeeId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["reports", "salary-statement", employeeId, query],
+    queryFn: () => financeService.salaryStatement({ employeeId: employeeId as number, ...query }),
+    enabled: !!employeeId && enabled,
+  });
+}
+
+export function useCustomerDetailStatement(customerId: number | undefined, params?: QueryOpts) {
+  const { enabled, params: query } = splitQuery(params);
+  return useQuery({
+    queryKey: ["customers", customerId, "statement", query],
+    queryFn: () => financeService.customerStatement(customerId as number, query),
+    enabled: !!customerId && enabled,
   });
 }
 

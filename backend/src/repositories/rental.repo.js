@@ -1,15 +1,21 @@
 import run from './_base.js';
 
+const rentalSelect = `
+  SELECT rb.*,
+         pc.customer_id,
+         si.invoice_number AS setup_invoice_number,
+         si.status AS setup_invoice_status,
+         si.paid_amount AS setup_paid_amount,
+         si.total_amount AS setup_total_amount
+    FROM rental_billings rb
+    LEFT JOIN invoices si ON si.invoice_id = rb.setup_invoice_id
+`;
+
 export const findById = (conn, id) =>
   run(
     conn,
-    `SELECT rb.*,
-            si.invoice_number AS setup_invoice_number,
-            si.status AS setup_invoice_status,
-            si.paid_amount AS setup_paid_amount,
-            si.total_amount AS setup_total_amount
-       FROM rental_billings rb
-       LEFT JOIN invoices si ON si.invoice_id = rb.setup_invoice_id
+    `${rentalSelect}
+       LEFT JOIN project_customers pc ON pc.project_id = rb.project_id AND pc.is_primary = TRUE
       WHERE rb.billing_id = ?`,
     [id]
   ).then((rows) => rows[0]);
@@ -27,14 +33,15 @@ export const list = (conn, { status, offset, perPage, order }) => {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return run(
     conn,
-    `SELECT rb.*, p.project_name, p.customer_id, c.customer_name,
+    `SELECT rb.*, p.project_name, pc.customer_id, c.customer_name,
             si.invoice_number AS setup_invoice_number,
             si.status AS setup_invoice_status,
             si.paid_amount AS setup_paid_amount,
             si.total_amount AS setup_total_amount
        FROM rental_billings rb
        JOIN projects p ON p.project_id = rb.project_id
-       JOIN customers c ON c.customer_id = p.customer_id
+       LEFT JOIN project_customers pc ON pc.project_id = p.project_id AND pc.is_primary = TRUE
+       LEFT JOIN customers c ON c.customer_id = pc.customer_id
        LEFT JOIN invoices si ON si.invoice_id = rb.setup_invoice_id
        ${where}
       ORDER BY ${order}
@@ -106,7 +113,6 @@ export const setSetupInvoice = (conn, id, invoiceId) =>
 export const setStatus = (conn, id, status) =>
   run(conn, `UPDATE rental_billings SET status = ? WHERE billing_id = ?`, [status, id]);
 
-/** Advance the billing schedule after an invoice was generated. */
 export const advanceBilling = (conn, id, { next_billing_date, last_generated }) =>
   run(conn, `UPDATE rental_billings SET next_billing_date = ?, last_generated = ? WHERE billing_id = ?`, [
     next_billing_date,
@@ -114,14 +120,14 @@ export const advanceBilling = (conn, id, { next_billing_date, last_generated }) 
     id,
   ]);
 
-/** Billings due on or before today (used by the daily job). */
 export const dueForBilling = (conn, today) =>
   run(
     conn,
-    `SELECT rb.*, p.project_id, p.project_name, p.customer_id, c.customer_name
+    `SELECT rb.*, p.project_id, p.project_name, pc.customer_id, c.customer_name
        FROM rental_billings rb
        JOIN projects p ON p.project_id = rb.project_id
-       JOIN customers c ON c.customer_id = p.customer_id
+       LEFT JOIN project_customers pc ON pc.project_id = p.project_id AND pc.is_primary = TRUE
+       LEFT JOIN customers c ON c.customer_id = pc.customer_id
       WHERE rb.status = 'Active'
         AND rb.next_billing_date IS NOT NULL
         AND rb.next_billing_date <= ?`,

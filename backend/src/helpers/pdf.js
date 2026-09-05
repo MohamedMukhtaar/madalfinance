@@ -427,15 +427,16 @@ export const generateMemberStatementPdf = async ({ statement, fromDate, toDate, 
     doc.y = cardY + (cardH + 8) * 2 + 10;
 
     const tableTop = doc.y + 4;
-    const colX = { date: 48, time: 92, desc: 132, due: 352, paid: 412, loan: 472, balance: 522 };
+    const colX = { date: 48, time: 88, type: 124, ref: 178, due: 352, paid: 412, loan: 472, balance: 522 };
     const drawHeader = (y) => {
       doc.rect(48, y, 509, 20).fill('#101848');
       doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-      doc.text('DATE', colX.date, y + 6, { width: 40 });
-      doc.text('TIME', colX.time, y + 6, { width: 36 });
-      doc.text('DESCRIPTION', colX.desc, y + 6, { width: 210 });
-      doc.text('DUE', colX.due, y + 6, { width: 54, align: 'right' });
-      doc.text('PAID', colX.paid, y + 6, { width: 54, align: 'right' });
+      doc.text('DATE', colX.date, y + 6, { width: 36 });
+      doc.text('TIME', colX.time, y + 6, { width: 32 });
+      doc.text('TYPE', colX.type, y + 6, { width: 50 });
+      doc.text('REFERENCE', colX.ref, y + 6, { width: 168 });
+      doc.text('DEBIT', colX.due, y + 6, { width: 54, align: 'right' });
+      doc.text('CREDIT', colX.paid, y + 6, { width: 54, align: 'right' });
       doc.text('LOAN', colX.loan, y + 6, { width: 44, align: 'right' });
       doc.text('BALANCE', colX.balance, y + 6, { width: 35, align: 'right' });
     };
@@ -455,10 +456,11 @@ export const generateMemberStatementPdf = async ({ statement, fromDate, toDate, 
           y += 24;
         }
         if (i % 2 === 1) doc.rect(48, y, 509, 20).fill('#f8fafc');
-        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 40 });
-        doc.text(row.time, colX.time, y + 5, { width: 36 });
-        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.description, colX.desc, y + 5, { width: 210 });
-        doc.font('Helvetica').fillColor('#e11d48').text(row.due > 0 ? money(settings, row.due) : '—', colX.due, y + 5, { width: 54, align: 'right' });
+        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 36 });
+        doc.text(row.time, colX.time, y + 5, { width: 32 });
+        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.type || '—', colX.type, y + 5, { width: 50 });
+        doc.font('Helvetica').fillColor('#475569').text(row.reference || row.description || '—', colX.ref, y + 5, { width: 168 });
+        doc.fillColor('#e11d48').text(row.due > 0 ? money(settings, row.due) : '—', colX.due, y + 5, { width: 54, align: 'right' });
         doc.fillColor('#059669').text(row.paid > 0 ? money(settings, row.paid) : '—', colX.paid, y + 5, { width: 54, align: 'right' });
         doc.fillColor('#ea580c').text(row.loan > 0 ? money(settings, row.loan) : '—', colX.loan, y + 5, { width: 44, align: 'right' });
         const balanceLabel = money(settings, row.balance);
@@ -544,13 +546,14 @@ export const generateCustomerStatementPdf = async ({ statement, fromDate, toDate
     });
     doc.y = cardY + cardH + 16;
 
-    const colX = { date: 48, time: 92, desc: 132, debit: 392, credit: 462, balance: 522 };
+    const colX = { date: 48, time: 88, type: 124, ref: 178, debit: 392, credit: 462, balance: 522 };
     const drawHeader = (y) => {
       doc.rect(48, y, 509, 20).fill('#101848');
       doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-      doc.text('DATE', colX.date, y + 6, { width: 40 });
-      doc.text('TIME', colX.time, y + 6, { width: 36 });
-      doc.text('DESCRIPTION', colX.desc, y + 6, { width: 250 });
+      doc.text('DATE', colX.date, y + 6, { width: 36 });
+      doc.text('TIME', colX.time, y + 6, { width: 32 });
+      doc.text('TYPE', colX.type, y + 6, { width: 50 });
+      doc.text('REFERENCE', colX.ref, y + 6, { width: 208 });
       doc.text('DEBIT', colX.debit, y + 6, { width: 64, align: 'right' });
       doc.text('CREDIT', colX.credit, y + 6, { width: 54, align: 'right' });
       doc.text('BALANCE', colX.balance, y + 6, { width: 35, align: 'right' });
@@ -570,10 +573,11 @@ export const generateCustomerStatementPdf = async ({ statement, fromDate, toDate
           y += 24;
         }
         if (i % 2 === 1) doc.rect(48, y, 509, 20).fill('#f8fafc');
-        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 40 });
-        doc.text(row.time, colX.time, y + 5, { width: 36 });
-        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.description, colX.desc, y + 5, { width: 250 });
-        doc.font('Helvetica').fillColor('#e11d48').text(row.debit > 0 ? money(settings, row.debit) : '—', colX.debit, y + 5, { width: 64, align: 'right' });
+        doc.fontSize(8.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 36 });
+        doc.text(row.time, colX.time, y + 5, { width: 32 });
+        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.type || '—', colX.type, y + 5, { width: 50 });
+        doc.font('Helvetica').fillColor('#475569').text(row.reference || row.description || '—', colX.ref, y + 5, { width: 208 });
+        doc.fillColor('#e11d48').text(row.debit > 0 ? money(settings, row.debit) : '—', colX.debit, y + 5, { width: 64, align: 'right' });
         doc.fillColor('#059669').text(row.credit > 0 ? money(settings, row.credit) : '—', colX.credit, y + 5, { width: 54, align: 'right' });
         doc.font('Helvetica-Bold').fillColor('#0f172a').text(money(settings, row.balance), colX.balance, y + 5, { width: 35, align: 'right' });
         y += 22;
@@ -683,17 +687,18 @@ export const generateAccountStatementPdf = async ({ statement, fromDate, toDate,
     });
     doc.y = cardY + cardH + 16;
 
-    const colX = { date: 48, time: 88, type: 124, desc: 168, debit: 392, credit: 452, balance: 512 };
+    const colX = { date: 48, time: 84, type: 116, ref: 168, debit: 330, credit: 390, loan: 450, balance: 510 };
     const drawHeader = (y) => {
       doc.rect(48, y, 509, 20).fill('#101848');
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff');
-      doc.text('DATE', colX.date, y + 6, { width: 36 });
-      doc.text('TIME', colX.time, y + 6, { width: 32 });
-      doc.text('TYPE', colX.type, y + 6, { width: 40 });
-      doc.text('DESCRIPTION', colX.desc, y + 6, { width: 218 });
+      doc.text('DATE', colX.date, y + 6, { width: 32 });
+      doc.text('TIME', colX.time, y + 6, { width: 28 });
+      doc.text('TYPE', colX.type, y + 6, { width: 48 });
+      doc.text('REFERENCE', colX.ref, y + 6, { width: 156 });
       doc.text('DEBIT', colX.debit, y + 6, { width: 54, align: 'right' });
       doc.text('CREDIT', colX.credit, y + 6, { width: 54, align: 'right' });
-      doc.text('BAL', colX.balance, y + 6, { width: 45, align: 'right' });
+      doc.text('LOAN', colX.loan, y + 6, { width: 54, align: 'right' });
+      doc.text('BAL', colX.balance, y + 6, { width: 47, align: 'right' });
     };
 
     const tableTop = doc.y + 4;
@@ -710,13 +715,14 @@ export const generateAccountStatementPdf = async ({ statement, fromDate, toDate,
           y += 24;
         }
         if (i % 2 === 1) doc.rect(48, y, 509, 20).fill('#f8fafc');
-        doc.fontSize(7.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 36 });
-        doc.text(row.time, colX.time, y + 5, { width: 32 });
-        doc.text(row.type, colX.type, y + 5, { width: 40 });
-        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.description, colX.desc, y + 5, { width: 218 });
+        doc.fontSize(7.5).font('Helvetica').fillColor('#475569').text(row.date, colX.date, y + 5, { width: 32 });
+        doc.text(row.time, colX.time, y + 5, { width: 28 });
+        doc.text(row.type, colX.type, y + 5, { width: 48 });
+        doc.font('Helvetica-Bold').fillColor('#0f172a').text(row.reference || row.description || '—', colX.ref, y + 5, { width: 156 });
         doc.font('Helvetica').fillColor('#059669').text(row.debit > 0 ? money(settings, row.debit) : '—', colX.debit, y + 5, { width: 54, align: 'right' });
         doc.fillColor('#e11d48').text(row.credit > 0 ? money(settings, row.credit) : '—', colX.credit, y + 5, { width: 54, align: 'right' });
-        doc.font('Helvetica-Bold').fillColor('#0f172a').text(money(settings, row.balance), colX.balance, y + 5, { width: 45, align: 'right' });
+        doc.fillColor('#ea580c').text(row.loan > 0 ? money(settings, row.loan) : '—', colX.loan, y + 5, { width: 54, align: 'right' });
+        doc.font('Helvetica-Bold').fillColor('#0f172a').text(money(settings, row.balance), colX.balance, y + 5, { width: 47, align: 'right' });
         y += 22;
       });
     }

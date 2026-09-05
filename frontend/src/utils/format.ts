@@ -90,8 +90,13 @@ export function formatDateTime(date?: string): string {
 
 export function formatTime(date?: string): string {
   if (!date || !/\d{2}:\d{2}/.test(date)) return "—";
+  const timeOnly = String(date).match(/^(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+  if (timeOnly) return timeOnly[1];
   const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) {
+    const embedded = String(date).match(/(\d{2}:\d{2})/);
+    return embedded ? embedded[1] : "—";
+  }
   return d.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit",

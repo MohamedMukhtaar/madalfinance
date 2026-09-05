@@ -1,25 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { motion } from "framer-motion";
 import {
+  Banknote,
+  Briefcase,
+  Building2,
+  Calendar,
+  CircleDot,
   Download,
+  Eye,
   FileDown,
   FileSpreadsheet,
-  PieChart,
-  Receipt,
-  TrendingDown,
-  TrendingUp,
-  Users,
-  Wallet,
-  Activity,
+  Hash,
+  Mail,
+  MapPin,
+  Phone,
+  StickyNote,
   Table2,
+  User,
+  Users,
   BarChart3,
-  Landmark,
+  type LucideIcon,
 } from "lucide-react";
+import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Skeleton, EmptyState, Tabs, MonthNavigator } from "@/components/ui";
+import { Skeleton, EmptyState, Tabs, DateRangeFilter, Modal, type DateFilterMode } from "@/components/ui";
+import { DataTable } from "@/components/tables/DataTable";
 
 type ReportChartsModule = typeof import("@/features/reports/ReportCharts");
 
@@ -49,47 +56,163 @@ import {
   useCashFlowReport,
   useContributionReport,
   useCustomers,
+  useCustomerStatement,
   useDues,
   useExpenseByCategoryReport,
+  useExpenseCategories,
+  useExpenseStatement,
   useIncomeStatement,
-  useInvoices,
   useMemberStatement,
   useMembers,
+  useEmployees,
   useMonthlyRevenueReport,
   useCustomerPaymentReport,
-  usePayments,
+  useProjectStatement,
+  useProjects,
   useTransactions,
 } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
-import { useSelectedMonth } from "@/hooks/useSelectedMonth";
-import { formatCurrency, formatCompactCurrency, formatDate, formatTime, formatAccountOptionLabel, formatMemberStatementBalance } from "@/utils/format";
-import { runningBalanceAsc } from "@/utils/chronology";
-import { formatMonthLabel, monthRangeParams } from "@/utils/monthFilter";
-import { cn } from "@/utils/cn";
+import { formatCurrency, formatCompactCurrency, formatDate, formatTime, formatAccountOptionLabel } from "@/utils/format";
+import { matchesDateFilter } from "@/utils/dateFilter";
 import { financeService } from "@/services/finance";
 import { api, getErrorMessage } from "@/services/api";
-import { DUE_STATUS_STYLES } from "@/utils/constants";
-import type { LedgerTransaction } from "@/types";
+import { DUE_STATUS_STYLES, CUSTOMER_STATUS_STYLES } from "@/utils/constants";
+import { cn } from "@/utils/cn";
+import type { Employee, LedgerTransaction } from "@/types";
+import { StatementTable } from "@/features/reports/StatementTable";
 import toast from "react-hot-toast";
 
 const VIEWS = [
-  { id: "customers", label: "Customers", path: "/reports/customers" },
+  { id: "customers", label: "Collections", path: "/reports/customers" },
   { id: "statements", label: "Statements", path: "/reports/statements" },
-  { id: "accounts", label: "Accounts", path: "/reports/accounts" },
-  { id: "expenses", label: "Expenses", path: "/reports/expenses" },
-  { id: "members", label: "Members", path: "/reports/members" },
-  { id: "income-statement", label: "Income Statement", path: "/reports/income-statement" },
-  { id: "cash-flow", label: "Cash Flow", path: "/reports/cash-flow" },
+  { id: "employees", label: "Payroll", path: "/reports/employees" },
+  { id: "accounts", label: "Cash books", path: "/reports/accounts" },
+  { id: "expenses", label: "Spending", path: "/reports/expenses" },
+  { id: "members", label: "Member dues", path: "/reports/members" },
+  { id: "income-statement", label: "Profit & loss", path: "/reports/income-statement" },
+  { id: "cash-flow", label: "Cash in / out", path: "/reports/cash-flow" },
 ] as const;
 
+const VIEW_HINTS: Record<(typeof VIEWS)[number]["id"], string> = {
+  customers: "Who still owes setup fees, rent, or other invoices — and what has already been collected.",
+  statements: "A running ledger for one customer, member, project, or expense.",
+  employees: "Staff profile plus salary charges and payments.",
+  accounts: "Cash and bank movement per account.",
+  expenses: "Where money went, grouped by category.",
+  members: "Member contributions, loans, and dues.",
+  "income-statement": "Revenue minus expenses for the selected period.",
+  "cash-flow": "Money that actually entered or left the ledger — not billed-but-unpaid invoices.",
+};
+
 type ViewId = (typeof VIEWS)[number]["id"];
+
+type StatementKind = "customer" | "member" | "project" | "expense";
+
+const STATEMENT_KINDS: Array<{ id: StatementKind; label: string }> = [
+  { id: "customer", label: "Customer" },
+  { id: "member", label: "Member" },
+  { id: "project", label: "Project" },
+  { id: "expense", label: "Expense" },
+];
+
+const selectClass =
+  "min-w-[14rem] rounded-xl border-0 bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700";
+
+function dueBatchLabel(batch: { batchId: number; month?: number; year?: number }) {
+  const month = Number(batch.month);
+  const year = Number(batch.year);
+  if (month >= 1 && month <= 12 && year > 1900) {
+    return new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+  return `Batch #${batch.batchId}`;
+}
+
+function ProfileCard({
+  title,
+  icon: Icon,
+  fields,
+}: {
+  title: string;
+  icon: LucideIcon;
+  fields: Array<{ label: string; value: ReactNode; icon: LucideIcon }>;
+}) {
+  return (
+    <div className="stat-hover group flex h-full min-h-[16rem] flex-col rounded-2xl bg-card p-4 ring-1 ring-line transition-colors duration-200">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-ink">{title}</p>
+        <span className="stat-hover-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+      <div className="grid flex-1 grid-cols-2 content-start gap-4">
+        {fields.map((field) => {
+          const FieldIcon = field.icon;
+          return (
+            <div key={field.label} className="min-w-0">
+              <div className="mb-1 flex items-center gap-1.5">
+                <FieldIcon className="h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:!text-white/70" />
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 transition-colors group-hover:!text-white/70">
+                  {field.label}
+                </p>
+              </div>
+              <p className="truncate text-sm font-semibold text-ink transition-colors group-hover:!text-white">
+                {field.value ?? "—"}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function EmployeeReportCards({ employee, currency }: { employee: Employee; currency: string }) {
+  return (
+    <div className="grid auto-rows-fr grid-cols-1 gap-3 lg:grid-cols-3">
+      <ProfileCard
+        title="Profile"
+        icon={User}
+        fields={[
+          { label: "Name", icon: User, value: employee.fullName },
+          { label: "Code", icon: Hash, value: employee.employeeCode },
+          { label: "Phone", icon: Phone, value: employee.phone || "—" },
+          { label: "Email", icon: Mail, value: employee.email || "—" },
+        ]}
+      />
+      <ProfileCard
+        title="Job"
+        icon={Briefcase}
+        fields={[
+          { label: "Job title", icon: Briefcase, value: employee.jobTitle || "—" },
+          { label: "Department", icon: Building2, value: employee.department || "—" },
+          { label: "Branch", icon: MapPin, value: employee.branch || "—" },
+          { label: "Shift", icon: Calendar, value: employee.shift || "—" },
+        ]}
+      />
+      <ProfileCard
+        title="Salary"
+        icon={Banknote}
+        fields={[
+          { label: "Basic salary", icon: Banknote, value: formatCurrency(Number(employee.basicSalary), currency) },
+          { label: "Hire date", icon: Calendar, value: formatDate(employee.hireDate) },
+          { label: "Status", icon: CircleDot, value: employee.status },
+          { label: "Notes", icon: StickyNote, value: employee.notes || "—" },
+        ]}
+      />
+    </div>
+  );
+}
+
+const employeeColumnHelper = createColumnHelper<Employee>();
 
 const CHART_PALETTE = ["#74bcf8", "#101848", "#4aa6ef", "#10b981", "#f59e0b", "#1a255c", "#f43f5e", "#14b8a6"];
 
 function resolveView(param?: string): ViewId {
+  if (param === "salary") return "employees";
   if (
     param === "customers" ||
     param === "statements" ||
+    param === "employees" ||
     param === "accounts" ||
     param === "expenses" ||
     param === "members" ||
@@ -121,7 +244,10 @@ export default function ReportsPage() {
   const navigate = useNavigate();
   const view = resolveView(viewParam ?? searchParams.get("view") ?? undefined);
   const { currency } = useSettings();
-  const { month, setMonth } = useSelectedMonth();
+  const [dateMode, setDateMode] = useState<DateFilterMode>("all");
+  const [day, setDay] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const [displayMode, setDisplayMode] = useState<"charts" | "table">("charts");
   const [customerPayFilter, setCustomerPayFilter] = useState<"all" | "unpaid" | "partial" | "paid">("all");
@@ -141,29 +267,30 @@ export default function ReportsPage() {
   const HorizontalBarChart = charts?.HorizontalBarChart ?? ChartPlaceholder;
   const StackedStatusBarChart = charts?.StackedStatusBarChart ?? ChartPlaceholder;
 
-  const reportParams = useMemo(() => monthRangeParams(month), [month]);
-  const { from: monthFrom, to: monthTo } = useMemo(() => {
-    const { fromDate, toDate } = monthRangeParams(month);
-    return { from: fromDate, to: toDate };
-  }, [month]);
+  const dateParams = useMemo(() => {
+    if (dateMode === "day" && day) return { fromDate: day, toDate: day };
+    if (dateMode === "range") {
+      const next: { fromDate?: string; toDate?: string } = {};
+      if (from) next.fromDate = from;
+      if (to) next.toDate = to;
+      return next;
+    }
+    return {};
+  }, [dateMode, day, from, to]);
 
   const { data: customersData } = useCustomers({ enabled: view === "statements" });
-  const { data: invoicesData } = useInvoices({ enabled: view === "statements" });
-  const { data: paymentsData } = usePayments({ enabled: view === "statements" });
   const allCustomers = customersData?.rows ?? [];
-  const allInvoices = invoicesData?.rows ?? [];
-  const allPayments = paymentsData?.rows ?? [];
-  const { data: income, isLoading: incomeLoading } = useIncomeStatement({ ...reportParams, enabled: view === "income-statement" });
+  const { data: income, isLoading: incomeLoading } = useIncomeStatement({ ...dateParams, enabled: view === "income-statement" });
   const { data: customers, isLoading: customersLoading } = useCustomerPaymentReport({ enabled: view === "customers" });
-  const { data: expenses, isLoading: expensesLoading } = useExpenseByCategoryReport({ ...reportParams, enabled: view === "expenses" });
+  const { data: expenses, isLoading: expensesLoading } = useExpenseByCategoryReport({ ...dateParams, enabled: view === "expenses" });
   const { data: monthly, isLoading: monthlyLoading } = useMonthlyRevenueReport({
     months: 12,
-    ...reportParams,
+    ...dateParams,
     enabled: view === "income-statement" || view === "cash-flow",
   });
-  const { data: cashFlow, isLoading: cashFlowLoading } = useCashFlowReport({ ...reportParams, enabled: view === "cash-flow" });
+  const { data: cashFlow, isLoading: cashFlowLoading } = useCashFlowReport({ ...dateParams, enabled: view === "cash-flow" });
   const { data: cashFlowTxData, isLoading: cashFlowTxLoading } = useTransactions({
-    ...reportParams,
+    ...dateParams,
     perPage: 500,
     sort: "created_at:asc",
     enabled: view === "cash-flow",
@@ -184,7 +311,7 @@ export default function ReportsPage() {
     });
   }, [cashFlowTransactions]);
 
-  const { data: duesData } = useDues({ enabled: view === "members" });
+  const { data: duesData } = useDues({ enabled: view === "members", perPage: 100, sort: "batch_id:desc" });
   const batches = duesData?.rows ?? [];
   const batchId = Number(searchParams.get("batchId")) || batches[0]?.batchId;
   const { data: contribution, isLoading: contributionLoading } = useContributionReport(batchId, {
@@ -193,18 +320,39 @@ export default function ReportsPage() {
 
   const [statementCustomerId, setStatementCustomerId] = useState<number | "">("");
   const [statementMemberId, setStatementMemberId] = useState<number | "">("");
-  const [statementType, setStatementType] = useState<"customer" | "member">("customer");
+  const [statementProjectId, setStatementProjectId] = useState<number | "">("");
+  const [statementExpenseId, setStatementExpenseId] = useState<number | "">("");
+  const [statementEmployeeId, setStatementEmployeeId] = useState<number | "">("");
+  const [statementType, setStatementType] = useState<StatementKind>("customer");
   const [reportAccountId, setReportAccountId] = useState<number | "">("");
 
   const { data: accountsList = [] } = useAccounts({ enabled: view === "accounts" });
   const { data: members = [] } = useMembers({ enabled: view === "statements" });
+  const { data: employeesData, isLoading: employeesLoading } = useEmployees({ enabled: view === "employees", perPage: 500 });
+  const statementEmployees = employeesData?.rows ?? [];
+  const { data: projectsData } = useProjects({ enabled: view === "statements", perPage: 100 });
+  const { data: expenseCategories = [] } = useExpenseCategories();
+  const statementProjects = projectsData?.rows ?? [];
+
   const { data: memberStatementData, isLoading: memberStatementLoading } = useMemberStatement(
     statementMemberId || undefined,
-    { ...reportParams, enabled: view === "statements" && statementType === "member" && !!statementMemberId }
+    { ...dateParams, enabled: view === "statements" && statementType === "member" && !!statementMemberId }
+  );
+  const { data: customerStatementData, isLoading: customerStatementLoading } = useCustomerStatement(
+    statementCustomerId || undefined,
+    { ...dateParams, enabled: view === "statements" && statementType === "customer" && !!statementCustomerId }
+  );
+  const { data: projectStatementData, isLoading: projectStatementLoading } = useProjectStatement(
+    statementProjectId || undefined,
+    { ...dateParams, enabled: view === "statements" && statementType === "project" && !!statementProjectId }
+  );
+  const { data: expenseStatementData, isLoading: expenseStatementLoading } = useExpenseStatement(
+    statementExpenseId || undefined,
+    { ...dateParams, enabled: view === "statements" && statementType === "expense" && !!statementExpenseId }
   );
   const { data: accountStatementData } = useAccountStatement(
     reportAccountId || undefined,
-    { ...reportParams, enabled: view === "accounts" && !!reportAccountId }
+    { ...dateParams, enabled: view === "accounts" && !!reportAccountId }
   );
   const selectedCustomer = useMemo(
     () => allCustomers.find((c) => c.customerId === statementCustomerId),
@@ -216,8 +364,108 @@ export default function ReportsPage() {
     [members, statementMemberId]
   );
 
+  const selectedProject = useMemo(
+    () => statementProjects.find((p) => p.projectId === statementProjectId),
+    [statementProjects, statementProjectId]
+  );
+
+  const selectedExpense = useMemo(
+    () => expenseCategories.find((c) => c.id === statementExpenseId),
+    [expenseCategories, statementExpenseId]
+  );
+
+  const selectedEmployee = useMemo(
+    () => statementEmployees.find((e) => e.employeeId === statementEmployeeId),
+    [statementEmployees, statementEmployeeId]
+  );
+
+  const filteredEmployees = useMemo(
+    () =>
+      statementEmployees.filter((e) =>
+        matchesDateFilter(e.hireDate, { mode: dateMode, date: day, from, to })
+      ),
+    [statementEmployees, dateMode, day, from, to]
+  );
+
+  const employeeColumns = useMemo<ColumnDef<Employee>[]>(
+    () => [
+      employeeColumnHelper.accessor("fullName", {
+        header: "Name",
+        cell: (info) => {
+          const e = info.row.original;
+          return (
+            <div>
+              <p className="font-semibold text-slate-800 dark:text-slate-100">{e.fullName}</p>
+              <p className="text-xs text-slate-400">{e.employeeCode}</p>
+            </div>
+          );
+        },
+      }),
+      employeeColumnHelper.accessor("phone", {
+        header: "Phone",
+        cell: (info) => <span className="text-sm text-slate-500">{info.getValue() || "—"}</span>,
+      }),
+      employeeColumnHelper.accessor("department", {
+        header: "Dept",
+        cell: (info) => <span className="text-slate-500">{info.getValue() || "—"}</span>,
+      }),
+      employeeColumnHelper.accessor("jobTitle", {
+        header: "Title",
+        cell: (info) => <span className="text-slate-600 dark:text-slate-300">{info.getValue() || "—"}</span>,
+      }),
+      employeeColumnHelper.accessor("branch", {
+        header: "Branch",
+        cell: (info) => <span className="text-slate-500">{info.getValue() || "—"}</span>,
+      }),
+      employeeColumnHelper.accessor("shift", {
+        header: "Shift",
+        cell: (info) => <span className="text-slate-500">{info.getValue() || "—"}</span>,
+      }),
+      employeeColumnHelper.accessor("hireDate", {
+        header: "Hired",
+        cell: (info) => <span className="text-sm text-slate-500">{formatDate(info.getValue())}</span>,
+      }),
+      employeeColumnHelper.accessor("basicSalary", {
+        header: "Basic salary",
+        cell: (info) => (
+          <span className="font-mono font-semibold text-slate-900 dark:text-white">
+            {formatCurrency(info.getValue(), currency)}
+          </span>
+        ),
+      }),
+      employeeColumnHelper.accessor("status", {
+        header: "Status",
+        cell: (info) => (
+          <Badge className={CUSTOMER_STATUS_STYLES[info.getValue()] ?? ""} dot>
+            {info.getValue()}
+          </Badge>
+        ),
+      }),
+      employeeColumnHelper.display({
+        id: "view",
+        header: "",
+        cell: (info) => (
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={<Eye className="h-4 w-4" />}
+            onClick={(e) => {
+              e.stopPropagation();
+              setStatementEmployeeId(info.row.original.employeeId);
+            }}
+          >
+            View
+          </Button>
+        ),
+      }),
+    ],
+    [currency]
+  );
+
   const memberStatementRows = memberStatementData?.rows ?? [];
-  const memberStatementTotals = memberStatementData?.totals ?? { charged: 0, loans: 0, paid: 0, outstanding: 0, loanBalance: 0 };
+  const customerStatementRows = customerStatementData?.rows ?? [];
+  const projectStatementRows = projectStatementData?.rows ?? [];
+  const expenseStatementRows = expenseStatementData?.rows ?? [];
 
   const selectedReportAccount = useMemo(
     () => accountsList.find((a) => a.accId === reportAccountId),
@@ -230,71 +478,6 @@ export default function ReportsPage() {
   );
 
   const accountMovements = accountStatementData?.movements ?? [];
-  const accountStatementTotals = useMemo(() => {
-    const debits = accountMovements.reduce((s, m) => s + Number(m.debit ?? 0), 0);
-    const credits = accountMovements.reduce((s, m) => s + Number(m.credit ?? 0), 0);
-    return { debits, credits, net: debits - credits };
-  }, [accountMovements]);
-
-  const statementRows = useMemo(() => {
-    if (!selectedCustomer || !statementCustomerId) return [];
-    const customerInvoices = allInvoices.filter((i) => i.customerId === statementCustomerId);
-    const customerPayments = allPayments.filter((p) => p.customerId === statementCustomerId);
-    const items: Array<{ date: string; time: string; desc: string; debit: number; credit: number }> = [];
-    customerInvoices.forEach((i) =>
-      items.push({
-        date: i.invoiceDate,
-        time: i.createdAt ?? i.invoiceDate,
-        desc: `Invoice ${i.invoiceNumber}`,
-        debit: Number(i.totalAmount ?? 0),
-        credit: 0,
-      })
-    );
-    customerPayments.forEach((p) =>
-      items.push({
-        date: p.paymentDate,
-        time: p.createdAt ?? p.paymentDate,
-        desc: `Payment ${p.paymentNumber}`,
-        debit: 0,
-        credit: Number(p.amount ?? 0),
-      })
-    );
-    const filteredItems = items.filter((item) => {
-      const d = item.date.slice(0, 10);
-      if (d < monthFrom) return false;
-      if (d > monthTo) return false;
-      return true;
-    });
-    return runningBalanceAsc(
-      filteredItems.map((item) => ({ ...item, payout: 0 })),
-      (item) => item.time ?? item.date
-    ).map((item) => ({
-      date: item.date,
-      time: item.time,
-      desc: item.desc,
-      debit: item.debit,
-      credit: item.credit,
-      balance: item.balance,
-    }));
-  }, [selectedCustomer, statementCustomerId, allInvoices, allPayments, monthFrom, monthTo]);
-
-  const statementTotals = useMemo(() => {
-    if (!selectedCustomer) return { invoiced: 0, paid: 0, outstanding: 0 };
-    const inRange = (dateStr: string) => {
-      const d = dateStr.slice(0, 10);
-      return d >= monthFrom && d <= monthTo;
-    };
-    const customerInvoices = allInvoices.filter(
-      (i) => i.customerId === statementCustomerId && inRange(i.invoiceDate)
-    );
-    const customerPayments = allPayments.filter(
-      (p) => p.customerId === statementCustomerId && inRange(p.paymentDate)
-    );
-    const invoiced = customerInvoices.reduce((s, i) => s + Number(i.totalAmount ?? 0), 0);
-    const paid = customerPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
-    const outstanding = Number(selectedCustomer.outstandingBalance ?? Math.max(0, invoiced - paid));
-    return { invoiced, paid, outstanding };
-  }, [selectedCustomer, statementCustomerId, allInvoices, allPayments, monthFrom, monthTo]);
 
   const statement = income as { totalIncome?: number; totalExpense?: number; netProfit?: number } | undefined;
 
@@ -412,8 +595,6 @@ export default function ReportsPage() {
   );
 
   const totalExpenseCats = expenseChart.reduce((s, d) => s + d.value, 0);
-  const expenseTxnCount = expenseChart.reduce((s, d) => s + d.count, 0);
-  const topCategory = expenseChart[0];
 
   const customerChart = useMemo(
     () =>
@@ -427,7 +608,6 @@ export default function ReportsPage() {
         })),
     [customerRowsAll]
   );
-  const totalOutstanding = customerPaySummary.totalOutstanding;
 
   const customerStatusChart = useMemo(
     () =>
@@ -457,7 +637,6 @@ export default function ReportsPage() {
   const netProfit = Number(statement?.netProfit ?? 0);
   const totalIncome = Number(statement?.totalIncome ?? 0);
   const totalExpense = Number(statement?.totalExpense ?? 0);
-  const marginPct = totalIncome > 0 ? Math.round((netProfit / totalIncome) * 100) : 0;
 
   const cashTotals = useMemo(() => {
     const inflow = cashChart.reduce((s, r) => s + r.inflow, 0);
@@ -514,18 +693,27 @@ export default function ReportsPage() {
         if (statementType === "customer" && statementCustomerId) {
           return { kind: "customerStatement", params: { customerId: statementCustomerId } };
         }
+        if (statementType === "project" && statementProjectId) {
+          return { kind: "projectStatement", params: { projectId: statementProjectId } };
+        }
+        if (statementType === "expense" && statementExpenseId) {
+          return { kind: "expenseStatement", params: { expenseId: statementExpenseId } };
+        }
         return null;
+      case "employees":
+        return { kind: "employeeList" };
       default:
         return null;
     }
-  }, [view, reportAccountId, statementType, statementMemberId, statementCustomerId]);
+  }, [view, reportAccountId, statementType, statementMemberId, statementCustomerId, statementProjectId, statementExpenseId]);
 
-  const exportReport = async (kind: string, format: "pdf" | "xlsx") => {
+  const exportReport = async (kind: string, format: "pdf" | "xlsx", extra?: Record<string, unknown>) => {
     try {
       const url = await financeService.exportReportUrl(kind, format, {
         ...(batchId ? { batchId } : {}),
         ...exportConfig?.params,
-        ...reportParams,
+        ...dateParams,
+        ...extra,
       });
       const response = await api.get(url.replace(/^\/api/, ""), {
         responseType: "blob",
@@ -558,7 +746,7 @@ export default function ReportsPage() {
     if (!exportConfig) {
       toast.error(
         view === "statements"
-          ? "Select a customer or member to export their statement"
+          ? "Select a customer, member, project, or expense to export their statement"
           : "Nothing to export on this tab"
       );
       return;
@@ -566,82 +754,30 @@ export default function ReportsPage() {
     void exportReport(exportConfig.kind, format);
   };
 
-  const periodHint = formatMonthLabel(month);
-
-  const summaryPrimaryLabel =
-    view === "expenses"
-      ? "Total spend"
-      : view === "customers"
-        ? "Outstanding"
-        : view === "statements"
-          ? statementType === "member"
-            ? "Charged"
-            : "Invoiced"
-          : view === "accounts"
-            ? "Total balance"
-            : view === "members"
-              ? "Collected"
-              : view === "cash-flow"
-                ? "Inflow"
-                : "Income";
-
-  const summaryPrimaryValue =
-    view === "expenses"
-      ? formatCurrency(totalExpenseCats, currency)
-      : view === "customers"
-        ? formatCurrency(totalOutstanding, currency)
-        : view === "statements"
-          ? statementType === "member"
-            ? formatCurrency(memberStatementTotals.charged, currency)
-            : formatCurrency(statementTotals.invoiced, currency)
-          : view === "accounts"
-            ? formatCurrency(totalAccountBalance, currency)
-            : view === "members"
-              ? formatCurrency(Number(contributionData?.summary?.collected ?? 0), currency)
-              : view === "cash-flow"
-                ? formatCurrency(cashTotals.inflow, currency)
-                : formatCurrency(totalIncome, currency);
-
-  const summarySecondaryLabel =
-    view === "income-statement"
-      ? "Net profit"
-      : view === "statements"
-        ? "Outstanding"
-        : view === "accounts"
-          ? "Accounts"
-          : view === "members"
-            ? "Collection rate"
-            : view === "cash-flow"
-              ? "Net cash"
-              : view === "expenses"
-                ? "Transactions"
-                : "Records";
-
-  const summarySecondaryValue =
-    view === "income-statement"
-      ? formatCurrency(netProfit, currency)
-      : view === "statements"
-        ? statementType === "member"
-          ? formatCurrency(memberStatementTotals.outstanding, currency)
-          : formatCurrency(statementTotals.outstanding, currency)
-        : view === "accounts"
-          ? String(accountsList.length)
-          : view === "members"
-            ? `${memberCollectionPct}%`
-            : view === "cash-flow"
-              ? formatCurrency(cashTotals.net, currency)
-              : view === "expenses"
-                ? String(expenseTxnCount)
-                : String(customerRows.length);
+  const periodHint =
+    dateMode === "day" && day
+      ? formatDate(day)
+      : dateMode === "range" && (from || to)
+        ? `${from ? formatDate(from) : "…"} – ${to ? formatDate(to) : "…"}`
+        : "All dates";
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Reports"
-        subtitle="Analyse finances with live charts and filtered periods."
+        subtitle={VIEW_HINTS[view]}
         actions={
           <>
-            <MonthNavigator value={month} onChange={setMonth} />
+            <DateRangeFilter
+              mode={dateMode}
+              onModeChange={setDateMode}
+              date={day}
+              from={from}
+              to={to}
+              onDateChange={setDay}
+              onFromChange={setFrom}
+              onToChange={setTo}
+            />
             {exportConfig && (
               <>
                 <Button variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
@@ -665,95 +801,43 @@ export default function ReportsPage() {
         }}
       />
 
-      {/* Summary strip */}
-      <Card className="overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end sm:px-6">
-          <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-            <button
-              type="button"
-              onClick={() => setDisplayMode("charts")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                displayMode === "charts"
-                  ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-              )}
-            >
-              <BarChart3 className="h-3.5 w-3.5" /> Charts
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayMode("table")}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                displayMode === "table"
-                  ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-              )}
-            >
-              <Table2 className="h-3.5 w-3.5" /> Table
-            </button>
-          </div>
+      {(view === "cash-flow" ||
+        view === "income-statement" ||
+        view === "expenses" ||
+        view === "customers" ||
+        view === "members") && (
+      <div className="flex justify-end">
+        <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => setDisplayMode("charts")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+              displayMode === "charts"
+                ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+            )}
+          >
+            <BarChart3 className="h-3.5 w-3.5" /> Charts
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayMode("table")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+              displayMode === "table"
+                ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+            )}
+          >
+            <Table2 className="h-3.5 w-3.5" /> Table
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-px bg-slate-100 dark:bg-slate-800 sm:grid-cols-4">
-          <SummaryCell label="Report" value={VIEWS.find((v) => v.id === view)?.label ?? "—"} />
-          <SummaryCell label="Period" value={periodHint} />
-          <SummaryCell
-            label={summaryPrimaryLabel}
-            value={summaryPrimaryValue}
-            valueClass="text-brand-700 dark:text-brand-400"
-          />
-          <SummaryCell
-            label={summarySecondaryLabel}
-            value={summarySecondaryValue}
-            valueClass={
-              view === "income-statement" || view === "cash-flow"
-                ? (view === "cash-flow" ? cashTotals.net : netProfit) >= 0
-                  ? "text-emerald-600"
-                  : "text-rose-600"
-                : undefined
-            }
-          />
-        </div>
-      </Card>
+      </div>
+      )}
 
       {view === "cash-flow" && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportStat
-              index={0}
-              label="Total inflow"
-              value={formatCurrency(cashTotals.inflow, currency)}
-              icon={<TrendingUp className="h-5 w-5" />}
-              className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-              loading={cashFlowLoading}
-            />
-            <ReportStat
-              index={1}
-              label="Total outflow"
-              value={formatCurrency(cashTotals.outflow, currency)}
-              icon={<TrendingDown className="h-5 w-5" />}
-              className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
-              loading={cashFlowLoading}
-            />
-            <ReportStat
-              index={2}
-              label="Net cash"
-              value={formatCurrency(cashTotals.net, currency)}
-              icon={<Activity className="h-5 w-5" />}
-              className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-              loading={cashFlowLoading}
-            />
-            <ReportStat
-              index={3}
-              label="Months covered"
-              value={String(cashTotals.months)}
-              icon={<Wallet className="h-5 w-5" />}
-              className="bg-navy/10 text-navy dark:bg-brand-500/10 dark:text-brand-300"
-              loading={cashFlowLoading}
-            />
-          </div>
-
           <Card className="border-dashed">
             <CardBody className="p-4 text-sm text-slate-600 dark:text-slate-300">
               <p className="font-semibold text-slate-800 dark:text-slate-100">What cash flow shows</p>
@@ -955,22 +1039,15 @@ export default function ReportsPage() {
 
       {view === "income-statement" && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportStat index={0} label="Total Income" value={formatCurrency(totalIncome, currency)} icon={<TrendingUp className="h-5 w-5" />} className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" loading={incomeLoading} />
-            <ReportStat index={1} label="Total Expenses" value={formatCurrency(totalExpense, currency)} icon={<TrendingDown className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={incomeLoading} />
-            <ReportStat index={2} label="Net Profit" value={formatCurrency(netProfit, currency)} icon={<Wallet className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={incomeLoading} />
-            <ReportStat index={3} label="Margin" value={`${marginPct}%`} icon={<PieChart className="h-5 w-5" />} className="bg-navy/10 text-navy dark:bg-brand-500/10 dark:text-brand-300" loading={incomeLoading} />
-          </div>
-
           <Card className="border-dashed">
             <CardBody className="p-4 text-sm text-slate-600 dark:text-slate-300">
-              <p className="font-semibold text-slate-800 dark:text-slate-100">What the income statement shows</p>
+              <p className="font-semibold text-slate-800 dark:text-slate-100">What profit & loss shows</p>
               <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                 <span className="font-semibold text-emerald-600">Income / revenue</span> = money earned (customer
                 payments, other income, member contributions).{" "}
                 <span className="font-semibold text-amber-600">Expenses</span> = money spent running the business
                 (hosting, salaries, tools, etc.). <span className="font-semibold text-navy dark:text-secondary-300">Net profit</span>{" "}
-                = income − expenses. This is profitability — not the same as bank cash movement (see Cash Flow).
+                = income − expenses. This is profitability — not the same as bank cash movement (see Cash in / out).
               </p>
             </CardBody>
           </Card>
@@ -1063,11 +1140,6 @@ export default function ReportsPage() {
 
       {view === "expenses" && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <ReportStat index={0} label="Total Expenses" value={formatCurrency(totalExpenseCats, currency)} icon={<Receipt className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={expensesLoading} />
-            <ReportStat index={1} label="Categories" value={String(expenseChart.length)} icon={<PieChart className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={expensesLoading} />
-            <ReportStat index={2} label="Top category" value={topCategory?.name ?? "—"} icon={<TrendingUp className="h-5 w-5" />} className="bg-navy/10 text-navy dark:bg-brand-500/10 dark:text-brand-300" loading={expensesLoading} />
-          </div>
           {displayMode === "charts" ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <ChartCard title="Spend by category" subtitle="Pie share of expenses" className="xl:col-span-1">
@@ -1138,38 +1210,29 @@ export default function ReportsPage() {
       {view === "statements" && (
         <>
           <div className="mb-1 flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-              <button
-                type="button"
-                onClick={() => setStatementType("customer")}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                  statementType === "customer"
-                    ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                )}
-              >
-                Customer
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatementType("member")}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                  statementType === "member"
-                    ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
-                    : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
-                )}
-              >
-                Member
-              </button>
+            <div className="inline-flex flex-wrap rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              {STATEMENT_KINDS.map((kind) => (
+                <button
+                  key={kind.id}
+                  type="button"
+                  onClick={() => setStatementType(kind.id)}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    statementType === kind.id
+                      ? "bg-white text-navy shadow-sm dark:bg-slate-700 dark:text-white"
+                      : "text-slate-500 hover:text-slate-700 dark:text-slate-400"
+                  )}
+                >
+                  {kind.label}
+                </button>
+              ))}
             </div>
 
-            {statementType === "customer" ? (
+            {statementType === "customer" && (
               <>
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Customer</span>
                 <select
-                  className="min-w-[14rem] rounded-xl border-0 bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700"
+                  className={selectClass}
                   value={statementCustomerId}
                   onChange={(e) => setStatementCustomerId(e.target.value ? Number(e.target.value) : "")}
                 >
@@ -1181,11 +1244,12 @@ export default function ReportsPage() {
                   ))}
                 </select>
               </>
-            ) : (
+            )}
+            {statementType === "member" && (
               <>
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Member</span>
                 <select
-                  className="min-w-[14rem] rounded-xl border-0 bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700"
+                  className={selectClass}
                   value={statementMemberId}
                   onChange={(e) => setStatementMemberId(e.target.value ? Number(e.target.value) : "")}
                 >
@@ -1198,204 +1262,162 @@ export default function ReportsPage() {
                 </select>
               </>
             )}
+            {statementType === "project" && (
+              <>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Project</span>
+                <select
+                  className={selectClass}
+                  value={statementProjectId}
+                  onChange={(e) => setStatementProjectId(e.target.value ? Number(e.target.value) : "")}
+                >
+                  <option value="">Select a project…</option>
+                  {statementProjects.map((p) => (
+                    <option key={p.projectId} value={p.projectId}>
+                      {p.projectName}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {statementType === "expense" && (
+              <>
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Expense</span>
+                <select
+                  className={selectClass}
+                  value={statementExpenseId}
+                  onChange={(e) => setStatementExpenseId(e.target.value ? Number(e.target.value) : "")}
+                >
+                  <option value="">Select a category…</option>
+                  {expenseCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
 
           {statementType === "customer" && selectedCustomer ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <ReportStat
-                  index={0}
-                  label="Total invoiced"
-                  value={formatCurrency(statementTotals.invoiced, currency)}
-                  icon={<Receipt className="h-5 w-5" />}
-                  className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-                  loading={false}
-                />
-                <ReportStat
-                  index={1}
-                  label="Total paid"
-                  value={formatCurrency(statementTotals.paid, currency)}
-                  icon={<TrendingUp className="h-5 w-5" />}
-                  className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                  loading={false}
-                />
-                <ReportStat
-                  index={2}
-                  label="Outstanding"
-                  value={formatCurrency(statementTotals.outstanding, currency)}
-                  icon={<Wallet className="h-5 w-5" />}
-                  className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
-                  loading={false}
-                />
-              </div>
-
-              <Card>
-                <CardHeader
-                  title={`${selectedCustomer.customerName} — Account Statement`}
-                  subtitle={`${selectedCustomer.customerCode} · Period: ${periodHint}`}
-                  action={
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleExport("pdf")}
-                      leftIcon={<FileDown className="h-4 w-4" />}
-                    >
-                      Export PDF
-                    </Button>
-                  }
-                />
-                <div className="w-full overflow-x-auto">
-                  <table className="w-full min-w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Time</th>
-                        <th className="px-3 py-2">Description</th>
-                        <th className="px-3 py-2 text-right">Debit</th>
-                        <th className="px-3 py-2 text-right">Credit</th>
-                        <th className="px-3 py-2 text-right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {statementRows.map((r, i) => (
-                        <tr key={i} className="text-slate-600 dark:text-slate-300">
-                          <td className="px-3 py-2 text-xs">{formatDate(r.date)}</td>
-                          <td className="px-3 py-2 text-xs text-slate-400">{formatTime(r.time)}</td>
-                          <td className="px-3 py-2 font-medium">{r.desc}</td>
-                          <td className={cn("px-3 py-2 text-right font-mono", r.debit > 0 && "text-rose-600 dark:text-rose-400")}>
-                            {r.debit > 0 ? formatCurrency(r.debit, currency) : "—"}
-                          </td>
-                          <td className={cn("px-3 py-2 text-right font-mono", r.credit > 0 && "text-emerald-600 dark:text-emerald-400")}>
-                            {r.credit > 0 ? formatCurrency(r.credit, currency) : "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-semibold">
-                            {formatCurrency(r.balance, currency)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {statementRows.length === 0 && (
-                    <p className="px-5 py-8 text-center text-sm text-slate-400">No transactions for this customer yet.</p>
-                  )}
-                </div>
-              </Card>
-            </>
+            <Card>
+              <CardHeader
+                title={`${selectedCustomer.customerName} — Customer Statement`}
+                subtitle={`${selectedCustomer.customerCode} · Period: ${periodHint}`}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
+                    Export PDF
+                  </Button>
+                }
+              />
+              <StatementTable
+                rows={customerStatementRows}
+                loading={customerStatementLoading}
+                currency={currency}
+                empty="No transactions for this customer in this period."
+              />
+            </Card>
           ) : statementType === "member" && selectedMember ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <ReportStat
-                  index={0}
-                  label="Dues charged"
-                  value={formatCurrency(memberStatementTotals.charged, currency)}
-                  icon={<Receipt className="h-5 w-5" />}
-                  className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"
-                  loading={memberStatementLoading}
-                />
-                <ReportStat
-                  index={1}
-                  label="Loans given"
-                  value={formatCurrency(memberStatementTotals.loans ?? 0, currency)}
-                  icon={<TrendingDown className="h-5 w-5" />}
-                  className="bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400"
-                  loading={memberStatementLoading}
-                />
-                <ReportStat
-                  index={2}
-                  label="Total paid"
-                  value={formatCurrency(memberStatementTotals.paid, currency)}
-                  icon={<TrendingUp className="h-5 w-5" />}
-                  className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                  loading={memberStatementLoading}
-                />
-                <ReportStat
-                  index={3}
-                  label="Net balance"
-                  value={formatCurrency(memberStatementTotals.closingBalance ?? memberStatementTotals.loanBalance ?? 0, currency)}
-                  icon={<Wallet className="h-5 w-5" />}
-                  className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
-                  loading={memberStatementLoading}
-                />
-              </div>
-
-              <Card>
-                <CardHeader
-                  title={`${selectedMember.memberName} — Member Statement`}
-                  subtitle={`${selectedMember.position ?? "Member"} · Period: ${periodHint}`}
-                  action={
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleExport("pdf")}
-                      leftIcon={<FileDown className="h-4 w-4" />}
-                    >
-                      Export PDF
-                    </Button>
-                  }
-                />
-                <div className="w-full overflow-x-auto">
-                  <table className="w-full min-w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800">
-                        <th className="px-3 py-2">Date</th>
-                        <th className="px-3 py-2">Time</th>
-                        <th className="px-3 py-2">Description</th>
-                        <th className="px-3 py-2 text-right">Due</th>
-                        <th className="px-3 py-2 text-right">Paid</th>
-                        <th className="px-3 py-2 text-right">Loan</th>
-                        <th className="px-3 py-2 text-right">Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {memberStatementLoading ? (
-                        <tr>
-                          <td colSpan={7} className="px-3 py-8">
-                            <Skeleton className="h-8 w-full" />
-                          </td>
-                        </tr>
-                      ) : (
-                        memberStatementRows.map((r, i) => (
-                          <tr key={i} className="text-slate-600 dark:text-slate-300">
-                            <td className="px-3 py-2 text-xs">{r.date}</td>
-                            <td className="px-3 py-2 text-xs text-slate-400">{r.time}</td>
-                            <td className="px-3 py-2 font-medium">{r.description}</td>
-                            <td className={cn("px-3 py-2 text-right font-mono", r.due > 0 && "text-rose-600 dark:text-rose-400")}>
-                              {r.due > 0 ? formatCurrency(r.due, currency) : "—"}
-                            </td>
-                            <td className={cn("px-3 py-2 text-right font-mono", r.paid > 0 && "text-emerald-600 dark:text-emerald-400")}>
-                              {r.paid > 0 ? formatCurrency(r.paid, currency) : "—"}
-                            </td>
-                            <td className={cn("px-3 py-2 text-right font-mono", r.loan > 0 && "text-amber-600 dark:text-amber-400")}>
-                              {r.loan > 0 ? formatCurrency(r.loan, currency) : "—"}
-                            </td>
-                            <td
-                              className={cn(
-                                "px-3 py-2 text-right font-mono text-xs font-semibold",
-                                r.balance > 0
-                                  ? "text-rose-600 dark:text-rose-400"
-                                  : "text-slate-800 dark:text-slate-100"
-                              )}
-                            >
-                              {formatMemberStatementBalance(r.balance, currency)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                  {!memberStatementLoading && memberStatementRows.length === 0 && (
-                    <p className="px-5 py-8 text-center text-sm text-slate-400">No contribution activity for this member in this period.</p>
-                  )}
-                </div>
-              </Card>
-            </>
+            <Card>
+              <CardHeader
+                title={`${selectedMember.memberName} — Member Statement`}
+                subtitle={`${selectedMember.position ?? "Member"} · Period: ${periodHint}`}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
+                    Export PDF
+                  </Button>
+                }
+              />
+              <StatementTable
+                rows={memberStatementRows}
+                loading={memberStatementLoading}
+                showLoan
+                memberBalance
+                currency={currency}
+                empty="No contribution activity for this member in this period."
+              />
+            </Card>
+          ) : statementType === "project" && selectedProject ? (
+            <Card>
+              <CardHeader
+                title={`${selectedProject.projectName} — Project Statement`}
+                subtitle={`Period: ${periodHint}`}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
+                    Export PDF
+                  </Button>
+                }
+              />
+              <StatementTable
+                rows={projectStatementRows}
+                loading={projectStatementLoading}
+                currency={currency}
+                empty="No invoices or payments for this project in this period."
+              />
+            </Card>
+          ) : statementType === "expense" && selectedExpense ? (
+            <Card>
+              <CardHeader
+                title={`${selectedExpense.name} — Expense Statement`}
+                subtitle={`Period: ${periodHint}`}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
+                    Export PDF
+                  </Button>
+                }
+              />
+              <StatementTable
+                rows={expenseStatementRows}
+                loading={expenseStatementLoading}
+                currency={currency}
+                empty="No charges or payments for this expense in this period."
+              />
+            </Card>
           ) : (
             <Card>
               <CardBody className="py-12 text-center text-sm text-slate-500">
-                Select a {statementType === "member" ? "member" : "customer"} above to view their account statement.
+                Select a {statementType} above to view its statement.
               </CardBody>
             </Card>
           )}
+        </>
+      )}
+
+      {view === "employees" && (
+        <>
+          <DataTable
+            columns={employeeColumns}
+            data={filteredEmployees}
+            loading={employeesLoading}
+            searchPlaceholder="Search employees…"
+            emptyTitle="No employees yet"
+            emptyDescription="Add staff on the Employees page to view reports."
+            getRowId={(row) => String(row.employeeId)}
+          />
+          <Modal
+            open={!!selectedEmployee}
+            onClose={() => setStatementEmployeeId("")}
+            title={selectedEmployee ? `${selectedEmployee.fullName} — Employee Report` : "Employee Report"}
+            subtitle={
+              selectedEmployee
+                ? `${selectedEmployee.employeeCode}${selectedEmployee.jobTitle ? ` · ${selectedEmployee.jobTitle}` : ""}`
+                : undefined
+            }
+            size="xl"
+            headerActions={
+              selectedEmployee ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => exportReport("employeeReport", "pdf", { employeeId: selectedEmployee.employeeId })}
+                  leftIcon={<FileDown className="h-4 w-4" />}
+                >
+                  Export PDF
+                </Button>
+              ) : undefined
+            }
+          >
+            {selectedEmployee ? <EmployeeReportCards employee={selectedEmployee} currency={currency} /> : null}
+          </Modal>
         </>
       )}
 
@@ -1462,35 +1484,7 @@ export default function ReportsPage() {
           </div>
 
           {selectedReportAccount ? (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <ReportStat
-                  index={0}
-                  label="Current balance"
-                  value={formatCurrency(Number(accountStatementData?.account?.balance ?? selectedReportAccount.balance), currency)}
-                  icon={<Landmark className="h-5 w-5" />}
-                  className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
-                  loading={false}
-                />
-                <ReportStat
-                  index={1}
-                  label="Debit (receipts)"
-                  value={formatCurrency(accountStatementTotals.debits, currency)}
-                  icon={<TrendingUp className="h-5 w-5" />}
-                  className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                  loading={false}
-                />
-                <ReportStat
-                  index={2}
-                  label="Credit (payments)"
-                  value={formatCurrency(accountStatementTotals.credits, currency)}
-                  icon={<TrendingDown className="h-5 w-5" />}
-                  className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"
-                  loading={false}
-                />
-              </div>
-
-              <Card>
+            <Card>
                 <CardHeader
                   title={`${selectedReportAccount.institution} — Statement`}
                   subtitle={`${selectedReportAccount.number} · Period: ${periodHint}`}
@@ -1502,9 +1496,10 @@ export default function ReportsPage() {
                         <th className="px-3 py-2">Date</th>
                         <th className="px-3 py-2">Time</th>
                         <th className="px-3 py-2">Type</th>
-                        <th className="px-3 py-2">Description</th>
-                        <th className="px-3 py-2 text-right">Debit (in)</th>
-                        <th className="px-3 py-2 text-right">Credit (out)</th>
+                        <th className="px-3 py-2">Reference</th>
+                        <th className="px-3 py-2 text-right">Debit</th>
+                        <th className="px-3 py-2 text-right">Credit</th>
+                        <th className="px-3 py-2 text-right">Loan</th>
                         <th className="px-3 py-2 text-right">Balance</th>
                       </tr>
                     </thead>
@@ -1512,26 +1507,17 @@ export default function ReportsPage() {
                       {accountMovements.map((m, i) => (
                         <tr key={i} className="text-slate-600 dark:text-slate-300">
                           <td className="px-3 py-2 text-xs">{formatDate(m.movementDate)}</td>
-                          <td className="px-3 py-2 text-xs text-slate-400">{formatTime(m.movementDate)}</td>
-                          <td className="px-3 py-2 capitalize">
-                            {m.movementType === "income"
-                              ? "Receipt"
-                              : m.movementType === "expense"
-                                ? "Payment"
-                                : m.movementType === "loan_out"
-                                  ? "Member loan"
-                                  : m.movementType === "loan_repay"
-                                    ? "Loan repayment"
-                                    : m.movementType === "opening"
-                                      ? "Opening"
-                                      : m.movementType.replace(/_/g, " ")}
-                          </td>
-                          <td className="px-3 py-2 font-medium">{m.description || m.referenceLabel}</td>
+                          <td className="px-3 py-2 text-xs text-slate-400">{formatTime(m.time ?? m.movementDate)}</td>
+                          <td className="px-3 py-2 font-medium">{m.description || m.movementType || "—"}</td>
+                          <td className="px-3 py-2 font-mono text-xs">{m.referenceLabel || "—"}</td>
                           <td className={cn("px-3 py-2 text-right font-mono", m.debit > 0 && "text-emerald-600 dark:text-emerald-400")}>
                             {m.debit > 0 ? formatCurrency(m.debit, currency) : "—"}
                           </td>
                           <td className={cn("px-3 py-2 text-right font-mono", m.credit > 0 && "text-rose-600 dark:text-rose-400")}>
                             {m.credit > 0 ? formatCurrency(m.credit, currency) : "—"}
+                          </td>
+                          <td className={cn("px-3 py-2 text-right font-mono", Number(m.loan ?? 0) > 0 && "text-amber-600 dark:text-amber-400")}>
+                            {Number(m.loan ?? 0) > 0 ? formatCurrency(Number(m.loan), currency) : "—"}
                           </td>
                           <td className="px-3 py-2 text-right font-mono font-semibold">
                             {formatCurrency(m.balance, currency)}
@@ -1545,7 +1531,6 @@ export default function ReportsPage() {
                   )}
                 </div>
               </Card>
-            </>
           ) : (
             <Card>
               <CardBody className="py-12 text-center text-sm text-slate-500">
@@ -1574,13 +1559,6 @@ export default function ReportsPage() {
                 {filter === "all" ? "All" : filter}
               </button>
             ))}
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-            <ReportStat index={0} label="Unpaid" value={String(customerPaySummary.unpaidCount)} icon={<Users className="h-5 w-5" />} className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" loading={customersLoading} />
-            <ReportStat index={1} label="Partial" value={String(customerPaySummary.partialCount)} icon={<Users className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={customersLoading} />
-            <ReportStat index={2} label="Paid" value={String(customerPaySummary.paidCount)} icon={<Users className="h-5 w-5" />} className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" loading={customersLoading} />
-            <ReportStat index={3} label="Outstanding" value={formatCurrency(customerPaySummary.totalOutstanding, currency)} icon={<Wallet className="h-5 w-5" />} className="bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400" loading={customersLoading} />
-            <ReportStat index={4} label="Collected" value={formatCurrency(customerPaySummary.totalCollected, currency)} icon={<TrendingUp className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={customersLoading} />
           </div>
           {displayMode === "charts" ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -1680,29 +1658,28 @@ export default function ReportsPage() {
 
       {view === "members" && (
         <>
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+          <div className="mb-1 flex flex-wrap items-center gap-3">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Due batch</span>
             <select
-              className="rounded-xl border-0 bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700"
-              value={batchId || ""}
+              className={selectClass}
+              value={batchId ? String(batchId) : ""}
               onChange={(e) => {
                 const next = new URLSearchParams(searchParams);
-                next.set("batchId", e.target.value);
+                if (e.target.value) next.set("batchId", e.target.value);
+                else next.delete("batchId");
                 setSearchParams(next);
               }}
             >
-              {batches.map((b) => (
-                <option key={b.batchId} value={b.batchId}>
-                  {new Date(b.year, b.month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-                </option>
-              ))}
+              {batches.length === 0 ? (
+                <option value="">No due batches yet</option>
+              ) : (
+                batches.map((b) => (
+                  <option key={b.batchId} value={b.batchId}>
+                    {dueBatchLabel(b)}
+                  </option>
+                ))
+              )}
             </select>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <ReportStat index={0} label="Expected" value={formatCurrency(Number(contributionData?.summary?.expected ?? 0), currency)} icon={<Wallet className="h-5 w-5" />} className="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400" loading={contributionLoading} />
-            <ReportStat index={1} label="Collected" value={formatCurrency(Number(contributionData?.summary?.collected ?? 0), currency)} icon={<TrendingUp className="h-5 w-5" />} className="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" loading={contributionLoading} />
-            <ReportStat index={2} label="Outstanding" value={formatCurrency(Number(contributionData?.summary?.expected ?? 0) - Number(contributionData?.summary?.collected ?? 0), currency)} icon={<TrendingDown className="h-5 w-5" />} className="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" loading={contributionLoading} />
-            <ReportStat index={3} label="Collection rate" value={`${memberCollectionPct}%`} icon={<Users className="h-5 w-5" />} className="bg-navy/10 text-navy dark:bg-brand-500/10 dark:text-brand-300" loading={contributionLoading} />
           </div>
           {displayMode === "charts" ? (
             <>
@@ -1814,59 +1791,5 @@ export default function ReportsPage() {
         </>
       )}
     </div>
-  );
-}
-
-function SummaryCell({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="bg-white px-4 py-3 dark:bg-slate-900 sm:px-5">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={cn("mt-1 truncate text-sm font-bold text-slate-900 dark:text-white", valueClass)}>{value}</p>
-    </div>
-  );
-}
-
-function ReportStat({
-  label,
-  value,
-  icon,
-  className,
-  loading,
-  index,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  className: string;
-  loading: boolean;
-  index: number;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04 }}
-      className="rounded-xl bg-white p-3.5 shadow-card ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-800"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-          {loading ? (
-            <Skeleton className="mt-1.5 h-6 w-24" />
-          ) : (
-            <p className="mt-1 truncate text-lg font-bold tracking-tight text-slate-900 dark:text-white">{value}</p>
-          )}
-        </div>
-        <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg [&_svg]:h-4 [&_svg]:w-4", className)}>{icon}</span>
-      </div>
-    </motion.div>
   );
 }

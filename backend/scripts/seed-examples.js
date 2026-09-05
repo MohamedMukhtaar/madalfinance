@@ -18,19 +18,18 @@ const run = async () => {
     const [[admin]] = await conn.query(`SELECT user_id FROM users WHERE username = 'admin' LIMIT 1`);
     if (!admin) throw new Error('Admin user not found. Run db:seed first.');
 
-    // Restore member profiles (cleared by reset-data).
     const membersSeed = [
-      { fullName: 'Ahmed Muse', phone: '+252 61 111 2233', email: 'ahmed@madalsolutions.com', position: 'Co-Founder' },
-      { fullName: 'Hawa Dahir', phone: '+252 61 444 5566', email: 'hawa@madalsolutions.com', position: 'Co-Founder' },
+      { code: 'MEM-0001', fullName: 'Ahmed Muse', phone: '+252 61 111 2233', email: 'ahmed@madalsolutions.com', position: 'Co-Founder' },
+      { code: 'MEM-0002', fullName: 'Hawa Dahir', phone: '+252 61 444 5566', email: 'hawa@madalsolutions.com', position: 'Co-Founder' },
     ];
     for (const m of membersSeed) {
       await conn.query(
-        `INSERT INTO members (full_name, phone, email, joined_date, default_monthly_due, position, status)
-         SELECT ?, ?, ?, CURDATE() - INTERVAL 300 DAY, 10.00, ?, 'active'
+        `INSERT INTO members (member_code, full_name, phone, email, joined_date, default_monthly_due, position, status)
+         SELECT ?, ?, ?, ?, CURRENT_DATE - INTERVAL '300 days', 10.00, ?, 'active'
           WHERE NOT EXISTS (
             SELECT 1 FROM members WHERE full_name = ? AND deleted_at IS NULL
           )`,
-        [m.fullName, m.phone, m.email, m.position, m.fullName]
+        [m.code, m.fullName, m.phone, m.email, m.position, m.fullName]
       );
     }
 
@@ -44,7 +43,6 @@ const run = async () => {
     const today = dayjs().format('YYYY-MM-DD');
     const dueDate = dayjs().add(14, 'day').format('YYYY-MM-DD');
 
-    // --- Feysal: one-time shop website $200 ---
     const feysalCode = 'CUS-001';
     const [feysalResult] = await conn.query(
       `INSERT INTO customers (customer_code, customer_name, company_name, phone, email, city, status)
@@ -54,11 +52,15 @@ const run = async () => {
     const feysalId = feysalResult.insertId;
 
     const [feysalProjectResult] = await conn.query(
-      `INSERT INTO projects (customer_id, project_type_id, project_name, description, project_price, start_date, status, created_by)
-       VALUES (?, ?, 'Shop Website', 'One-time website build for Feysal shop', 200.00, ?, 'In Progress', ?)`,
-      [feysalId, oneTimeType.project_type_id, today, admin.user_id]
+      `INSERT INTO projects (project_code, project_type_id, project_name, description, project_price, start_date, status, created_by)
+       VALUES ('PRJ-0001', ?, 'Shop Website', 'One-time website build for Feysal shop', 200.00, ?, 'In Progress', ?)`,
+      [oneTimeType.project_type_id, today, admin.user_id]
     );
     const feysalProjectId = feysalProjectResult.insertId;
+    await conn.query(
+      `INSERT INTO project_customers (project_id, customer_id, is_primary) VALUES (?, ?, TRUE)`,
+      [feysalProjectId, feysalId]
+    );
 
     const feysalInvNo = await generateNumber(conn, 'invoices', 'invoice_number', 'INV-');
     await conn.query(
@@ -66,17 +68,15 @@ const run = async () => {
        VALUES (?, ?, ?, ?, ?, 200.00, 0, 0, 200.00, 0, 'Issued', ?)`,
       [feysalInvNo, feysalId, feysalProjectId, today, dueDate, admin.user_id]
     );
-    const [[feysalInv]] = await conn.query(
-      `SELECT invoice_id FROM invoices WHERE invoice_number = ?`,
-      [feysalInvNo]
-    );
+    const [[feysalInv]] = await conn.query(`SELECT invoice_id FROM invoices WHERE invoice_number = ?`, [
+      feysalInvNo,
+    ]);
     await conn.query(
-      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total)
-       VALUES (?, 'Shop website — full build and delivery', 1, 200.00, 200.00)`,
+      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price)
+       VALUES (?, 'Shop website — full build and delivery', 1, 200.00)`,
       [feysalInv.invoice_id]
     );
 
-    // --- Muscab: rental $20/month + $200 setup ---
     const muscabCode = 'CUS-002';
     const [muscabResult] = await conn.query(
       `INSERT INTO customers (customer_code, customer_name, company_name, phone, email, city, status)
@@ -86,11 +86,15 @@ const run = async () => {
     const muscabId = muscabResult.insertId;
 
     const [muscabProjectResult] = await conn.query(
-      `INSERT INTO projects (customer_id, project_type_id, project_name, description, project_price, start_date, status, created_by)
-       VALUES (?, ?, 'Monthly Service', 'Rental service — $20/month', 20.00, ?, 'In Progress', ?)`,
-      [muscabId, rentalType.project_type_id, today, admin.user_id]
+      `INSERT INTO projects (project_code, project_type_id, project_name, description, project_price, start_date, status, created_by)
+       VALUES ('PRJ-0002', ?, 'Monthly Service', 'Rental service — $20/month', 20.00, ?, 'In Progress', ?)`,
+      [rentalType.project_type_id, today, admin.user_id]
     );
     const muscabProjectId = muscabProjectResult.insertId;
+    await conn.query(
+      `INSERT INTO project_customers (project_id, customer_id, is_primary) VALUES (?, ?, TRUE)`,
+      [muscabProjectId, muscabId]
+    );
 
     const billingDay = 1;
     const nextBilling = dayjs().add(1, 'month').date(billingDay).format('YYYY-MM-DD');
@@ -110,8 +114,8 @@ const run = async () => {
     );
     const setupInvoiceId = setupInvResult.insertId;
     await conn.query(
-      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, total)
-       VALUES (?, 'Setup / installation fee — Monthly Service', 1, 200.00, 200.00)`,
+      `INSERT INTO invoice_items (invoice_id, description, quantity, unit_price)
+       VALUES (?, 'Setup / installation fee — Monthly Service', 1, 200.00)`,
       [setupInvoiceId]
     );
     await conn.query(`UPDATE rental_billings SET setup_invoice_id = ? WHERE billing_id = ?`, [

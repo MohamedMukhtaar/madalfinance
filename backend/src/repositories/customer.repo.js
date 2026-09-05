@@ -18,14 +18,16 @@ export const list = (conn, { search, status, offset, perPage, order }) => {
     params.push(status);
   }
   if (search) {
-    conditions.push('(customer_name LIKE ? OR company_name LIKE ? OR customer_code LIKE ? OR phone LIKE ?)');
+    conditions.push('(customer_name ILIKE ? OR company_name ILIKE ? OR customer_code ILIKE ? OR phone ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
     `SELECT c.*,
-            (SELECT COUNT(*) FROM projects p WHERE p.customer_id = c.customer_id AND p.deleted_at IS NULL) AS project_count,
+            (SELECT COUNT(*) FROM project_customers pc
+               JOIN projects p ON p.project_id = pc.project_id
+              WHERE pc.customer_id = c.customer_id AND p.deleted_at IS NULL) AS project_count,
             (SELECT COALESCE(SUM(total_amount - paid_amount), 0) FROM invoices i
               WHERE i.customer_id = c.customer_id AND i.deleted_at IS NULL AND i.status IN ('Issued','Partial','Overdue')) AS outstanding_balance
        FROM customers c
@@ -44,7 +46,7 @@ export const count = (conn, { search, status }) => {
     params.push(status);
   }
   if (search) {
-    conditions.push('(customer_name LIKE ? OR company_name LIKE ? OR customer_code LIKE ? OR phone LIKE ?)');
+    conditions.push('(customer_name ILIKE ? OR company_name ILIKE ? OR customer_code ILIKE ? OR phone ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   return run(conn, `SELECT COUNT(*) AS total FROM customers c WHERE ${conditions.join(' AND ')}`, params).then(
@@ -104,10 +106,11 @@ export const addContact = (conn, customerId, data) =>
     [customerId, data.name, data.position ?? null, data.phone ?? null, data.email ?? null]
   ).then((r) => r.insertId);
 
-export const nextCode = (conn) =>
-  run(conn, `SELECT CONCAT('CUST-', LPAD(COALESCE(MAX(customer_id), 0) + 1, 4, '0')) AS code FROM customers`).then(
-    (r) => r[0].code
-  );
+export const nextCode = async (conn) => {
+  const rows = await run(conn, `SELECT COALESCE(MAX(customer_id), 0) AS max_id FROM customers`);
+  const next = Number(rows[0]?.max_id ?? 0) + 1;
+  return `CUST-${String(next).padStart(4, '0')}`;
+};
 
 export const statementInvoices = (conn, customerId) =>
   run(
@@ -140,7 +143,7 @@ export const statementPayments = (conn, customerId) =>
 export const transactionHistory = (conn, customerId) =>
   run(
     conn,
-    `SELECT t.transaction_id, t.transaction_date, t.description, t.income, t.expense, t.balance_after
+    `SELECT t.transaction_id, t.transaction_date, t.description, t.debit AS income, t.credit AS expense
        FROM transactions t
       WHERE (t.reference_type = 'Invoice' AND t.reference_id IN (
               SELECT invoice_id FROM invoices WHERE customer_id = ?

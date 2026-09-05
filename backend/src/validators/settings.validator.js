@@ -18,4 +18,10 @@ export const reportQueryValidator = [
   query('to_date').optional().isISO8601().withMessage('Invalid to_date'),
   query('months').optional().isInt({ min: 1, max: 60 }).withMessage('Invalid months'),
   query('format').optional().isIn(['pdf', 'xlsx']).withMessage('Format must be pdf or xlsx'),
+  query('member_id').optional().isInt({ min: 1 }).withMessage('Invalid member_id'),
+  query('customer_id').optional().isInt({ min: 1 }).withMessage('Invalid customer_id'),
+  query('project_id').optional().isInt({ min: 1 }).withMessage('Invalid project_id'),
+  query('expense_id').optional().isInt({ min: 1 }).withMessage('Invalid expense_id'),
+  query('employee_id').optional().isInt({ min: 1 }).withMessage('Invalid employee_id'),
+  query('acc_id').optional().isInt({ min: 1 }).withMessage('Invalid acc_id'),
 ];

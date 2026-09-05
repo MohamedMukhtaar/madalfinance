@@ -4,15 +4,13 @@ import { CreditCard, Download, Eye, Pencil, Paperclip, Plus, Printer, Trash2, Up
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
 import { EditPaymentModal } from "@/features/payments/EditPaymentModal";
 import { useCustomers, useInvoices, usePayments, useVoidPayment } from "@/hooks/queries";
-import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
-import { monthRangeParams } from "@/utils/monthFilter";
 import { printPayment } from "@/utils/print";
 import { financeService } from "@/services/finance";
 import { getErrorMessage } from "@/services/api";
@@ -36,7 +34,6 @@ export default function PaymentsPage() {
   const manage = canManage(user?.role);
   const voidMutation = useVoidPayment();
   const { currency, settings } = useSettings();
-  const { month, setMonth } = useSelectedMonth();
 
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(12);
@@ -67,16 +64,25 @@ export default function PaymentsPage() {
   }, [pageIndex, pageSize, dateMode, day, from, to]);
 
   const { data: paymentsData, isLoading, error, refetch } = usePayments(listParams);
-  const monthParams = useMemo(() => monthRangeParams(month), [month]);
-  const { data: monthPaymentsData } = usePayments({ ...monthParams, perPage: 500 });
+  const statsParams = useMemo(() => {
+    const base: Record<string, string | number> = { page: 1, perPage: 500, sort: "created_at:desc" };
+    if (dateMode === "day" && day) {
+      base.fromDate = day;
+      base.toDate = day;
+    } else if (dateMode === "range") {
+      if (from) base.fromDate = from;
+      if (to) base.toDate = to;
+    }
+    return base;
+  }, [dateMode, day, from, to]);
+  const { data: statsPaymentsData } = usePayments(statsParams);
   const { data: customersData } = useCustomers();
   const { data: invoicesData } = useInvoices();
   const payments = paymentsData?.rows ?? [];
   const totalCount = paymentsData?.total ?? 0;
   const customers = customersData?.rows ?? [];
   const invoices = invoicesData?.rows ?? [];
-
-  const monthPayments = monthPaymentsData?.rows ?? [];
+  const statsPayments = statsPaymentsData?.rows ?? [];
 
   const handlePrint = async (p: Payment) => {
     if (!settings) {
@@ -103,10 +109,10 @@ export default function PaymentsPage() {
 
   const totals = useMemo(
     () => ({
-      total: monthPayments.reduce((s, p) => s + p.amount, 0),
-      count: monthPayments.length,
+      total: statsPayments.reduce((s, p) => s + p.amount, 0),
+      count: statsPaymentsData?.total ?? statsPayments.length,
     }),
-    [monthPayments]
+    [statsPayments, statsPaymentsData?.total]
   );
 
   const columns = useMemo<ColumnDef<Payment, any>[]>(
@@ -194,14 +200,11 @@ export default function PaymentsPage() {
         title="Payments"
         subtitle="Every payment collected, with receipts and references."
         actions={
-          <>
-            <MonthNavigator value={month} onChange={setMonth} />
-            {manage && (
-              <Button onClick={() => setModalOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
-                Record Payment
-              </Button>
-            )}
-          </>
+          manage ? (
+            <Button onClick={() => setModalOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
+              Record Payment
+            </Button>
+          ) : undefined
         }
       />
 

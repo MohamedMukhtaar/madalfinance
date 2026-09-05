@@ -6,7 +6,7 @@ const password = process.argv[3] || 'password123';
 
 const hash = await bcrypt.hash(password, 10);
 const [result] = await pool.query(
-  `UPDATE users SET password = ?, status = 'active', deleted_at = NULL WHERE username = ?`,
+  `UPDATE users SET password_hash = ?, status = 'active', deleted_at = NULL WHERE username = ?`,
   [hash, username]
 );
 

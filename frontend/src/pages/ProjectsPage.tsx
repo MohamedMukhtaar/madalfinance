@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { CalendarDays, ImageOff, Pause, Pencil, Paperclip, Play, Plus } from "lucide-react";
+import { CalendarDays, ImageOff, Pause, Pencil, Paperclip, Play, Plus, Trash2, UserPlus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -14,14 +15,18 @@ import {
   ErrorState,
   FileUpload,
   Tabs,
+  confirmDialog,
   type UploadedFile,
 } from "@/components/ui";
 import { Modal } from "@/components/ui/Modal";
 import { ProjectFormModal } from "@/features/projects/ProjectFormModal";
+import { ProjectTemplateFormModal } from "@/features/projects/ProjectTemplateFormModal";
 import {
   useCustomers,
+  useDeleteProjectTemplate,
   usePauseRental,
   useProjects,
+  useProjectTemplates,
   useRentals,
   useResumeRental,
   useUploadProjectAttachment,
@@ -32,11 +37,239 @@ import { PROJECT_STATUS_STYLES, RENTAL_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
 import { cn } from "@/utils/cn";
-import type { Project, RentalBilling } from "@/types";
+import type { Project, ProjectTemplate, RentalBilling } from "@/types";
 
+type PageTab = "registry" | "customers";
 type ProjectTab = "one-time" | "rental";
 
 export default function ProjectsPage() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const view: PageTab = pathname.endsWith("/customers") ? "customers" : "registry";
+  const { data: templates = [] } = useProjectTemplates();
+  const { data: projectsData } = useProjects();
+  const projects = projectsData?.rows ?? [];
+
+  return (
+    <div className="space-y-6">
+      <Tabs
+        active={view}
+        onChange={(value) => navigate(value === "customers" ? "/projects/customers" : "/projects")}
+        tabs={[
+          { label: "Projects", value: "registry", count: templates.length },
+          { label: "Customer Projects", value: "customers", count: projects.length },
+        ]}
+      />
+      {view === "registry" ? <RegistryPanel /> : <CustomerProjectsPanel />}
+    </div>
+  );
+}
+
+function RegistryPanel() {
+  const { data: templates = [], isLoading, error, refetch } = useProjectTemplates();
+  const { data: customersData } = useCustomers();
+  const customers = customersData?.rows ?? [];
+  const deleteMutation = useDeleteProjectTemplate();
+  const { currency } = useSettings();
+  const navigate = useNavigate();
+
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ProjectTemplate | undefined>();
+  const [assignTemplateId, setAssignTemplateId] = useState<number | undefined>();
+  const [typeTab, setTypeTab] = useState<ProjectTab>("one-time");
+
+  const oneTimeTemplates = useMemo(
+    () => templates.filter((t) => String(t.projectType).toLowerCase() !== "rental"),
+    [templates]
+  );
+  const rentalTemplates = useMemo(
+    () => templates.filter((t) => String(t.projectType).toLowerCase() === "rental"),
+    [templates]
+  );
+  const shownTemplates = typeTab === "rental" ? rentalTemplates : oneTimeTemplates;
+
+  if (error) return <ErrorState onRetry={refetch} />;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Projects"
+        subtitle="Register the offering first — name, type, and price. Then assign it to a customer."
+        actions={
+          <Button
+            onClick={() => {
+              setEditing(undefined);
+              setFormOpen(true);
+            }}
+            leftIcon={<Plus className="h-4 w-4" />}
+          >
+            Register project
+          </Button>
+        }
+      />
+
+      <Tabs
+        active={typeTab}
+        onChange={(value) => setTypeTab(value as ProjectTab)}
+        tabs={[
+          { label: "One-time", value: "one-time", count: oneTimeTemplates.length },
+          { label: "Rental", value: "rental", count: rentalTemplates.length },
+        ]}
+      />
+
+      {isLoading ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,280px))] justify-center gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-48 rounded-2xl" />
+          ))}
+        </div>
+      ) : shownTemplates.length === 0 ? (
+        <Card>
+          <EmptyState
+            title={typeTab === "rental" ? "No rental projects" : "No one-time projects"}
+            description={
+              typeTab === "rental"
+                ? "Register a rental offering (monthly rent and optional setup fee)."
+                : "Register a one-time offering with its list price."
+            }
+            action={
+              <Button onClick={() => setFormOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
+                Register project
+              </Button>
+            }
+          />
+        </Card>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,280px))] justify-center gap-4">
+          {shownTemplates.map((t, i) => {
+            const rental = String(t.projectType).toLowerCase() === "rental";
+            return (
+              <motion.div
+                key={t.templateId}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i * 0.05, 0.4) }}
+              >
+                <Card hover className="flex h-full w-full max-w-[280px] flex-col overflow-hidden p-0">
+                  {rental ? (
+                    <div className="relative h-28 w-full bg-slate-100 dark:bg-slate-800">
+                      {t.logoPath ? (
+                        <ProjectLogo logoPath={t.logoPath} projectName={t.templateName} />
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 text-slate-400">
+                          <ImageOff className="h-8 w-8" />
+                          <span className="text-xs font-medium">No image</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-1 flex-col p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-slate-900 dark:text-white">{t.templateName}</p>
+                        <p className="mt-0.5 text-xs text-slate-400">{t.projectType}</p>
+                      </div>
+                      <Badge
+                        className={
+                          String(t.status).toLowerCase() === "active"
+                            ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : "bg-slate-100 text-slate-500 ring-slate-200"
+                        }
+                        dot
+                      >
+                        {t.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-1.5">
+                      <div className="rounded-lg bg-slate-50 px-2 py-2 dark:bg-slate-800/50">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          {rental ? "Monthly" : "Price"}
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                          {formatCurrency(rental ? t.monthlyAmount : t.projectPrice, currency)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-slate-50 px-2 py-2 dark:bg-slate-800/50">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          {rental ? "Setup" : "Customers"}
+                        </p>
+                        <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
+                          {rental ? formatCurrency(t.setupFee, currency) : Number(t.customerCount ?? 0)}
+                        </p>
+                      </div>
+                    </div>
+                    {rental && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        {Number(t.customerCount ?? 0)} customer{Number(t.customerCount ?? 0) === 1 ? "" : "s"} assigned
+                      </p>
+                    )}
+                    <div className="mt-4 grid grid-cols-3 gap-1.5 border-t border-slate-100 pt-3 dark:border-slate-800">
+                      <CardAction
+                        label="Assign"
+                        icon={<UserPlus className="h-3.5 w-3.5" />}
+                        onClick={() => setAssignTemplateId(t.templateId)}
+                      />
+                      <CardAction
+                        label="Edit"
+                        icon={<Pencil className="h-3.5 w-3.5" />}
+                        onClick={() => {
+                          setEditing(t);
+                          setFormOpen(true);
+                        }}
+                      />
+                      <CardAction
+                        label="Delete"
+                        icon={<Trash2 className="h-3.5 w-3.5" />}
+                        onClick={async () => {
+                          if (Number(t.customerCount) > 0) {
+                            await confirmDialog({
+                              title: `Can't delete ${t.templateName}`,
+                              text: `${t.customerCount} customer project${Number(t.customerCount) === 1 ? "" : "s"} still use it. Remove those first.`,
+                            });
+                            return;
+                          }
+                          const ok = await confirmDialog({
+                            title: `Delete ${t.templateName}?`,
+                            text: "This registered project will be removed.",
+                          });
+                          if (ok) deleteMutation.mutate(t.templateId);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
+
+      <ProjectTemplateFormModal
+        open={formOpen}
+        onClose={() => {
+          setFormOpen(false);
+          setEditing(undefined);
+          refetch();
+        }}
+        template={editing}
+        defaultProjectType={typeTab === "rental" ? "Rental" : "One Time"}
+      />
+
+      <ProjectFormModal
+        open={assignTemplateId != null}
+        onClose={() => setAssignTemplateId(undefined)}
+        onAssigned={() => {
+          setAssignTemplateId(undefined);
+          navigate("/projects/customers");
+        }}
+        customers={customers}
+        defaultTemplateId={assignTemplateId}
+      />
+    </div>
+  );
+}
+
+function CustomerProjectsPanel() {
   const { data: projectsData, isLoading, error, refetch } = useProjects();
   const { data: customersData } = useCustomers();
   const { data: rentalsData } = useRentals({ perPage: 200 });
@@ -48,7 +281,6 @@ export default function ProjectsPage() {
   const pauseMutation = usePauseRental();
   const resumeMutation = useResumeRental();
 
-  const [tab, setTab] = useState<ProjectTab>("one-time");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Project | undefined>();
   const [attachFor, setAttachFor] = useState<Project | undefined>();
@@ -107,23 +339,12 @@ export default function ProjectsPage() {
     };
   }, []);
 
-  const oneTimeProjects = useMemo(
-    () => projects.filter((p) => String(p.projectType).toLowerCase() !== "rental"),
-    [projects]
-  );
-  const rentalProjects = useMemo(
-    () => projects.filter((p) => String(p.projectType).toLowerCase() === "rental"),
-    [projects]
-  );
-
-  const tabProjects = tab === "rental" ? rentalProjects : oneTimeProjects;
-
   const filtered = useMemo(
     () =>
-      tabProjects.filter((p) =>
+      projects.filter((p) =>
         matchesDateFilter(p.startDate ?? p.createdAt, { mode: dateMode, date: day, from, to })
       ),
-    [tabProjects, dateMode, day, from, to]
+    [projects, dateMode, day, from, to]
   );
 
   const customerName = (id: number) => customers.find((c) => c.customerId === id)?.customerName ?? "Unknown";
@@ -134,7 +355,7 @@ export default function ProjectsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Customer Projects"
-        subtitle="One-time projects invoice on create. Rental setup invoices on create; monthly rent is charged from Invoices."
+        subtitle="Assign a registered project to a customer. Discount comes off the list price."
         actions={
           <Button
             onClick={() => {
@@ -143,18 +364,9 @@ export default function ProjectsPage() {
             }}
             leftIcon={<Plus className="h-4 w-4" />}
           >
-            New Project
+            Assign to customer
           </Button>
         }
-      />
-
-      <Tabs
-        active={tab}
-        onChange={(value) => setTab(value as ProjectTab)}
-        tabs={[
-          { label: "One-time", value: "one-time", count: oneTimeProjects.length },
-          { label: "Rental", value: "rental", count: rentalProjects.length },
-        ]}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -179,15 +391,11 @@ export default function ProjectsPage() {
       ) : filtered.length === 0 ? (
         <Card>
           <EmptyState
-            title={tab === "rental" ? "No rental projects" : "No one-time projects"}
-            description={
-              tab === "rental"
-                ? "Create a rental project to start monthly billing."
-                : "Create a one-time project to invoice the customer."
-            }
+            title="No customer projects"
+            description="Assign a registered project to a customer. Optional discount comes off the list price."
             action={
               <Button onClick={() => setFormOpen(true)} leftIcon={<Plus className="h-4 w-4" />}>
-                New Project
+                Assign to customer
               </Button>
             }
           />
@@ -230,6 +438,7 @@ export default function ProjectsPage() {
                         <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-slate-400">
                           <Avatar name={customerName(p.customerId)} size="xs" /> {customerName(p.customerId)}
                         </p>
+                        <p className="mt-1 text-[11px] font-medium text-slate-400">{p.projectType}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <Badge className={statusStyle.badge} dot>
@@ -251,6 +460,9 @@ export default function ProjectsPage() {
                         <p className="mt-0.5 text-sm font-bold text-slate-900 dark:text-white">
                           {formatCurrency(p.projectPrice, currency)}
                         </p>
+                        {Number(p.discount) > 0 && (
+                          <p className="text-[10px] text-rose-500">−{formatCurrency(p.discount, currency)} off</p>
+                        )}
                       </div>
                       <div className="rounded-lg bg-emerald-50/70 px-2 py-2 dark:bg-emerald-500/10">
                         <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-600/70 dark:text-emerald-400/70">

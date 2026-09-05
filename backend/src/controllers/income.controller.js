@@ -13,6 +13,7 @@ export const list = asyncHandler(async (req, res) => {
     categoryId: req.query.category_id || '',
     fromDate: req.query.from_date || '',
     toDate: req.query.to_date || '',
+    accId: req.query.acc_id || '',
     offset: q.offset,
     perPage: q.perPage,
     order: q.order,
@@ -45,9 +46,4 @@ export const categories = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, cats, 'Income categories fetched');
 });
 
-export const createCategory = asyncHandler(async (req, res) => {
-  const category = await incomeService.createCategory(req.body.name, req.user.id, req.ip);
-  return ApiResponse.success(res, category, 'Category created', 201);
-});
-
-export default { list, getById, create, update, remove, categories, createCategory };
+export default { list, getById, create, update, remove, categories };

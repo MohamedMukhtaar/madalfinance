@@ -59,6 +59,50 @@ export const memberStatement = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, data, 'Member statement generated');
 });
 
+export const customerStatement = asyncHandler(async (req, res) => {
+  const customerId = Number(req.query.customer_id);
+  if (!customerId) throw ApiError.badRequest('customer_id is required');
+  const data = await reportService.customerStatement(
+    customerId,
+    req.query.from_date || '',
+    req.query.to_date || ''
+  );
+  return ApiResponse.success(res, data, 'Customer statement generated');
+});
+
+export const projectStatement = asyncHandler(async (req, res) => {
+  const projectId = Number(req.query.project_id);
+  if (!projectId) throw ApiError.badRequest('project_id is required');
+  const data = await reportService.projectStatement(
+    projectId,
+    req.query.from_date || '',
+    req.query.to_date || ''
+  );
+  return ApiResponse.success(res, data, 'Project statement generated');
+});
+
+export const expenseStatement = asyncHandler(async (req, res) => {
+  const expenseId = Number(req.query.expense_id);
+  if (!expenseId) throw ApiError.badRequest('expense_id is required');
+  const data = await reportService.expenseStatement(
+    expenseId,
+    req.query.from_date || '',
+    req.query.to_date || ''
+  );
+  return ApiResponse.success(res, data, 'Expense statement generated');
+});
+
+export const salaryStatement = asyncHandler(async (req, res) => {
+  const employeeId = Number(req.query.employee_id);
+  if (!employeeId) throw ApiError.badRequest('employee_id is required');
+  const data = await reportService.salaryStatement(
+    employeeId,
+    req.query.from_date || '',
+    req.query.to_date || ''
+  );
+  return ApiResponse.success(res, data, 'Salary statement generated');
+});
+
 /** Streams a generated PDF/XLSX report as a file download. */
 export const exportReport = asyncHandler(async (req, res) => {
   const { filename, filePath } = await reportService.export(
@@ -71,6 +115,9 @@ export const exportReport = asyncHandler(async (req, res) => {
       memberId: Number(req.query.member_id) || null,
       customerId: Number(req.query.customer_id) || null,
       accId: Number(req.query.acc_id) || null,
+      projectId: Number(req.query.project_id) || null,
+      expenseId: Number(req.query.expense_id) || null,
+      employeeId: Number(req.query.employee_id) || null,
     },
     req.query.format || 'pdf',
     req.user.id,
@@ -90,6 +137,9 @@ export const exportReportAsync = asyncHandler(async (req, res) => {
       memberId: Number(req.query.member_id) || null,
       customerId: Number(req.query.customer_id) || null,
       accId: Number(req.query.acc_id) || null,
+      projectId: Number(req.query.project_id) || null,
+      expenseId: Number(req.query.expense_id) || null,
+      employeeId: Number(req.query.employee_id) || null,
     },
     req.query.format || 'pdf',
     req.user.id,
@@ -123,6 +173,10 @@ export default {
   contributionReport,
   projectReport,
   memberStatement,
+  customerStatement,
+  projectStatement,
+  expenseStatement,
+  salaryStatement,
   exportReport,
   exportReportAsync,
   exportJobStatus,

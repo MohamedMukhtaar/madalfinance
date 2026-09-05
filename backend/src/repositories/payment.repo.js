@@ -1,12 +1,18 @@
 import run from './_base.js';
 
+const PAYMENT_ROW = `p.*, p.account_id AS acc_id`;
+
 export const findById = (conn, id) =>
-  run(conn, `SELECT * FROM payments WHERE payment_id = ? AND deleted_at IS NULL`, [id]).then(
-    (rows) => rows[0]
-  );
+  run(
+    conn,
+    `SELECT ${PAYMENT_ROW} FROM payments p WHERE p.payment_id = ? AND p.deleted_at IS NULL`,
+    [id]
+  ).then((rows) => rows[0]);
 
 export const findByIdIncludingDeleted = (conn, id) =>
-  run(conn, `SELECT * FROM payments WHERE payment_id = ?`, [id]).then((rows) => rows[0]);
+  run(conn, `SELECT ${PAYMENT_ROW} FROM payments p WHERE p.payment_id = ?`, [id]).then(
+    (rows) => rows[0]
+  );
 
 export const list = (conn, { search, customerId, method, fromDate, toDate, offset, perPage, order }) => {
   const conditions = ['p.deleted_at IS NULL'];
@@ -28,18 +34,18 @@ export const list = (conn, { search, customerId, method, fromDate, toDate, offse
     params.push(toDate);
   }
   if (search) {
-    conditions.push('(p.payment_number LIKE ? OR c.customer_name LIKE ? OR p.reference_number LIKE ?)');
+    conditions.push('(p.payment_number ILIKE ? OR c.customer_name ILIKE ? OR p.reference_number ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
-    `SELECT p.*, c.customer_name, u.full_name AS received_by_name,
-            a.number AS account_number, a.institution AS account_institution
+    `SELECT ${PAYMENT_ROW}, c.customer_name, u.full_name AS received_by_name,
+            a.account_number AS account_number, a.account_name AS account_institution
        FROM payments p
        JOIN customers c ON c.customer_id = p.customer_id
        JOIN users u ON u.user_id = p.received_by
-       LEFT JOIN accounts a ON a.acc_id = p.acc_id
+       LEFT JOIN accounts a ON a.account_id = p.account_id
        ${where}
       ORDER BY ${order}
       LIMIT ? OFFSET ?`,
@@ -67,7 +73,7 @@ export const count = (conn, { search, customerId, method, fromDate, toDate }) =>
     params.push(toDate);
   }
   if (search) {
-    conditions.push('(p.payment_number LIKE ? OR c.customer_name LIKE ? OR p.reference_number LIKE ?)');
+    conditions.push('(p.payment_number ILIKE ? OR c.customer_name ILIKE ? OR p.reference_number ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   return run(
@@ -81,9 +87,9 @@ export const create = (conn, data) => {
   const { payment_number, customer_id, payment_date, payment_method, reference_number, amount, acc_id, notes, received_by } = data;
   return run(
     conn,
-    `INSERT INTO payments (payment_number, customer_id, payment_date, payment_method, reference_number, amount, acc_id, notes, received_by)
+    `INSERT INTO payments (payment_number, customer_id, account_id, payment_date, payment_method, reference_number, amount, notes, received_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [payment_number, customer_id, payment_date, payment_method, reference_number ?? null, amount, acc_id ?? null, notes ?? null, received_by]
+    [payment_number, customer_id, acc_id, payment_date, payment_method, reference_number ?? null, amount, notes ?? null, received_by]
   ).then((r) => r.insertId);
 };
 
@@ -127,11 +133,11 @@ export const deleteAttachment = (conn, attachmentId) =>
 export const update = (conn, id, data) => {
   const fields = [];
   const params = [];
-  for (const [key, value] of Object.entries(data)) {
-    if (value !== undefined) {
-      fields.push(`${key} = ?`);
-      params.push(value);
-    }
+  for (const [rawKey, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    const key = rawKey === 'acc_id' ? 'account_id' : rawKey;
+    fields.push(`${key} = ?`);
+    params.push(value);
   }
   if (!fields.length) return Promise.resolve();
   params.push(id);

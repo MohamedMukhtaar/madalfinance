@@ -12,13 +12,12 @@ import {
   useCreateMember,
   useUpdateMember,
   useDeactivateMember,
+  useEmployeeOrg,
 } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { DUE_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
-import { dateTimeColumns } from "@/utils/tableHelpers";
-import { cn } from "@/utils/cn";
-import type { Member } from "@/types";
+import type { EmployeeOrgRecord, Member } from "@/types";
 
 const columnHelper = createColumnHelper<Member>();
 
@@ -26,7 +25,7 @@ interface MemberForm {
   fullName: string;
   phone: string;
   email: string;
-  position: string;
+  jobTitleId: string;
   defaultMonthlyDue: number;
   status: "active" | "inactive";
 }
@@ -35,12 +34,13 @@ type CreateMemberPayload = {
   fullName: string;
   phone?: string;
   email?: string;
-  position?: string;
+  jobTitleId?: number | null;
   defaultMonthlyDue?: number;
 };
 
 export default function MembersPage() {
   const { data: members = [], isLoading, error, refetch } = useMembers();
+  const { data: titles = [] } = useEmployeeOrg("titles");
   const { data: batchesData } = useDues();
   const batches = batchesData?.rows ?? [];
   const { currency } = useSettings();
@@ -71,48 +71,48 @@ export default function MembersPage() {
 
   const columns = useMemo<ColumnDef<Member, any>[]>(
     () => [
-      columnHelper.accessor("memberName", {
-        header: "Member",
-        cell: (info) => {
-          const m = info.row.original;
-          return (
-            <div className="flex items-center gap-3">
-              <Avatar name={m.memberName} src={m.avatarUrl ?? undefined} />
-              <div>
-                <p className="font-semibold text-slate-800 dark:text-slate-100">{m.memberName}</p>
-                <p className="text-xs text-slate-400">{m.position || "—"}</p>
-              </div>
-            </div>
-          );
-        },
+      columnHelper.accessor("memberCode", {
+        header: "ID",
+        cell: (info) => (
+          <span className="font-mono text-xs text-slate-500">{info.getValue() || `MEM-${String(info.row.original.memberId).padStart(4, "0")}`}</span>
+        ),
       }),
-      ...dateTimeColumns<Member>("joinedDate", "Joined", (m) => m.joinedDate, (m) => m.joinedDate),
+      columnHelper.display({
+        id: "photo",
+        header: "Photo",
+        cell: ({ row }) => (
+          <Avatar name={row.original.memberName} src={row.original.avatarUrl ?? undefined} size="sm" />
+        ),
+      }),
+      columnHelper.accessor("memberName", {
+        header: "Name",
+        cell: (info) => (
+          <span className="font-semibold text-slate-800 dark:text-slate-100">{info.getValue()}</span>
+        ),
+      }),
+      columnHelper.accessor("phone", {
+        header: "Phone",
+        cell: (info) => <span className="text-sm text-slate-500">{info.getValue() || "—"}</span>,
+      }),
+      columnHelper.accessor("position", {
+        header: "Title",
+        cell: (info) => <span className="text-slate-600 dark:text-slate-300">{info.getValue() || "—"}</span>,
+      }),
+      columnHelper.accessor("joinedDate", {
+        header: "Joined date",
+        cell: (info) => <span className="text-sm text-slate-500">{formatDate(info.getValue())}</span>,
+      }),
       columnHelper.accessor("defaultMonthlyDue", {
-        header: "Default Due",
+        header: "Default due",
         cell: (info) => (
           <span className="font-mono font-semibold text-slate-900 dark:text-white">
             {formatCurrency(info.getValue(), currency)}
           </span>
         ),
       }),
-      columnHelper.accessor("status", {
-        header: "Status",
-        cell: (info) => (
-          <Badge
-            className={cn(
-              info.getValue() === "active"
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30"
-                : "bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:ring-slate-500/30"
-            )}
-            dot
-          >
-            {info.getValue()}
-          </Badge>
-        ),
-      }),
       columnHelper.display({
-        id: "due",
-        header: "Latest Due",
+        id: "lastDue",
+        header: "Last due",
         cell: ({ row }) => {
           const due = currentDues.get(row.original.memberId);
           if (!due) return <span className="text-xs text-slate-400">No dues yet</span>;
@@ -216,6 +216,7 @@ export default function MembersPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         member={editing}
+        titles={titles}
         onCreate={async (data) => {
           await createMutation.mutateAsync(data);
           setModalOpen(false);
@@ -233,12 +234,14 @@ function MemberFormModal({
   open,
   onClose,
   member,
+  titles,
   onCreate,
   onUpdate,
 }: {
   open: boolean;
   onClose: () => void;
   member?: Member;
+  titles: EmployeeOrgRecord[];
   onCreate: (data: CreateMemberPayload & { photo?: File | null }) => Promise<void>;
   onUpdate: (
     id: number,
@@ -247,7 +250,7 @@ function MemberFormModal({
         fullName: string;
         phone: string;
         email: string;
-        position: string;
+        jobTitleId: number | null;
         defaultMonthlyDue: number;
         status: string;
       }>;
@@ -271,9 +274,9 @@ function MemberFormModal({
       member
         ? {
             fullName: member.memberName,
-            phone: "",
+            phone: member.phone ?? "",
             email: member.email ?? "",
-            position: member.position ?? "",
+            jobTitleId: member.jobTitleId ? String(member.jobTitleId) : "",
             defaultMonthlyDue: member.defaultMonthlyDue,
             status: member.status,
           }
@@ -281,7 +284,7 @@ function MemberFormModal({
             fullName: "",
             phone: "",
             email: "",
-            position: "",
+            jobTitleId: "",
             defaultMonthlyDue: 10,
             status: "active",
           }
@@ -309,7 +312,7 @@ function MemberFormModal({
                     fullName: d.fullName,
                     phone: d.phone,
                     email: d.email,
-                    position: d.position,
+                    jobTitleId: d.jobTitleId ? Number(d.jobTitleId) : null,
                     defaultMonthlyDue: Number(d.defaultMonthlyDue),
                     status: d.status,
                   },
@@ -320,7 +323,7 @@ function MemberFormModal({
                   fullName: d.fullName,
                   phone: d.phone || undefined,
                   email: d.email || undefined,
-                  position: d.position || undefined,
+                  jobTitleId: d.jobTitleId ? Number(d.jobTitleId) : null,
                   defaultMonthlyDue: Number(d.defaultMonthlyDue),
                   photo,
                 });
@@ -334,7 +337,16 @@ function MemberFormModal({
     >
       <form className="grid gap-4 sm:grid-cols-2">
         <Input label="Full name" error={errors.fullName?.message} {...register("fullName", { required: "Required" })} />
-        <Input label="Position" {...register("position")} />
+        <Select
+          label="Title"
+          options={[
+            { value: "", label: "Select title" },
+            ...titles
+              .filter((t) => t.status !== "inactive" || t.jobTitleId === member?.jobTitleId)
+              .map((t) => ({ value: String(t.jobTitleId), label: t.titleName ?? "" })),
+          ]}
+          {...register("jobTitleId")}
+        />
         <Input label="Phone" {...register("phone")} />
         <Input label="Email" type="email" {...register("email")} />
         <Input

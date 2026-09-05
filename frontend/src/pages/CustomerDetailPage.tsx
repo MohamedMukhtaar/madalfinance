@@ -13,18 +13,19 @@ import {
   CreditCard,
   ScrollText,
 } from "lucide-react";
-import { useCustomer, useProjects, useInvoices, usePayments } from "@/hooks/queries";
+import { useCustomer, useProjects, useInvoices, usePayments, useCustomerDetailStatement } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Badge, Avatar, Skeleton, SkeletonText, ErrorState, Button, Tabs, StatCard, StatCardsGrid } from "@/components/ui";
 import { CUSTOMER_STATUS_STYLES, INVOICE_STATUS_STYLES } from "@/utils/constants";
+import { describeInvoice, INVOICE_KIND_STYLES } from "@/utils/invoiceKind";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
-import { runningBalanceAsc } from "@/utils/chronology";
 import { dateTimeColumns } from "@/utils/tableHelpers";
 import { cn } from "@/utils/cn";
 import type { Invoice, Payment, Project } from "@/types";
+import { StatementTable } from "@/features/reports/StatementTable";
 
 type TabValue = "info" | "projects" | "invoices" | "payments" | "statements";
 
@@ -45,6 +46,10 @@ export default function CustomerDetailPage() {
   const invoices = invoicesData?.rows ?? [];
   const payments = paymentsData?.rows ?? [];
   const [tab, setTab] = useState<TabValue>("info");
+  const { data: statementData, isLoading: statementLoading } = useCustomerDetailStatement(customerId, {
+    enabled: tab === "statements" && Number.isFinite(customerId),
+  });
+  const statementRows = statementData?.rows ?? [];
 
   const customerProjects = useMemo(
     () => projects.filter((p) => p.customerId === customerId),
@@ -58,40 +63,6 @@ export default function CustomerDetailPage() {
     () => payments.filter((p) => p.customerId === customerId),
     [payments, customerId]
   );
-
-  const statementRows = useMemo(() => {
-    if (!customer) return [];
-    const items: Array<{ date: string; time: string; desc: string; debit: number; credit: number }> = [];
-    customerInvoices.forEach((i) =>
-      items.push({
-        date: i.invoiceDate,
-        time: i.createdAt ?? i.invoiceDate,
-        desc: `Invoice ${i.invoiceNumber}`,
-        debit: Number(i.totalAmount ?? 0),
-        credit: 0,
-      })
-    );
-    customerPayments.forEach((p) =>
-      items.push({
-        date: p.paymentDate,
-        time: p.createdAt ?? p.paymentDate,
-        desc: `Payment ${p.paymentNumber}`,
-        debit: 0,
-        credit: Number(p.amount ?? 0),
-      })
-    );
-    return runningBalanceAsc(
-      items.map((item) => ({ ...item, payout: 0 })),
-      (item) => item.time ?? item.date
-    ).map((item) => ({
-      date: item.date,
-      time: item.time,
-      desc: item.desc,
-      debit: item.debit,
-      credit: item.credit,
-      balance: item.balance,
-    }));
-  }, [customer, customerInvoices, customerPayments]);
 
   const totalInvoiced = customerInvoices.reduce((s, i) => s + Number(i.totalAmount ?? 0), 0);
   const totalPaid = customerPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
@@ -129,6 +100,14 @@ export default function CustomerDetailPage() {
       invoiceHelper.accessor("invoiceNumber", {
         header: "Invoice #",
         cell: (info) => <span className="font-mono text-xs font-bold text-brand-600">{info.getValue()}</span>,
+      }),
+      invoiceHelper.display({
+        id: "kind",
+        header: "Kind",
+        cell: (info) => {
+          const meta = describeInvoice(info.row.original);
+          return <Badge className={INVOICE_KIND_STYLES[meta.kind]}>{meta.kindLabel}</Badge>;
+        },
       }),
       invoiceHelper.accessor("projectName", {
         header: "Project",
@@ -327,41 +306,14 @@ export default function CustomerDetailPage() {
         <Card animated={false}>
           <div className="border-b border-slate-100 px-4 py-3 dark:border-slate-800 sm:px-5">
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Account Statement</h3>
-            <p className="text-xs text-slate-500">Invoices & payments with running balance</p>
+            <p className="text-xs text-slate-500">Date · Time · Type · Reference · Debit · Credit · Balance</p>
           </div>
-          <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800">
-                  <th className="px-4 py-2.5">Date</th>
-                  <th className="px-4 py-2.5">Time</th>
-                  <th className="px-4 py-2.5">Description</th>
-                  <th className="px-4 py-2.5 text-right">Debit</th>
-                  <th className="px-4 py-2.5 text-right">Credit</th>
-                  <th className="px-4 py-2.5 text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {statementRows.map((r, i) => (
-                  <tr key={i} className="text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800/40">
-                    <td className="px-4 py-2.5 text-xs">{formatDate(r.date)}</td>
-                    <td className="px-4 py-2.5 text-xs text-slate-400">{formatTime(r.time)}</td>
-                    <td className="px-4 py-2.5 font-medium">{r.desc}</td>
-                    <td className={cn("px-4 py-2.5 text-right font-mono", r.debit > 0 && "text-rose-600")}>
-                      {r.debit > 0 ? formatCurrency(r.debit, currency) : "—"}
-                    </td>
-                    <td className={cn("px-4 py-2.5 text-right font-mono", r.credit > 0 && "text-emerald-600")}>
-                      {r.credit > 0 ? formatCurrency(r.credit, currency) : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold">{formatCurrency(r.balance, currency)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {statementRows.length === 0 && (
-              <p className="px-4 py-8 text-center text-sm text-slate-400">No transactions yet.</p>
-            )}
-          </div>
+          <StatementTable
+            rows={statementRows}
+            loading={statementLoading}
+            currency={currency}
+            empty="No transactions yet."
+          />
         </Card>
       )}
     </div>

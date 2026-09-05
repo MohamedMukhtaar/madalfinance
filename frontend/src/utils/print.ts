@@ -1,5 +1,6 @@
 import type { AppSettings, Invoice, Payment } from "@/types";
 import { formatCurrency, formatDate } from "./format";
+import { describeInvoice, lineItemDisplay } from "./invoiceKind";
 
 export interface ExpenseChargeDoc {
   id: string;
@@ -247,16 +248,19 @@ function openPrintWindow(title: string, bodyHtml: string) {
 
 export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): string {
   const { currency } = settings;
+  const info = describeInvoice(invoice);
   const rows = invoice.items
-    .map(
-      (item) => `
+    .map((item) => {
+      const display = lineItemDisplay(item.description, info.project);
+      const desc = display.hint ? `${display.title} — ${display.hint}` : display.title;
+      return `
       <tr>
-        <td>${esc(item.description)}</td>
+        <td>${esc(desc)}</td>
         <td style="text-align:right">${item.quantity}</td>
         <td style="text-align:right">${formatCurrency(item.unitPrice, currency)}</td>
         <td style="text-align:right;font-weight:700">${formatCurrency(item.total, currency)}</td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("");
 
   return `
@@ -264,17 +268,18 @@ export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): strin
     <div class="head">
       ${companyBlock(settings)}
       <div class="doc-side">
-        <div class="doc-type">Invoice</div>
+        <div class="doc-type">${esc(info.kindLabel)}</div>
         <div class="doc-no">${esc(invoice.invoiceNumber)}</div>
         <span class="status">${esc(invoice.status.toUpperCase())}</span>
       </div>
     </div>
     <div class="body">
+      <p class="sub" style="margin-bottom:16px">${esc(info.kindHint)} ${esc(info.statusHint)}</p>
       <div class="meta-grid">
         ${metaItem("Invoice date", formatDate(invoice.invoiceDate))}
         ${metaItem("Due date", formatDate(invoice.dueDate ?? undefined))}
-        ${metaItem("Project", invoice.projectName ?? "—")}
-        ${metaItem("Balance due", formatCurrency(invoice.balance, currency))}
+        ${metaItem(info.kind === "rent" ? "Rental" : "Project", info.project || invoice.projectName || "—")}
+        ${metaItem("Still due", formatCurrency(invoice.balance, currency))}
       </div>
       <div class="party">
         <div class="party-card">
@@ -285,7 +290,7 @@ export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): strin
       <table>
         <thead>
           <tr>
-            <th>Description</th>
+            <th>Charge</th>
             <th style="text-align:right">Qty</th>
             <th style="text-align:right">Unit price</th>
             <th style="text-align:right">Total</th>
@@ -294,11 +299,11 @@ export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): strin
         <tbody>${rows}</tbody>
       </table>
       <div class="totals">
-        <div class="row"><span>Subtotal</span><span>${formatCurrency(invoice.subtotal, currency)}</span></div>
+        <div class="row"><span>Billed</span><span>${formatCurrency(invoice.subtotal, currency)}</span></div>
         <div class="row"><span>Tax</span><span>${formatCurrency(invoice.tax, currency)}</span></div>
         <div class="row"><span>Total</span><span>${formatCurrency(invoice.totalAmount, currency)}</span></div>
-        <div class="row"><span>Paid</span><span>${formatCurrency(invoice.paidAmount, currency)}</span></div>
-        <div class="row grand"><span>Balance due</span><span>${formatCurrency(invoice.balance, currency)}</span></div>
+        <div class="row"><span>Collected</span><span>${formatCurrency(invoice.paidAmount, currency)}</span></div>
+        <div class="row grand"><span>Still due</span><span>${formatCurrency(invoice.balance, currency)}</span></div>
       </div>
     </div>
     <div class="footer">Thank you for your business with ${esc(settings.companyName)}.</div>

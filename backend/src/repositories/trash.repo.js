@@ -5,10 +5,10 @@ export const add = (conn, { entity_type, entity_id, entity_label, delete_reason,
     conn,
     `INSERT INTO trash_bin (entity_type, entity_id, entity_label, delete_reason, deleted_by)
      VALUES (?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       entity_label = VALUES(entity_label),
-       delete_reason = VALUES(delete_reason),
-       deleted_by = VALUES(deleted_by),
+     ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+       entity_label = EXCLUDED.entity_label,
+       delete_reason = EXCLUDED.delete_reason,
+       deleted_by = EXCLUDED.deleted_by,
        deleted_at = CURRENT_TIMESTAMP`,
     [entity_type, entity_id, entity_label, delete_reason, deleted_by ?? null]
   ).then((r) => r.insertId);
@@ -27,7 +27,7 @@ export const list = (conn, { search = '', entityType = '', offset = 0, perPage =
     params.push(entityType);
   }
   if (search) {
-    conditions.push('(t.entity_label LIKE ? OR t.delete_reason LIKE ?)');
+    conditions.push('(t.entity_label ILIKE ? OR t.delete_reason ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -51,7 +51,7 @@ export const count = (conn, { search = '', entityType = '' }) => {
     params.push(entityType);
   }
   if (search) {
-    conditions.push('(entity_label LIKE ? OR delete_reason LIKE ?)');
+    conditions.push('(entity_label ILIKE ? OR delete_reason ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

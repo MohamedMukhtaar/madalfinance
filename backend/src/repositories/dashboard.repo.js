@@ -24,24 +24,23 @@ export const dashboardStats = (conn, { year, month } = {}) => {
   return run(
     conn,
     `SELECT
-       (SELECT COALESCE(SUM(income), 0) - COALESCE(SUM(expense), 0)
-          FROM transactions WHERE transaction_date <= ?) AS current_balance,
-       (SELECT COALESCE(SUM(income), 0) FROM transactions
-          WHERE transaction_type = 'Income' AND transaction_date BETWEEN ? AND ?) AS month_income,
-       (SELECT COALESCE(SUM(expense), 0) FROM transactions
-          WHERE transaction_type = 'Expense' AND transaction_date BETWEEN ? AND ?) AS month_expense,
-       (SELECT COALESCE(SUM(income), 0) FROM transactions
-          WHERE transaction_type = 'Income' AND transaction_date = CURDATE()) AS today_income,
-       (SELECT COALESCE(SUM(income), 0) FROM transactions
+       (SELECT COALESCE(SUM(balance), 0) FROM accounts) AS current_balance,
+       (SELECT COALESCE(SUM(debit), 0) FROM transactions
+          WHERE transaction_type = 'Income' AND transaction_date::date BETWEEN ? AND ?) AS month_income,
+       (SELECT COALESCE(SUM(credit), 0) FROM transactions
+          WHERE transaction_type = 'Expense' AND transaction_date::date BETWEEN ? AND ?) AS month_expense,
+       (SELECT COALESCE(SUM(debit), 0) FROM transactions
+          WHERE transaction_type = 'Income' AND transaction_date::date = CURRENT_DATE) AS today_income,
+       (SELECT COALESCE(SUM(debit), 0) FROM transactions
           WHERE transaction_type = 'Income'
-            AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-            AND transaction_date <= CURDATE()) AS week_income,
-       (SELECT COALESCE(SUM(expense), 0) FROM transactions
-          WHERE transaction_type = 'Expense' AND transaction_date = CURDATE()) AS today_expense,
-       (SELECT COALESCE(SUM(expense), 0) FROM transactions
+            AND transaction_date::date >= date_trunc('week', CURRENT_DATE)::date
+            AND transaction_date::date <= CURRENT_DATE) AS week_income,
+       (SELECT COALESCE(SUM(credit), 0) FROM transactions
+          WHERE transaction_type = 'Expense' AND transaction_date::date = CURRENT_DATE) AS today_expense,
+       (SELECT COALESCE(SUM(credit), 0) FROM transactions
           WHERE transaction_type = 'Expense'
-            AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
-            AND transaction_date <= CURDATE()) AS week_expense,
+            AND transaction_date::date >= date_trunc('week', CURRENT_DATE)::date
+            AND transaction_date::date <= CURRENT_DATE) AS week_expense,
        (SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL) AS total_customers,
        (SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL AND status = 'active') AS active_customers,
        (SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL) AS total_projects,
@@ -62,10 +61,10 @@ export const dashboardStats = (conn, { year, month } = {}) => {
        (SELECT COUNT(*) FROM invoices
           WHERE deleted_at IS NULL AND status = 'Overdue' AND invoice_date <= ?) AS overdue_invoices,
        (SELECT COALESCE(SUM(amount), 0) FROM payments
-          WHERE deleted_at IS NULL AND payment_date BETWEEN ? AND ?) AS total_collected,
+          WHERE deleted_at IS NULL AND payment_date::date BETWEEN ? AND ?) AS total_collected,
        (SELECT COALESCE(SUM(d.amount), 0) - COALESCE(SUM(d.paid_amount), 0) FROM member_dues d) AS total_dues_balance,
        (SELECT COUNT(*) FROM rental_billings WHERE status = 'Active') AS active_rentals`,
-    [end, start, end, start, end, end, end, end, start, end]
+    [start, end, start, end, end, end, end, start, end]
   ).then((rows) => rows[0]);
 };
 
@@ -87,7 +86,8 @@ export const recentTransactions = (conn, { limit = 8, fromDate, toDate } = {}) =
   params.push(limit);
   return run(
     conn,
-    `SELECT t.*, u.full_name AS created_by_name FROM transactions t
+    `SELECT t.*, t.debit AS income, t.credit AS expense, u.full_name AS created_by_name
+       FROM transactions t
        JOIN users u ON u.user_id = t.created_by
       ${where}
       ORDER BY t.transaction_date DESC, t.transaction_id DESC LIMIT ?`,
@@ -109,7 +109,7 @@ export const recentPayments = (conn, { limit = 6, fromDate, toDate } = {}) => {
   params.push(limit);
   return run(
     conn,
-    `SELECT p.*, c.customer_name FROM payments p
+    `SELECT p.*, p.account_id AS acc_id, c.customer_name FROM payments p
        JOIN customers c ON c.customer_id = p.customer_id
       WHERE ${conditions.join(' AND ')}
       ORDER BY p.payment_date DESC, p.payment_id DESC LIMIT ?`,
@@ -118,23 +118,26 @@ export const recentPayments = (conn, { limit = 6, fromDate, toDate } = {}) => {
 };
 
 export const recentExpenses = (conn, { limit = 50, fromDate, toDate } = {}) => {
-  const conditions = ['e.deleted_at IS NULL'];
+  const conditions = ['ep.deleted_at IS NULL'];
   const params = [];
   if (fromDate) {
-    conditions.push('e.expense_date >= ?');
+    conditions.push('ep.payment_date >= ?');
     params.push(fromDate);
   }
   if (toDate) {
-    conditions.push('e.expense_date <= ?');
+    conditions.push('ep.payment_date <= ?');
     params.push(toDate);
   }
   params.push(limit);
   return run(
     conn,
-    `SELECT e.*, ec.category_name FROM expenses e
-       JOIN expense_categories ec ON ec.expense_category_id = e.expense_category_id
+    `SELECT ep.expense_payment_id AS expense_id, ep.*, ep.payment_date AS expense_date,
+            e.expense_name AS category_name
+       FROM expense_payments ep
+       JOIN expense_charges ec ON ec.expense_charge_id = ep.expense_charge_id
+       JOIN expenses e ON e.expense_id = ec.expense_id
       WHERE ${conditions.join(' AND ')}
-      ORDER BY e.expense_date DESC, e.expense_id DESC LIMIT ?`,
+      ORDER BY ep.payment_date DESC, ep.expense_payment_id DESC LIMIT ?`,
     params
   );
 };
@@ -142,12 +145,13 @@ export const recentExpenses = (conn, { limit = 50, fromDate, toDate } = {}) => {
 export const rentalRenewals = (conn, days = 30) =>
   run(
     conn,
-    `SELECT rb.*, p.project_name, c.customer_name
+    `SELECT rb.*, p.project_name, pc.customer_id, c.customer_name
        FROM rental_billings rb
        JOIN projects p ON p.project_id = rb.project_id
-       JOIN customers c ON c.customer_id = p.customer_id
+       LEFT JOIN project_customers pc ON pc.project_id = p.project_id AND pc.is_primary = TRUE
+       LEFT JOIN customers c ON c.customer_id = pc.customer_id
       WHERE rb.status = 'Active'
-        AND rb.next_billing_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+        AND rb.next_billing_date BETWEEN CURRENT_DATE AND (CURRENT_DATE + (? * INTERVAL '1 day'))
       ORDER BY rb.next_billing_date ASC`,
     [days]
   );
@@ -161,17 +165,16 @@ export const dueStatusSummary = (conn, limit = 5) =>
             SUM(CASE WHEN d.status = 'Pending' THEN 1 ELSE 0 END) AS pending
        FROM member_due_batches b
        LEFT JOIN member_dues d ON d.batch_id = b.batch_id
-      GROUP BY b.batch_id
+      GROUP BY b.batch_id, b.month, b.year
       ORDER BY b.year DESC, b.month DESC
       LIMIT ?`,
     [limit]
   );
 
-/** Transactions for a chart window (up to 6 months ending at selected month). */
 export const chartTransactions = (conn, { fromDate, toDate }) =>
   run(
     conn,
-    `SELECT transaction_date, income, expense, transaction_type
+    `SELECT transaction_date, debit AS income, credit AS expense, transaction_type
        FROM transactions
       WHERE transaction_date BETWEEN ? AND ?
       ORDER BY transaction_date ASC`,

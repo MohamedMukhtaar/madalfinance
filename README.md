@@ -5,19 +5,23 @@ Production-oriented finance platform for Madal ICT Solutions.
 ## Stack
 
 - **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, TanStack Query/Table, Axios
-- **Backend:** Node.js 20+, Express, MySQL (`mysql2`), JWT + refresh tokens, Socket.IO, node-cron
+- **Backend:** Node.js 20+, Express, PostgreSQL 14+ (`pg`), JWT + refresh tokens, Socket.IO, node-cron
 
 ## Quick start
 
 ### 1. Database
 
+PostgreSQL 14+ is required. Create a role that can create databases (or create `finance_system` yourself), then:
+
 ```bash
 cd backend
 cp .env.example .env
-# Edit DB_* and ACCESS_TOKEN_SECRET (required, ≥16 chars)
+# Edit DB_* (port 5432, user postgres) and ACCESS_TOKEN_SECRET (required, ≥16 chars)
 npm install
 npm run db:init
 ```
+
+If you already applied `database/schema.sql` in pgAdmin, `db:init` skips recreating tables and applies functions, app-support tables, and seed data.
 
 ### 2. Backend API
 

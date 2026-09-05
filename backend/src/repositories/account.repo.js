@@ -1,41 +1,69 @@
 import run from './_base.js';
-import {
-  applyRunningBalances,
-  computeOpeningBalance,
-  movementNet,
-  toAccounting,
-} from '../helpers/accounting.js';
+import { generateNumber } from '../helpers/numberGenerator.js';
+
+const ACCOUNT_COLS = `
+  a.account_id AS acc_id,
+  a.account_id,
+  a.account_name AS institution,
+  a.account_name,
+  a.account_number AS number,
+  a.account_number,
+  a.account_type,
+  a.opening_balance,
+  a.balance,
+  a.is_default,
+  a.status,
+  a.created_at,
+  a.updated_at
+`;
 
 export const findById = (conn, id) =>
-  run(conn, `SELECT * FROM accounts WHERE acc_id = ?`, [id]).then((rows) => rows[0]);
+  run(conn, `SELECT ${ACCOUNT_COLS} FROM accounts a WHERE a.account_id = ?`, [id]).then(
+    (rows) => rows[0]
+  );
 
 export const list = (conn) =>
-  run(conn, `SELECT * FROM accounts ORDER BY is_default DESC, institution ASC, number ASC`);
-
-export const findDefault = (conn) =>
-  run(conn, `SELECT * FROM accounts WHERE is_default = 1 LIMIT 1`).then((rows) => rows[0]);
-
-export const create = (conn, { number, institution, balance, is_default }) =>
   run(
     conn,
-    `INSERT INTO accounts (number, institution, balance, is_default) VALUES (?, ?, ?, ?)`,
-    [number, institution, balance ?? 0, is_default ? 1 : 0]
+    `SELECT ${ACCOUNT_COLS} FROM accounts a
+      ORDER BY a.is_default DESC, a.account_name ASC, a.account_number ASC`
+  );
+
+export const findDefault = (conn) =>
+  run(
+    conn,
+    `SELECT ${ACCOUNT_COLS} FROM accounts a WHERE a.is_default = TRUE LIMIT 1`
+  ).then((rows) => rows[0]);
+
+export const create = (conn, { number, institution, balance, is_default, account_type }) =>
+  run(
+    conn,
+    `INSERT INTO accounts (account_name, account_type, account_number, opening_balance, balance, is_default)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      institution,
+      account_type || 'Cash',
+      number ?? null,
+      balance ?? 0,
+      balance ?? 0,
+      Boolean(is_default),
+    ]
   ).then((r) => r.insertId);
 
 export const update = (conn, id, { number, institution }) =>
-  run(conn, `UPDATE accounts SET number = ?, institution = ? WHERE acc_id = ?`, [
+  run(conn, `UPDATE accounts SET account_number = ?, account_name = ? WHERE account_id = ?`, [
     number,
     institution,
     id,
   ]);
 
-export const clearDefault = (conn) => run(conn, `UPDATE accounts SET is_default = 0`);
+export const clearDefault = (conn) => run(conn, `UPDATE accounts SET is_default = FALSE`);
 
 export const setDefault = (conn, id) =>
-  run(conn, `UPDATE accounts SET is_default = 1 WHERE acc_id = ?`, [id]);
+  run(conn, `UPDATE accounts SET is_default = TRUE WHERE account_id = ?`, [id]);
 
 export const updateBalance = (conn, id, balance) =>
-  run(conn, `UPDATE accounts SET balance = ? WHERE acc_id = ?`, [balance, id]);
+  run(conn, `UPDATE accounts SET balance = ? WHERE account_id = ?`, [balance, id]);
 
 export const adjustBalance = async (conn, id, delta) => {
   const account = await findById(conn, id);
@@ -45,13 +73,15 @@ export const adjustBalance = async (conn, id, delta) => {
   return next;
 };
 
-export const createTransfer = (conn, data) => {
+export const createTransfer = async (conn, data) => {
   const { from_acc_id, to_acc_id, amount, transfer_date, notes, created_by } = data;
+  const transfer_number = await generateNumber(conn, 'account_transfers', 'transfer_number', 'TRF-');
   return run(
     conn,
-    `INSERT INTO account_transfers (from_acc_id, to_acc_id, amount, transfer_date, notes, created_by)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [from_acc_id, to_acc_id, amount, transfer_date, notes ?? null, created_by]
+    `INSERT INTO account_transfers
+       (transfer_number, from_account_id, to_account_id, amount, transfer_date, notes, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [transfer_number, from_acc_id, to_acc_id, amount, transfer_date, notes ?? null, created_by]
   ).then((r) => r.insertId);
 };
 
@@ -67,18 +97,20 @@ export const listTransfers = (conn, { fromDate, toDate, accId } = {}) => {
     params.push(toDate);
   }
   if (accId) {
-    conditions.push('(t.from_acc_id = ? OR t.to_acc_id = ?)');
+    conditions.push('(t.from_account_id = ? OR t.to_account_id = ?)');
     params.push(accId, accId);
   }
   return run(
     conn,
     `SELECT t.*,
-            fa.number AS from_number, fa.institution AS from_institution,
-            ta.number AS to_number, ta.institution AS to_institution,
+            t.from_account_id AS from_acc_id,
+            t.to_account_id AS to_acc_id,
+            fa.account_number AS from_number, fa.account_name AS from_institution,
+            ta.account_number AS to_number, ta.account_name AS to_institution,
             u.full_name AS created_by_name
        FROM account_transfers t
-       JOIN accounts fa ON fa.acc_id = t.from_acc_id
-       JOIN accounts ta ON ta.acc_id = t.to_acc_id
+       JOIN accounts fa ON fa.account_id = t.from_account_id
+       JOIN accounts ta ON ta.account_id = t.to_account_id
        JOIN users u ON u.user_id = t.created_by
       WHERE ${conditions.join(' AND ')}
       ORDER BY t.transfer_date DESC, t.transfer_id DESC`,
@@ -86,179 +118,44 @@ export const listTransfers = (conn, { fromDate, toDate, accId } = {}) => {
   );
 };
 
-const appendDate = (col, { fromDate, toDate } = {}, params) => {
-  let clause = '';
-  if (fromDate) {
-    clause += ` AND ${col} >= ?`;
-    params.push(fromDate);
-  }
-  if (toDate) {
-    clause += ` AND ${col} <= ?`;
-    params.push(toDate);
-  }
-  return clause;
-};
-
-/** Single UNION ALL subquery for all cash movements on an account. */
-const buildMovementUnion = (accId, filters = {}) => {
-  const params = [];
-  const parts = [];
-
-  const pushPart = (sql, partParams) => {
-    parts.push(sql);
-    params.push(...partParams);
-  };
-
-  const payParams = [accId];
-  const payClause = appendDate('p.payment_date', filters, payParams);
-  pushPart(
-    `SELECT p.payment_date AS movement_date, 'income' AS movement_type,
-            p.amount, p.payment_number AS reference_label,
-            CONCAT('Payment ', p.payment_number, ' — ', c.customer_name) AS description
-       FROM payments p
-       JOIN customers c ON c.customer_id = p.customer_id
-      WHERE p.acc_id = ? AND p.deleted_at IS NULL ${payClause}`,
-    payParams
-  );
-
-  const mdpParams = [accId];
-  const mdpClause = appendDate('mdp.paid_date', filters, mdpParams);
-  pushPart(
-    `SELECT mdp.paid_date AS movement_date, 'income' AS movement_type,
-            mdp.amount, CONCAT('CON-', mdp.due_payment_id) AS reference_label,
-            CONCAT('Contribution — ', m.full_name,
-              CASE WHEN b.month IS NOT NULL AND b.year IS NOT NULL
-                   THEN CONCAT(' (', b.month, '/', b.year, ')')
-                   ELSE '' END) AS description
-       FROM member_due_payments mdp
-       JOIN member_dues d ON d.due_id = mdp.due_id
-       JOIN member_due_batches b ON b.batch_id = d.batch_id
-       JOIN members m ON m.member_id = d.member_id
-      WHERE mdp.acc_id = ? ${mdpClause}`,
-    mdpParams
-  );
-
-  const expParams = [accId];
-  const expClause = appendDate('e.expense_date', filters, expParams);
-  pushPart(
-    `SELECT e.expense_date AS movement_date, 'expense' AS movement_type,
-            e.amount, e.reference_number AS reference_label,
-            CONCAT('Expense — ', COALESCE(e.description, ec.category_name)) AS description
-       FROM expenses e
-       JOIN expense_categories ec ON ec.expense_category_id = e.expense_category_id
-      WHERE e.acc_id = ? AND e.deleted_at IS NULL ${expClause}`,
-    expParams
-  );
-
-  const mcParams = [accId];
-  const mcClause = appendDate('mcl.credit_date', filters, mcParams);
-  pushPart(
-    `SELECT mcl.credit_date AS movement_date,
-            CASE WHEN mcl.amount > 0 THEN 'loan_out' ELSE 'loan_repay' END AS movement_type,
-            ABS(mcl.amount) AS amount,
-            CONCAT('MLN-', mcl.credit_id) AS reference_label,
-            CASE WHEN mcl.amount > 0
-              THEN CONCAT('Member loan — ', m.full_name,
-                CASE WHEN mcl.description IS NOT NULL AND mcl.description != ''
-                     THEN CONCAT(' — ', mcl.description) ELSE '' END)
-              ELSE CONCAT('Loan repayment — ', m.full_name,
-                CASE WHEN mcl.description IS NOT NULL AND mcl.description != ''
-                     THEN CONCAT(' — ', mcl.description) ELSE '' END)
-            END AS description
-       FROM member_credit_ledger mcl
-       JOIN members m ON m.member_id = mcl.member_id
-      WHERE mcl.acc_id = ? AND mcl.amount != 0 ${mcClause}`,
-    mcParams
-  );
-
-  const trOutParams = [accId];
-  const trOutClause = appendDate('t.transfer_date', filters, trOutParams);
-  pushPart(
-    `SELECT t.transfer_date AS movement_date, 'transfer_out' AS movement_type,
-            t.amount, CONCAT('TRF-', t.transfer_id) AS reference_label,
-            CONCAT('Transfer to ', ta.institution, ' (', ta.number, ')') AS description
-       FROM account_transfers t
-       JOIN accounts ta ON ta.acc_id = t.to_acc_id
-      WHERE t.from_acc_id = ? ${trOutClause}`,
-    trOutParams
-  );
-
-  const trInParams = [accId];
-  const trInClause = appendDate('t.transfer_date', filters, trInParams);
-  pushPart(
-    `SELECT t.transfer_date AS movement_date, 'transfer_in' AS movement_type,
-            t.amount, CONCAT('TRF-', t.transfer_id) AS reference_label,
-            CONCAT('Transfer from ', fa.institution, ' (', fa.number, ')') AS description
-       FROM account_transfers t
-       JOIN accounts fa ON fa.acc_id = t.from_acc_id
-      WHERE t.to_acc_id = ? ${trInClause}`,
-    trInParams
-  );
-
-  return { sql: parts.join(' UNION ALL '), params };
-};
-
-const listRawMovements = (conn, accId, filters, { offset, perPage } = {}) => {
-  const { sql, params } = buildMovementUnion(accId, filters);
-  const limitClause =
-    perPage != null ? ` LIMIT ${Number(perPage)} OFFSET ${Number(offset ?? 0)}` : '';
-  return run(
-    conn,
-    `SELECT * FROM (${sql}) AS movements
-      ORDER BY movement_date ASC, reference_label ASC
-      ${limitClause}`,
-    params
-  );
-};
-
-const countMovements = (conn, accId, filters) => {
-  const { sql, params } = buildMovementUnion(accId, filters);
-  return run(conn, `SELECT COUNT(*) AS total FROM (${sql}) AS movements`, params).then(
-    (rows) => Number(rows[0]?.total ?? 0)
-  );
-};
+const mapStatementRow = (row) => ({
+  movement_date: row.Date,
+  movement_type: String(row.Type || '').toLowerCase(),
+  amount: Number(row.Dr || 0) + Number(row.Cr || 0) + Number(row.Loan || 0),
+  reference_label: row.Reference,
+  description: row.Type,
+  debit: Number(row.Dr || 0),
+  credit: Number(row.Cr || 0),
+  loan: Number(row.Loan || 0),
+  balance: Number(row.Balance || 0),
+  time: row.Time,
+});
 
 /**
- * Cash account statement using standard accounting:
- * - Debit  = receipt (cash in)  → increases balance
- * - Credit = payment (cash out) → decreases balance
+ * Cash account statement from the PostgreSQL account_statement() function.
  */
 export const statement = async (conn, accId, { fromDate, toDate, offset = 0, perPage } = {}) => {
   const account = await findById(conn, accId);
   if (!account) return { movements: [], total: 0 };
 
-  const periodFilters = { fromDate, toDate };
-  const total = await countMovements(conn, accId, periodFilters);
-
-  let afterFromNet = 0;
-  let periodNet = 0;
-  if (fromDate) {
-    afterFromNet = movementNet(await listRawMovements(conn, accId, { fromDate }));
-  } else {
-    periodNet = movementNet(await listRawMovements(conn, accId, periodFilters));
-  }
-
-  const openingBalance = computeOpeningBalance(account.balance, periodNet, afterFromNet, fromDate);
-
-  let pageOpening = openingBalance;
-  const pageOffset = Number(offset ?? 0);
-  if (pageOffset > 0) {
-    const prior = await listRawMovements(conn, accId, periodFilters, {
-      offset: 0,
-      perPage: pageOffset,
-    });
-    pageOpening = Math.round((openingBalance + movementNet(prior)) * 100) / 100;
-  }
-
-  const periodRows = await listRawMovements(conn, accId, periodFilters, { offset: pageOffset, perPage });
-  const movements = applyRunningBalances(periodRows, pageOpening, {
-    includeOpeningRow: pageOffset === 0,
-  });
-
-  return { movements, total, openingBalance };
+  const start = fromDate || '1970-01-01';
+  const end = toDate || '2999-12-31';
+  const rows = await run(conn, `SELECT * FROM account_statement(?, ?::date, ?::date)`, [
+    accId,
+    start,
+    end,
+  ]);
+  const mapped = (rows || []).map(mapStatementRow);
+  const openingBalance = mapped[0]?.movement_type === 'opening' ? mapped[0].balance : 0;
+  const total = mapped.length;
+  const startIdx = Number(offset ?? 0);
+  const endIdx = perPage != null ? startIdx + Number(perPage) : mapped.length;
+  return {
+    movements: mapped.slice(startIdx, endIdx),
+    total,
+    openingBalance,
+  };
 };
-
-export { toAccounting, movementNet };
 
 export default {
   findById,

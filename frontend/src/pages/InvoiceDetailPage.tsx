@@ -22,6 +22,7 @@ import { Badge, Skeleton, ErrorState, Button } from "@/components/ui";
 import { Progress } from "@/components/ui/Progress";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
 import { INVOICE_STATUS_STYLES } from "@/utils/constants";
+import { describeInvoice, INVOICE_KIND_STYLES, lineItemDisplay } from "@/utils/invoiceKind";
 import { formatCurrency, formatDate, formatDateTime } from "@/utils/format";
 import { printInvoice } from "@/utils/print";
 import { cn } from "@/utils/cn";
@@ -85,12 +86,13 @@ export default function InvoiceDetailPage() {
   const items = invoice.items ?? [];
   const attachments = invoice.attachments ?? [];
   const timeline = invoice.timeline ?? [];
+  const info = describeInvoice(invoice);
 
   return (
     <div className="space-y-4">
       <PageHeader
         title={invoice.invoiceNumber}
-        subtitle={`Created ${formatDate(invoice.invoiceDate)} · Due ${formatDate(invoice.dueDate ?? undefined)}`}
+        subtitle={info.kindHint}
         actions={
           <>
             <Button variant="secondary" onClick={() => navigate(-1)} leftIcon={<ArrowLeft className="h-4 w-4" />}>
@@ -111,9 +113,12 @@ export default function InvoiceDetailPage() {
         }
       />
 
-      {/* Compact summary */}
       <Card animated={false}>
         <CardBody className="space-y-3 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={INVOICE_KIND_STYLES[info.kind]}>{info.kindLabel}</Badge>
+            <span className="text-xs text-slate-500">{info.statusHint}</span>
+          </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <SummaryCell label="Status" value={<Badge className={INVOICE_STATUS_STYLES[invoice.status]} dot>{invoice.status}</Badge>} />
             <SummaryCell
@@ -125,19 +130,19 @@ export default function InvoiceDetailPage() {
               }
             />
             <SummaryCell label="Project" value={<span className="truncate">{invoice.projectName ?? "—"}</span>} />
-            <SummaryCell label="Total" value={<span className="font-mono">{formatCurrency(invoice.totalAmount, currency)}</span>} />
+            <SummaryCell label="Billed" value={<span className="font-mono">{formatCurrency(invoice.totalAmount, currency)}</span>} />
             <SummaryCell
-              label="Paid"
+              label="Collected"
               value={<span className="font-mono text-emerald-600 dark:text-emerald-400">{formatCurrency(invoice.paidAmount, currency)}</span>}
             />
             <SummaryCell
-              label="Balance"
+              label="Still due"
               value={<span className="font-mono font-bold text-rose-600 dark:text-rose-400">{formatCurrency(invoice.balance, currency)}</span>}
             />
           </div>
           <div>
             <div className="mb-1 flex justify-between text-[11px]">
-              <span className="font-medium text-slate-400">Payment progress</span>
+              <span className="font-medium text-slate-400">Collected</span>
               <span className="font-bold text-slate-600 dark:text-slate-300">{paidPct}%</span>
             </div>
             <Progress value={paidPct} />
@@ -148,26 +153,32 @@ export default function InvoiceDetailPage() {
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
           <Card animated={false}>
-            <CardHeader title="Invoice Items" className="px-4 pt-4 sm:px-5" />
+            <CardHeader title="Charges" className="px-4 pt-4 sm:px-5" />
             <div className="overflow-x-auto px-2 pb-3">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:border-slate-800">
-                    <th className="px-3 py-2">Description</th>
+                    <th className="px-3 py-2">Charge</th>
                     <th className="px-3 py-2 text-center">Qty</th>
                     <th className="px-3 py-2 text-right">Unit</th>
                     <th className="px-3 py-2 text-right">Total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {items.map((item) => (
+                  {items.map((item) => {
+                    const display = lineItemDisplay(item.description, info.project);
+                    return (
                     <tr key={item.itemId} className="text-slate-600 dark:text-slate-300">
-                      <td className="px-3 py-2.5 font-medium text-slate-800 dark:text-slate-100">{item.description}</td>
+                      <td className="px-3 py-2.5">
+                        <p className="font-medium text-slate-800 dark:text-slate-100">{display.title}</p>
+                        {display.hint && <p className="mt-0.5 text-xs text-slate-400">{display.hint}</p>}
+                      </td>
                       <td className="px-3 py-2.5 text-center">{item.quantity}</td>
                       <td className="px-3 py-2.5 text-right font-mono">{formatCurrency(item.unitPrice, currency)}</td>
                       <td className="px-3 py-2.5 text-right font-mono font-semibold">{formatCurrency(item.total, currency)}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {items.length === 0 && (
                     <tr>
                       <td colSpan={4} className="px-3 py-6 text-center text-sm text-slate-400">

@@ -1,4 +1,5 @@
 import accountRepo from '../repositories/account.repo.js';
+import transactionRepo from '../repositories/transaction.repo.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
@@ -86,6 +87,29 @@ export const accountService = {
         amount,
         transfer_date: data.transfer_date,
         notes: data.notes ?? null,
+        created_by: userId,
+      });
+
+      await transactionRepo.create(conn, {
+        transaction_date: data.transfer_date,
+        transaction_type: 'Transfer',
+        reference_type: 'Transfer',
+        reference_id: transferId,
+        description: `Transfer to account ${toId}`,
+        income: 0,
+        expense: amount,
+        acc_id: fromId,
+        created_by: userId,
+      });
+      await transactionRepo.create(conn, {
+        transaction_date: data.transfer_date,
+        transaction_type: 'Transfer',
+        reference_type: 'Transfer',
+        reference_id: transferId,
+        description: `Transfer from account ${fromId}`,
+        income: amount,
+        expense: 0,
+        acc_id: toId,
         created_by: userId,
       });
 

@@ -128,6 +128,7 @@ export const contributionService = {
         description: `Member contribution ${period} — ${due.member_name || `member ${due.member_id}`}`,
         income: payAmount,
         expense: 0,
+        acc_id: resolvedAccId,
         created_by: userId,
       });
 
@@ -217,6 +218,7 @@ export const contributionService = {
         description: `Member loan to ${member.member_name}`,
         income: 0,
         expense: amount,
+        acc_id: accId,
         created_by: userId,
       });
 
@@ -274,6 +276,7 @@ export const contributionService = {
         description: `Loan repayment from ${member.member_name}`,
         income: amount,
         expense: 0,
+        acc_id: accId,
         created_by: userId,
       });
 

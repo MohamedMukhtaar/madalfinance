@@ -25,6 +25,7 @@ import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { INVOICE_STATUS_STYLES } from "@/utils/constants";
+import { describeInvoice, INVOICE_KIND_STYLES } from "@/utils/invoiceKind";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { monthRangeParams } from "@/utils/monthFilter";
 import { printInvoice } from "@/utils/print";
@@ -123,6 +124,14 @@ export default function InvoicesPage() {
         cell: (info) => (
           <span className="font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{info.getValue()}</span>
         ),
+      }),
+      columnHelper.display({
+        id: "kind",
+        header: "Kind",
+        cell: (info) => {
+          const meta = describeInvoice(info.row.original);
+          return <Badge className={INVOICE_KIND_STYLES[meta.kind]}>{meta.kindLabel}</Badge>;
+        },
       }),
       columnHelper.accessor("customerName", {
         header: "Customer",
@@ -258,6 +267,7 @@ export default function InvoicesPage() {
                 {row.status}
               </Badge>
             </div>
+            <p className="text-xs font-medium text-slate-500">{describeInvoice(row).kindLabel}</p>
             <p className="font-semibold text-slate-800 dark:text-slate-100">{row.customerName}</p>
             <div className="flex flex-wrap gap-3 text-sm">
               <span className="font-mono text-slate-700 dark:text-slate-200">

@@ -1,6 +1,6 @@
 /**
  * Clear all business data while keeping login accounts.
- * Preserves: roles, users, reference lookups (project types, categories), settings.
+ * Preserves: roles, users, reference lookups, settings.
  *
  * Usage: node scripts/reset-data.js
  */
@@ -11,12 +11,17 @@ const TABLES_TO_CLEAR = [
   'trash_bin',
   'audit_logs',
   'refresh_tokens',
+  'export_jobs',
   'transactions',
-  'expense_attachments',
-  'expenses',
+  'expense_charge_attachments',
+  'expense_payments',
+  'expense_charges',
   'member_due_attachments',
+  'member_due_payments',
   'member_dues',
   'member_due_batches',
+  'member_loan_payments',
+  'member_loans',
   'payment_attachments',
   'payment_allocations',
   'payments',
@@ -25,39 +30,39 @@ const TABLES_TO_CLEAR = [
   'invoices',
   'rental_billings',
   'contracts',
+  'project_customers',
   'projects',
   'customer_contacts',
   'customers',
   'members',
   'other_income',
+  'salary_payments',
+  'salary_charges',
+  'account_transfers',
 ];
 
 const run = async () => {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+    await conn.query('SET session_replication_role = replica');
 
     for (const table of TABLES_TO_CLEAR) {
-      const [exists] = await conn.query(
-        `SELECT COUNT(*) AS c FROM information_schema.tables
-         WHERE table_schema = DATABASE() AND table_name = ?`,
-        [table]
-      );
-      if (!exists[0]?.c) {
+      const [exists] = await conn.query(`SELECT to_regclass($1) AS reg`, [`public.${table}`]);
+      if (!exists[0]?.reg) {
         logger.info(`SKIP ${table} (table not found)`);
         continue;
       }
-      await conn.query(`TRUNCATE TABLE \`${table}\``);
+      await conn.query(`TRUNCATE TABLE "${table}" RESTART IDENTITY CASCADE`);
       logger.info(`Cleared ${table}`);
     }
 
-    await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+    await conn.query('SET session_replication_role = DEFAULT');
     await conn.commit();
 
-    const [[users]] = await conn.query('SELECT COUNT(*) AS c FROM users');
-    const [[roles]] = await conn.query('SELECT COUNT(*) AS c FROM roles');
-    logger.info(`Done. Users kept: ${users.c}, roles kept: ${roles.c}`);
+    const [users] = await conn.query('SELECT COUNT(*) AS c FROM users');
+    const [roles] = await conn.query('SELECT COUNT(*) AS c FROM roles');
+    logger.info(`Done. Users kept: ${users[0].c}, roles kept: ${roles[0].c}`);
   } catch (err) {
     await conn.rollback();
     throw err;

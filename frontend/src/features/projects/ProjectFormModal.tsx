@@ -1,23 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select, Textarea } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
-import { FileUpload, type UploadedFile } from "@/components/ui";
-import { useCreateProject, useGenerateInvoice, useProjectTypes, useUpdateProject, useUploadProjectLogo } from "@/hooks/queries";
+import { useCreateProject, useGenerateInvoice, useProjectTemplates, useUpdateProject } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
-import { financeService } from "@/services/finance";
 import { formatCurrency, todayISO } from "@/utils/format";
 import type { Customer, Project } from "@/types";
 
 interface ProjectForm {
   customerId: string;
-  projectTypeId: string;
-  projectName: string;
+  templateId: string;
   description: string;
-  projectPrice: number;
-  monthlyAmount: number;
-  setupFee: number;
+  discount: number;
   billingDay: number;
   startDate: string;
   dueDate: string;
@@ -29,168 +24,140 @@ export function ProjectFormModal({
   onClose,
   project,
   customers,
-  defaultProjectType,
+  defaultTemplateId,
+  onAssigned,
 }: {
   open: boolean;
   onClose: () => void;
   project?: Project;
   customers: Customer[];
-  defaultProjectType?: "One Time" | "Rental";
+  defaultTemplateId?: number;
+  onAssigned?: () => void;
 }) {
   const createMutation = useCreateProject();
   const updateMutation = useUpdateProject();
   const generateInvoiceMutation = useGenerateInvoice();
-  const uploadLogoMutation = useUploadProjectLogo();
   const { currency } = useSettings();
-  const { data: projectTypes = [] } = useProjectTypes();
+  const { data: templates = [] } = useProjectTemplates();
   const isEdit = !!project;
-  const [logoFiles, setLogoFiles] = useState<UploadedFile[]>([]);
+
+  const activeTemplates = useMemo(
+    () => templates.filter((t) => String(t.status).toLowerCase() === "active"),
+    [templates]
+  );
 
   const {
     register,
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<ProjectForm>();
 
-  const projectTypeId = watch("projectTypeId");
-  const selectedType = useMemo(
-    () => projectTypes.find((t) => String(t.id) === String(projectTypeId)),
-    [projectTypes, projectTypeId]
+  const templateId = watch("templateId");
+  const selected = useMemo(
+    () => templates.find((t) => String(t.templateId) === String(templateId)),
+    [templates, templateId]
   );
-  const isRental = String(selectedType?.name ?? "").toLowerCase() === "rental";
-  const isOneTime = String(selectedType?.name ?? "").toLowerCase() === "one time";
-  const isOneTimeCreate = !isEdit && isOneTime;
-  const typeSelected = Boolean(projectTypeId);
-  const showBillingFields = typeSelected || isEdit;
+  const isRental = String(selected?.projectType ?? "").toLowerCase() === "rental";
+  const isOneTime = String(selected?.projectType ?? "").toLowerCase() === "one time";
+  const templateSelected = Boolean(templateId) || isEdit;
 
-  const projectPrice = Number(watch("projectPrice") ?? 0);
   const taxRate = Number(watch("taxRate") ?? 0);
+  const discount = Math.max(0, Number(watch("discount") ?? 0));
   const dueDate = watch("dueDate");
-  const invoiceSubtotal = round2(projectPrice);
-  const invoiceTax = round2(invoiceSubtotal * (taxRate / 100));
-  const invoiceTotal = round2(invoiceSubtotal + invoiceTax);
-
-  const defaultTypeId = useMemo(() => {
-    if (!defaultProjectType) return "";
-    return String(projectTypes.find((t) => t.name === defaultProjectType)?.id ?? "");
-  }, [defaultProjectType, projectTypes]);
+  const listPrice = isRental
+    ? Number(selected?.monthlyAmount ?? 0)
+    : Number(selected?.projectPrice ?? 0);
+  const netPrice = round2(Math.max(0, listPrice - discount));
+  const invoiceSubtotal = listPrice;
+  const invoiceTax = round2(netPrice * (taxRate / 100));
+  const invoiceTotal = round2(netPrice + invoiceTax);
 
   useEffect(() => {
-    if (open) {
-      setLogoFiles([]);
-      reset(
-        project
-          ? {
-              customerId: String(project.customerId),
-              projectTypeId: String(project.projectTypeId ?? ""),
-              projectName: project.projectName,
-              description: project.description ?? "",
-              projectPrice: project.projectPrice,
-              monthlyAmount: project.projectPrice,
-              setupFee: 0,
-              billingDay: 1,
-              startDate: project.startDate ?? "",
-              dueDate: todayISO(),
-              taxRate: 0,
-            }
-          : {
-              customerId: "",
-              projectTypeId: defaultTypeId,
-              projectName: "",
-              description: "",
-              projectPrice: 0,
-              monthlyAmount: 0,
-              setupFee: 0,
-              billingDay: 1,
-              startDate: new Date().toISOString().slice(0, 10),
-              dueDate: todayISO(),
-              taxRate: 0,
-            }
-      );
-    }
-  }, [open, project, reset, defaultTypeId]);
+    if (!open) return;
+    reset(
+      project
+        ? {
+            customerId: String(project.customerId),
+            templateId: String(project.templateId ?? ""),
+            description: project.description ?? "",
+            discount: Number(project.discount ?? 0),
+            billingDay: 1,
+            startDate: project.startDate ?? "",
+            dueDate: todayISO(),
+            taxRate: 0,
+          }
+        : {
+            customerId: "",
+            templateId: defaultTemplateId ? String(defaultTemplateId) : "",
+            description: "",
+            discount: 0,
+            billingDay: 1,
+            startDate: new Date().toISOString().slice(0, 10),
+            dueDate: todayISO(),
+            taxRate: 0,
+          }
+    );
+  }, [open, project, reset, defaultTemplateId]);
+
+  useEffect(() => {
+    if (!selected || isEdit) return;
+    setValue("billingDay", selected.billingDay || 1);
+  }, [selected, isEdit, setValue]);
 
   const loading =
-    createMutation.isPending ||
-    updateMutation.isPending ||
-    uploadLogoMutation.isPending ||
-    generateInvoiceMutation.isPending;
+    createMutation.isPending || updateMutation.isPending || generateInvoiceMutation.isPending;
 
   const onSubmit = async (data: ProjectForm) => {
-    const typeName = projectTypes.find((t) => String(t.id) === data.projectTypeId)?.name;
-    if (!typeName) return;
-
-    const rental = String(typeName).toLowerCase() === "rental";
-
     if (isEdit && project) {
       updateMutation.mutate(
         {
           id: project.projectId,
           patch: {
-            projectName: data.projectName,
             description: data.description,
-            projectPrice: Number(data.projectPrice),
             startDate: data.startDate || undefined,
           },
         },
-        {
-          onSuccess: async () => {
-            const logoFile = logoFiles[0]?.file;
-            if (rental && logoFile) {
-              await uploadLogoMutation.mutateAsync({ id: project.projectId, file: logoFile });
-            }
-            onClose();
-          },
-        }
+        { onSuccess: () => onClose() }
       );
       return;
     }
 
-    const payload: Record<string, unknown> = {
-      customerId: Number(data.customerId),
-      projectType: typeName,
-      projectName: data.projectName,
-      description: data.description,
-      startDate: data.startDate || undefined,
-    };
-
-    if (rental) {
-      payload.monthlyAmount = Number(data.monthlyAmount);
-      payload.setupFee = Number(data.setupFee || 0);
-      payload.billingDay = Number(data.billingDay || 1);
-    } else {
-      payload.projectPrice = Number(data.projectPrice);
-    }
+    const tpl = templates.find((t) => String(t.templateId) === data.templateId);
+    if (!tpl) return;
+    const rental = String(tpl.projectType).toLowerCase() === "rental";
 
     try {
-      const created = await createMutation.mutateAsync(payload);
-      const logoFile = logoFiles[0]?.file;
-      if (rental && logoFile && created.projectId) {
-        await uploadLogoMutation.mutateAsync({ id: created.projectId, file: logoFile });
-      } else if (!rental && created.projectId) {
-        const price = Number(data.projectPrice);
-        if (price > 0) {
-          await generateInvoiceMutation.mutateAsync({
-            customerId: Number(data.customerId),
-            projectId: created.projectId,
-            invoiceDate: todayISO(),
-            dueDate: data.dueDate || todayISO(),
-            discount: 0,
-            tax: round2(price * (Number(data.taxRate || 0) / 100)),
-            items: [
-              {
-                description: data.description?.trim() || data.projectName,
-                quantity: 1,
-                unitPrice: price,
-              },
-            ],
-            status: "Issued",
-          });
-        }
+      const created = await createMutation.mutateAsync({
+        customerId: Number(data.customerId),
+        templateId: Number(data.templateId),
+        description: data.description,
+        discount: Number(data.discount || 0),
+        startDate: data.startDate || undefined,
+        billingDay: rental ? Number(data.billingDay || tpl.billingDay || 1) : undefined,
+      });
+      if (!rental && created.projectId && netPrice > 0) {
+        await generateInvoiceMutation.mutateAsync({
+          customerId: Number(data.customerId),
+          projectId: created.projectId,
+          invoiceDate: todayISO(),
+          dueDate: data.dueDate || todayISO(),
+          discount: Number(data.discount || 0),
+          tax: round2(netPrice * (Number(data.taxRate || 0) / 100)),
+          items: [
+            {
+              description: data.description?.trim() || tpl.templateName,
+              quantity: 1,
+              unitPrice: Number(tpl.projectPrice),
+            },
+          ],
+          status: "Issued",
+        });
       }
       onClose();
+      onAssigned?.();
     } catch {
       /* toast handled by mutation */
     }
@@ -201,25 +168,25 @@ export function ProjectFormModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={isEdit ? "Edit Project" : "Add Customer Project"}
+      title={isEdit ? "Edit customer project" : "Assign customer project"}
       subtitle={
         isEdit
           ? project?.projectName
-          : !typeSelected
-            ? "Choose a project type to show billing fields"
-            : isRental
-              ? "Rental project — monthly rent, optional setup fee and logo"
-              : "One-time project — project and invoice are created together"
+          : activeTemplates.length === 0
+            ? "Register a project first, then assign it to a customer."
+            : "Pick a customer and a registered project. Optional discount comes off the list price."
       }
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
           <Button
             loading={loading}
-            disabled={!isEdit && !typeSelected}
+            disabled={!isEdit && (!templateSelected || activeTemplates.length === 0)}
             onClick={handleSubmit(onSubmit)}
           >
-            {isEdit ? "Save changes" : !typeSelected ? "Create project" : isRental ? "Create project" : "Create project & invoice"}
+            {isEdit ? "Save changes" : isOneTime ? "Assign & invoice" : "Assign to customer"}
           </Button>
         </>
       }
@@ -229,188 +196,148 @@ export function ProjectFormModal({
           <Select
             label="Customer"
             required
+            disabled={isEdit}
             error={errors.customerId?.message}
-            options={[{ value: "", label: "Select a customer…" }, ...customers.map((c) => ({ value: String(c.customerId), label: c.customerName }))]}
+            options={[
+              { value: "", label: "Select a customer…" },
+              ...customers.map((c) => ({ value: String(c.customerId), label: c.customerName })),
+            ]}
             {...register("customerId", { required: "Customer is required" })}
           />
-          <Select
-            label="Project Type"
-            required
-            disabled={isEdit}
-            options={[{ value: "", label: "Select a project type…" }, ...projectTypes.map((type) => ({ value: String(type.id), label: type.name }))]}
-            {...register("projectTypeId", { required: "Project type is required" })}
-          />
+          {isEdit ? (
+            <Input label="Registered project" value={project?.projectName ?? ""} readOnly />
+          ) : (
+            <Select
+              label="Registered project"
+              required
+              error={errors.templateId?.message}
+              options={[
+                { value: "", label: activeTemplates.length ? "Select a project…" : "No projects registered" },
+                ...activeTemplates.map((t) => ({
+                  value: String(t.templateId),
+                  label: `${t.templateName} · ${t.projectType}`,
+                })),
+              ]}
+              {...register("templateId", { required: "Registered project is required" })}
+            />
+          )}
         </div>
 
-        <Input
-          label="Project Name"
-          required
-          placeholder="e.g. Corporate Website"
-          error={errors.projectName?.message}
-          {...register("projectName", { required: "Project name is required" })}
-        />
-        <Textarea label="Description" placeholder="Brief description of the project" {...register("description")} />
+        {selected && !isEdit && (
+          <div className="space-y-3">
+            <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-slate-800/50">
+              <p className="font-semibold text-slate-800 dark:text-slate-100">
+                {selected.templateName}
+                <span className="ml-2 text-xs font-medium text-slate-400">{selected.projectType}</span>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {isRental
+                  ? `List rent ${formatCurrency(selected.monthlyAmount, currency)}${
+                      Number(selected.setupFee) > 0
+                        ? ` · setup ${formatCurrency(selected.setupFee, currency)}`
+                        : ""
+                    }`
+                  : `List price ${formatCurrency(selected.projectPrice, currency)}`}
+              </p>
+            </div>
+            <Input
+              label="Discount"
+              type="number"
+              step="0.01"
+              min={0}
+              hint={`Charged: ${formatCurrency(netPrice, currency)} (list ${formatCurrency(listPrice, currency)} − discount)`}
+              error={errors.discount?.message}
+              {...register("discount", {
+                min: { value: 0, message: "Discount cannot be negative" },
+                validate: (value) =>
+                  Number(value || 0) <= listPrice || "Discount cannot be greater than the project price",
+              })}
+            />
+          </div>
+        )}
 
-        {showBillingFields && (
+        <Textarea label="Notes" placeholder="Optional note for this customer" {...register("description")} />
+
+        {templateSelected && isRental && !isEdit && (
+          <Input
+            label="Billing day"
+            type="number"
+            min={1}
+            max={28}
+            required
+            error={errors.billingDay?.message}
+            {...register("billingDay", {
+              required: "Billing day is required",
+              min: { value: 1, message: "Min 1" },
+              max: { value: 28, message: "Max 28" },
+            })}
+          />
+        )}
+
+        {templateSelected && isOneTime && !isEdit && (
           <>
-            {isRental && !isEdit ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Input
-                  label="Monthly rent"
-                  type="number"
-                  step="0.01"
-                  required
-                  placeholder="0.00"
-                  error={errors.monthlyAmount?.message}
-                  {...register("monthlyAmount", {
-                    required: "Monthly rent is required",
-                    min: { value: 0.01, message: "Must be greater than 0" },
-                  })}
-                />
-                <Input
-                  label="Setup fee"
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  error={errors.setupFee?.message}
-                  {...register("setupFee", { min: { value: 0, message: "Invalid amount" } })}
-                />
-                <Input
-                  label="Billing day"
-                  type="number"
-                  min={1}
-                  max={28}
-                  required
-                  placeholder="1"
-                  error={errors.billingDay?.message}
-                  {...register("billingDay", {
-                    required: "Billing day is required",
-                    min: { value: 1, message: "Min 1" },
-                    max: { value: 28, message: "Max 28" },
-                  })}
-                />
-              </div>
-            ) : showBillingFields && !isRental ? (
-              <>
-                <Input
-                  label="Project price"
-                  type="number"
-                  step="0.01"
-                  required
-                  placeholder="0.00"
-                  error={errors.projectPrice?.message}
-                  {...register("projectPrice", {
-                    required: "Project price is required",
-                    min: { value: 0.01, message: "Must be greater than 0" },
-                  })}
-                />
-                {isOneTimeCreate && (
-                  <>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <Input
-                        label="Tax %"
-                        type="number"
-                        step="0.1"
-                        min={0}
-                        {...register("taxRate", { min: { value: 0, message: "Invalid tax" } })}
-                      />
-                      <div className="space-y-1.5">
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Due date <span className="text-rose-500">*</span>
-                        </label>
-                        <input
-                          type="date"
-                          className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700"
-                          {...register("dueDate", { required: "Due date is required" })}
-                        />
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">Subtotal</span>
-                        <span className="font-mono font-semibold text-slate-800 dark:text-slate-100">
-                          {formatCurrency(invoiceSubtotal, currency)}
-                        </span>
-                      </div>
-                      <div className="mt-1.5 flex justify-between text-sm">
-                        <span className="text-slate-500 dark:text-slate-400">Tax ({taxRate}%)</span>
-                        <span className="font-mono font-semibold text-slate-800 dark:text-slate-100">
-                          {formatCurrency(invoiceTax, currency)}
-                        </span>
-                      </div>
-                      <div className="mt-3 flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700">
-                        <span className="text-sm font-bold text-slate-900 dark:text-white">Invoice total</span>
-                        <span className="font-mono text-base font-bold text-brand-600 dark:text-brand-400">
-                          {formatCurrency(invoiceTotal, currency)}
-                        </span>
-                      </div>
-                      {dueDate && (
-                        <p className="mt-2 text-xs text-slate-400">Invoice due {dueDate}</p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
-            ) : showBillingFields && isRental && isEdit ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
-                label="Project price"
+                label="Tax %"
                 type="number"
-                step="0.01"
-                required
-                placeholder="0.00"
-                error={errors.projectPrice?.message}
-                {...register("projectPrice", {
-                  required: "Project price is required",
-                  min: { value: 0, message: "Invalid price" },
-                })}
+                step="0.1"
+                min={0}
+                {...register("taxRate", { min: { value: 0, message: "Invalid tax" } })}
               />
-            ) : null}
-
-            {showBillingFields && isRental && (
-              <FileUpload
-                label="Project logo (shown on card)"
-                accept="image/png,image/jpeg,image/webp"
-                value={logoFiles}
-                onChange={setLogoFiles}
-                onUpload={
-                  isEdit && project
-                    ? async (file, onProgress) => {
-                        const updated = await uploadLogoMutation.mutateAsync({
-                          id: project.projectId,
-                          file,
-                          onProgress,
-                        });
-                        return {
-                          name: updated.logoFileName || file.name,
-                          url: updated.logoPath
-                            ? financeService.projectLogoUrl(updated.projectId, updated.logoPath)
-                            : URL.createObjectURL(file),
-                        };
-                      }
-                    : undefined
-                }
-              />
-            )}
-
-            {showBillingFields && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Start date <span className="font-normal text-slate-400">(optional)</span>
+                  Invoice due date <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="date"
                   className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700"
-                  {...register("startDate")}
+                  {...register("dueDate", { required: "Due date is required" })}
                 />
               </div>
-            )}
-
-            {showBillingFields && isRental && !isEdit && (
-              <p className="rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-                Setup fee (if any) becomes an invoice right away. Monthly rent is charged from Invoices → Charge rent.
-              </p>
-            )}
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">List price</span>
+                <span className="font-mono font-semibold">{formatCurrency(invoiceSubtotal, currency)}</span>
+              </div>
+              {discount > 0 && (
+                <div className="mt-1.5 flex justify-between text-sm">
+                  <span className="text-slate-500">Discount</span>
+                  <span className="font-mono font-semibold text-rose-600">
+                    −{formatCurrency(discount, currency)}
+                  </span>
+                </div>
+              )}
+              <div className="mt-1.5 flex justify-between text-sm">
+                <span className="text-slate-500">Tax ({taxRate}%)</span>
+                <span className="font-mono font-semibold">{formatCurrency(invoiceTax, currency)}</span>
+              </div>
+              <div className="mt-3 flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700">
+                <span className="text-sm font-bold">Invoice total</span>
+                <span className="font-mono text-base font-bold text-brand-600">
+                  {formatCurrency(invoiceTotal, currency)}
+                </span>
+              </div>
+              {dueDate && <p className="mt-2 text-xs text-slate-400">Invoice due {dueDate}</p>}
+            </div>
           </>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+            Start date <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            type="date"
+            className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700"
+            {...register("startDate")}
+          />
+        </div>
+
+        {templateSelected && isRental && !isEdit && (
+          <p className="rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+            Setup fee (if any) becomes an invoice right away. Monthly rent is charged from Invoices → Charge rent.
+          </p>
         )}
       </form>
     </Modal>

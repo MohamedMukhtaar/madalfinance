@@ -8,7 +8,7 @@ const publicCols = `
 export const findByUsername = (conn, username) =>
   run(
     conn,
-    `SELECT u.user_id, u.username, u.password, u.full_name, u.phone, u.email, u.status,
+    `SELECT u.user_id, u.username, u.password_hash AS password, u.full_name, u.phone, u.email, u.status,
             r.role_name AS role
        FROM users u
        JOIN roles r ON r.role_id = u.role_id
@@ -19,7 +19,7 @@ export const findByUsername = (conn, username) =>
 export const findByIdWithPassword = (conn, id) =>
   run(
     conn,
-    `SELECT u.user_id, u.username, u.password, u.full_name, u.phone, u.email, u.status,
+    `SELECT u.user_id, u.username, u.password_hash AS password, u.full_name, u.phone, u.email, u.status,
             r.role_name AS role
        FROM users u
        JOIN roles r ON r.role_id = u.role_id
@@ -46,7 +46,7 @@ export const list = (conn, { search, offset, perPage, order }) => {
   const conditions = ['u.deleted_at IS NULL'];
   const params = [];
   if (search) {
-    conditions.push('(u.username LIKE ? OR u.full_name LIKE ? OR u.email LIKE ?)');
+    conditions.push('(u.username ILIKE ? OR u.full_name ILIKE ? OR u.email ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
@@ -65,7 +65,7 @@ export const count = (conn, search) => {
   const conditions = ['deleted_at IS NULL'];
   const params = [];
   if (search) {
-    conditions.push('(username LIKE ? OR full_name LIKE ? OR email LIKE ?)');
+    conditions.push('(username ILIKE ? OR full_name ILIKE ? OR email ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
@@ -76,7 +76,7 @@ export const updateUsername = (conn, id, username) =>
   run(conn, `UPDATE users SET username = ? WHERE user_id = ?`, [username, id]);
 
 export const updatePassword = (conn, id, hash) =>
-  run(conn, `UPDATE users SET password = ? WHERE user_id = ?`, [hash, id]);
+  run(conn, `UPDATE users SET password_hash = ? WHERE user_id = ?`, [hash, id]);
 
 export const updateProfile = (conn, id, { full_name, phone, email }) =>
   run(
@@ -101,7 +101,7 @@ export const usernameExists = (conn, username, excludeUserId = null) => {
 export const create = (conn, data) =>
   run(
     conn,
-    `INSERT INTO users (role_id, username, password, full_name, phone, email, status)
+    `INSERT INTO users (role_id, username, password_hash, full_name, phone, email, status)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [
       data.role_id,

@@ -18,9 +18,9 @@ export const incomeStatement = (conn, { fromDate, toDate }) => {
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
-    `SELECT COALESCE(SUM(income), 0) AS total_income,
-            COALESCE(SUM(expense), 0) AS total_expense,
-            COALESCE(SUM(income), 0) - COALESCE(SUM(expense), 0) AS net_profit
+    `SELECT         COALESCE(SUM(debit), 0) AS total_income,
+            COALESCE(SUM(credit), 0) AS total_expense,
+            COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) AS net_profit
        FROM transactions ${where}`,
     params
   ).then((r) => r[0]);
@@ -30,14 +30,14 @@ export const incomeStatement = (conn, { fromDate, toDate }) => {
 export const monthlySummary = (conn, months) =>
   run(
     conn,
-    `SELECT DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-            COALESCE(SUM(income), 0) AS income,
-            COALESCE(SUM(expense), 0) AS expense,
-            COALESCE(SUM(income), 0) - COALESCE(SUM(expense), 0) AS net
+    `SELECT to_char(transaction_date, 'YYYY-MM') AS month,
+            COALESCE(SUM(debit), 0) AS income,
+            COALESCE(SUM(credit), 0) AS expense,
+            COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) AS net
        FROM transactions
       WHERE transaction_type NOT IN (${PNL_EXCLUDE_TYPES})
-        AND transaction_date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
-      GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
+        AND transaction_date >= CURRENT_DATE - (? * INTERVAL '1 month')
+      GROUP BY to_char(transaction_date, 'YYYY-MM')
       ORDER BY month ASC`,
     [months]
   );
@@ -56,12 +56,12 @@ export const cashFlow = (conn, fromDate, toDate) => {
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return run(
     conn,
-    `SELECT DATE_FORMAT(transaction_date, '%Y-%m') AS month,
-            COALESCE(SUM(income), 0) AS inflow,
-            COALESCE(SUM(expense), 0) AS outflow,
-            COALESCE(SUM(income), 0) - COALESCE(SUM(expense), 0) AS net
+    `SELECT to_char(transaction_date, 'YYYY-MM') AS month,
+            COALESCE(SUM(debit), 0) AS inflow,
+            COALESCE(SUM(credit), 0) AS outflow,
+            COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) AS net
        FROM transactions ${where}
-      GROUP BY DATE_FORMAT(transaction_date, '%Y-%m')
+      GROUP BY to_char(transaction_date, 'YYYY-MM')
       ORDER BY month ASC`,
     params
   );
@@ -85,7 +85,7 @@ export const rentalRevenue = (conn, fromDate, toDate) => {
   const where = `WHERE ${conditions.join(' AND ')}`;
   return run(
     conn,
-    `SELECT COALESCE(SUM(income), 0) AS total,
+    `SELECT COALESCE(SUM(debit), 0) AS total,
             COUNT(*) AS billings
        FROM transactions
        ${where}`,
@@ -103,7 +103,7 @@ export const outstandingCustomers = (conn) =>
        LEFT JOIN invoices i ON i.customer_id = c.customer_id AND i.deleted_at IS NULL AND i.status IN ('Issued','Partial','Overdue')
       WHERE c.deleted_at IS NULL
       GROUP BY c.customer_id
-      HAVING outstanding > 0
+      HAVING COALESCE(SUM(i.total_amount - i.paid_amount), 0) > 0
       ORDER BY outstanding DESC`
   );
 
@@ -130,22 +130,27 @@ export const customerPaymentStatus = (conn) =>
 
 /** Per-category expense breakdown. Dates optional — omit for all-time. */
 export const expenseByCategory = (conn, fromDate, toDate) => {
-  const joinConds = ['e.expense_category_id = ec.expense_category_id', 'e.deleted_at IS NULL'];
+  const payConds = ['ep.deleted_at IS NULL'];
   const params = [];
   if (fromDate) {
-    joinConds.push('e.expense_date >= ?');
+    payConds.push('ep.payment_date >= ?');
     params.push(fromDate);
   }
   if (toDate) {
-    joinConds.push('e.expense_date <= ?');
+    payConds.push('ep.payment_date <= ?');
     params.push(toDate);
   }
   return run(
     conn,
-    `SELECT ec.category_name, COALESCE(SUM(e.amount), 0) AS total, COUNT(e.expense_id) AS count
-       FROM expense_categories ec
-       LEFT JOIN expenses e ON ${joinConds.join(' AND ')}
-      GROUP BY ec.expense_category_id, ec.category_name
+    `SELECT e.expense_name AS category_name,
+            COALESCE(SUM(ep.amount), 0) AS total,
+            COUNT(ep.expense_payment_id) AS count
+       FROM expenses e
+       LEFT JOIN expense_charges ec ON ec.expense_id = e.expense_id
+       LEFT JOIN expense_payments ep
+         ON ep.expense_charge_id = ec.expense_charge_id
+        AND ${payConds.join(' AND ')}
+      GROUP BY e.expense_id, e.expense_name
       ORDER BY total DESC`,
     params
   );
@@ -154,7 +159,7 @@ export const expenseByCategory = (conn, fromDate, toDate) => {
 export const contributionReport = (conn, batchId) =>
   run(
     conn,
-    `SELECT b.month, b.year, b.default_amount, u.full_name AS generated_by, b.generated_date,
+    `SELECT b.month, b.year, b.default_amount, u.full_name AS generated_by, b.generated_at AS generated_date,
             COUNT(d.due_id) AS total_dues,
             COALESCE(SUM(d.amount), 0) AS expected,
             COALESCE(SUM(d.paid_amount), 0) AS collected,
@@ -165,7 +170,7 @@ export const contributionReport = (conn, batchId) =>
        LEFT JOIN member_dues d ON d.batch_id = b.batch_id
        JOIN users u ON u.user_id = b.generated_by
       WHERE b.batch_id = ?
-      GROUP BY b.batch_id, b.month, b.year, b.default_amount, u.full_name, b.generated_date`,
+      GROUP BY b.batch_id, b.month, b.year, b.default_amount, u.full_name, b.generated_at`,
     [batchId]
   ).then((rows) => rows[0]);
 

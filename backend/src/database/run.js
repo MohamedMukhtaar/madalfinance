@@ -1,74 +1,191 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import mysql from 'mysql2/promise';
+import pg from 'pg';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import env from '../config/index.js';
 import { pool } from '../config/db.js';
 import logger from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
+const DATABASE_DIR = path.resolve(__dirname, '../../../database');
 const SEEDERS_DIR = path.join(__dirname, 'seeders');
 
-/** Raw bootstrap connection (no database selected yet). */
-const bootstrap = () =>
-  mysql.createConnection({
-    host: env.db.host,
-    port: env.db.port,
-    user: env.db.user,
-    password: env.db.password,
-    multipleStatements: true,
-  });
+const quoteIdent = (name) => `"${String(name).replace(/"/g, '""')}"`;
 
-/** Connection bound to the finance database. */
-const appConn = () =>
-  mysql.createConnection({
-    host: env.db.host,
-    port: env.db.port,
-    user: env.db.user,
-    password: env.db.password,
-    database: env.db.name,
-    multipleStatements: true,
-  });
+const adminConfig = () => ({
+  host: env.db.host,
+  port: env.db.port,
+  user: env.db.user,
+  password: env.db.password,
+  database: 'postgres',
+  ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
+});
 
-const listFiles = (dir, ext) =>
-  fs.existsSync(dir)
-    ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort()
-    : [];
+const appConfig = () => ({
+  host: env.db.host,
+  port: env.db.port,
+  user: env.db.user,
+  password: env.db.password,
+  database: env.db.name,
+  ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
+});
 
-export const migrate = async () => {
-  const conn = await bootstrap();
+const explainConnectionError = (err) => {
+  const msg = String(err?.message || '');
+  const hex = String(err?.code || '');
+  if (/invalid response/i.test(msg) || hex === '59' || /invalid response: 59/i.test(msg)) {
+    return (
+      `The PostgreSQL driver reached ${env.db.host}:${env.db.port} as ${env.db.user}, ` +
+      `but that port is not speaking the Postgres protocol (this usually means MySQL is still on DB_PORT). ` +
+      `Set DB_PORT=5432 and DB_USER=postgres in backend/.env, then retry.`
+    );
+  }
+  if (err?.code === 'ECONNREFUSED') {
+    return (
+      `Nothing accepted a Postgres connection on ${env.db.host}:${env.db.port}. ` +
+      `Start PostgreSQL (the service you use with pgAdmin) and confirm the port.`
+    );
+  }
+  if (
+    err?.code === '28P01' ||
+    /password authentication failed/i.test(msg) ||
+    /client password must be a string/i.test(msg) ||
+    /SASL/i.test(msg)
+  ) {
+    return (
+      `Postgres at ${env.db.host}:${env.db.port} requires a password for user "${env.db.user}". ` +
+      `Set DB_PASSWORD in backend/.env to the same password you use in pgAdmin, then retry.`
+    );
+  }
+  if (err?.code === '3D000') {
+    return `Database "${env.db.name}" does not exist yet and could not be created. Create it in pgAdmin or grant CREATEDB to ${env.db.user}.`;
+  }
+  return null;
+};
+
+const ensureDatabase = async () => {
+  const client = new pg.Client(adminConfig());
   try {
-    await conn.query(
-      `CREATE DATABASE IF NOT EXISTS ${env.db.name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-    );
-    await conn.changeUser({ database: env.db.name });
-    await conn.query(
-      `CREATE TABLE IF NOT EXISTS schema_migrations (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        filename VARCHAR(255) NOT NULL UNIQUE,
-        applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`
-    );
-
-    const [applied] = await conn.query(`SELECT filename FROM schema_migrations`);
-    const done = new Set(applied.map((r) => r.filename));
-
-    for (const file of listFiles(MIGRATIONS_DIR, '.sql')) {
-      if (done.has(file)) {
-        logger.info(`SKIP ${file} (already applied)`);
-        continue;
-      }
-      logger.info(`Applying migration: ${file}`);
-      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
-      await conn.query(sql);
-      await conn.query(`INSERT INTO schema_migrations (filename) VALUES (?)`, [file]);
-      logger.info(`Applied ${file}`);
+    await client.connect();
+  } catch (err) {
+    const hint = explainConnectionError(err);
+    if (hint) {
+      err.message = `${hint} (${err.message})`;
+    }
+    throw err;
+  }
+  try {
+    const found = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [env.db.name]);
+    if (!found.rowCount) {
+      logger.info(`Creating database ${env.db.name}`);
+      await client.query(`CREATE DATABASE ${quoteIdent(env.db.name)}`);
     }
   } finally {
-    await conn.end();
+    await client.end();
   }
 };
+
+const stripSchemaReset = (sql) =>
+  sql
+    .replace(/\bBEGIN\s*;/gi, '')
+    .replace(/\bCOMMIT\s*;/gi, '')
+    .replace(/DROP SCHEMA IF EXISTS public CASCADE\s*;/gi, '')
+    .replace(/CREATE SCHEMA public\s*;/gi, '');
+
+const tableExists = async (client, name) => {
+  const r = await client.query('SELECT to_regclass($1) AS reg', [`${env.db.schema}.${name}`]);
+  return r.rows[0]?.reg != null;
+};
+
+const STEPS = [
+  {
+    filename: '001_schema.sql',
+    file: path.join(DATABASE_DIR, 'schema.sql'),
+    skipIfTable: 'roles',
+    transform: stripSchemaReset,
+  },
+  {
+    filename: '002_app_support.sql',
+    file: path.join(DATABASE_DIR, 'app_support.sql'),
+  },
+  {
+    filename: '003_functions.sql',
+    file: path.join(DATABASE_DIR, 'functions.sql'),
+  },
+  {
+    filename: '004_integrity.sql',
+    file: path.join(DATABASE_DIR, 'integrity.sql'),
+  },
+  {
+    filename: '005_drop_income_categories.sql',
+    file: path.join(DATABASE_DIR, 'drop_income_categories.sql'),
+  },
+  {
+    filename: '006_other_income_account.sql',
+    file: path.join(DATABASE_DIR, 'other_income_account.sql'),
+  },
+  {
+    filename: '007_employee_org.sql',
+    file: path.join(DATABASE_DIR, 'employee_org.sql'),
+  },
+  {
+    filename: '008_member_title.sql',
+    file: path.join(DATABASE_DIR, 'member_title.sql'),
+  },
+  {
+    filename: '009_project_templates.sql',
+    file: path.join(DATABASE_DIR, 'project_templates.sql'),
+  },
+  {
+    filename: '010_project_discount.sql',
+    file: path.join(DATABASE_DIR, 'project_discount.sql'),
+  },
+];
+
+export const migrate = async () => {
+  await ensureDatabase();
+  const client = new pg.Client(appConfig());
+  await client.connect();
+  try {
+    await client.query(`SET search_path TO ${quoteIdent(env.db.schema)}`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        id          INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+        filename    VARCHAR(255) NOT NULL UNIQUE,
+        applied_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+
+    const applied = await client.query('SELECT filename FROM schema_migrations');
+    const done = new Set(applied.rows.map((r) => r.filename));
+
+    for (const step of STEPS) {
+      if (done.has(step.filename)) {
+        logger.info(`SKIP ${step.filename} (already applied)`);
+        continue;
+      }
+      if (step.skipIfTable && (await tableExists(client, step.skipIfTable))) {
+        logger.info(`SKIP ${step.filename} (${step.skipIfTable} already exists — marking applied)`);
+        await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [step.filename]);
+        continue;
+      }
+      if (!fs.existsSync(step.file)) {
+        throw new Error(`Migration source missing: ${step.file}`);
+      }
+      logger.info(`Applying migration: ${step.filename}`);
+      let sql = fs.readFileSync(step.file, 'utf8');
+      if (step.transform) sql = step.transform(sql);
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (filename) VALUES ($1)', [step.filename]);
+      logger.info(`Applied ${step.filename}`);
+    }
+  } finally {
+    await client.end();
+  }
+};
+
+const listFiles = (dir, ext) =>
+  fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).sort() : [];
 
 const importSeeder = async (file) => {
   const modulePath = path.join(SEEDERS_DIR, file);
@@ -77,49 +194,37 @@ const importSeeder = async (file) => {
 };
 
 export const seed = async () => {
-  const conn = await bootstrap();
-  try {
-    await conn.query(
-      `CREATE DATABASE IF NOT EXISTS ${env.db.name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
-    );
-  } finally {
-    await conn.end();
+  await ensureDatabase();
+  for (const file of listFiles(SEEDERS_DIR, '.js')) {
+    logger.info(`Running seeder: ${file}`);
+    const seedFn = await importSeeder(file);
+    const result = await seedFn();
+    logger.info(`Seeded ${file} -> ${JSON.stringify(result)}`);
   }
-
-  const conn2 = await appConn();
-  try {
-    for (const file of listFiles(SEEDERS_DIR, '.js')) {
-      logger.info(`Running seeder: ${file}`);
-      const seedFn = await importSeeder(file);
-      const result = await seedFn();
-      logger.info(`Seeded ${file} -> ${JSON.stringify(result)}`);
-    }
-  } finally {
-    await conn2.end();
-    await pool.end();
-  }
+  await pool.end();
 };
 
 const command = process.argv[2] || 'migrate';
 
+const fail = (e) => {
+  const hint = explainConnectionError(e);
+  logger.error(hint ? `${hint}\n${e.stack || e.message}` : e);
+  process.exit(1);
+};
+
 if (command === 'migrate') {
-  migrate().then(() => logger.info('Migration complete')).catch((e) => {
-    logger.error(e);
-    process.exit(1);
-  });
+  migrate()
+    .then(() => logger.info('Migration complete'))
+    .catch(fail);
 } else if (command === 'seed') {
-  seed().then(() => logger.info('Seeding complete')).catch((e) => {
-    logger.error(e);
-    process.exit(1);
-  });
+  seed()
+    .then(() => logger.info('Seeding complete'))
+    .catch(fail);
 } else if (command === 'init') {
   migrate()
     .then(() => seed())
     .then(() => logger.info('Database initialized'))
-    .catch((e) => {
-      logger.error(e);
-      process.exit(1);
-    });
+    .catch(fail);
 } else {
   logger.error(`Unknown command: ${command} (expected migrate | seed | init)`);
   process.exit(1);

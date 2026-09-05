@@ -30,6 +30,7 @@ export const MODULES = Object.freeze({
   RENTAL: 'rental',
   CONTRIBUTION: 'contribution',
   EXPENSE: 'expense',
+  SALARY: 'salary',
   INCOME: 'other income',
   TRANSACTION: 'transaction',
   REPORT: 'report',
@@ -63,6 +64,7 @@ export const TRANSACTION_TYPES = Object.freeze(['Income', 'Expense']);
 export const REFERENCE_TYPES = Object.freeze({
   PAYMENT: 'Payment',
   EXPENSE: 'Expense',
+  SALARY: 'Salary',
   OTHER_INCOME: 'Other Income',
   MEMBER_DUE: 'Member Due',
   INVOICE_ADJUSTMENT: 'Invoice Adjustment',

@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { AuthProvider } from "@/context/AuthContext";
 import { SettingsProvider } from "@/context/SettingsContext";
+import { AmountVisibilityProvider } from "@/context/AmountVisibilityContext";
 import { router } from "@/routes";
 
 const queryClient = new QueryClient({
@@ -27,6 +28,7 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <SettingsProvider>
+            <AmountVisibilityProvider>
             <RouterProvider router={router} />
             <Toaster
               position="top-right"
@@ -45,6 +47,7 @@ export default function App() {
                 error: { iconTheme: { primary: "#ef4444", secondary: "#fff" } },
               }}
             />
+            </AmountVisibilityProvider>
           </SettingsProvider>
         </AuthProvider>
       </ThemeProvider>

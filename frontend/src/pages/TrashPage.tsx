@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, Select, StatCard, confirmDialog } from "@/components/ui";
 import { useRestoreTrash, useTrash } from "@/hooks/queries";
 import { dateTimeColumns } from "@/utils/tableHelpers";
@@ -88,11 +87,6 @@ export default function TrashPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Trash"
-        subtitle="Soft-deleted records. Restore anything that was removed by mistake."
-      />
-
       <div className="grid gap-4 sm:grid-cols-2">
         <StatCard
           label="Items in trash"

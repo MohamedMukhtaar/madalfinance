@@ -3,7 +3,10 @@ import contributionRepo from '../repositories/contribution.repo.js';
 import memberRepo from '../repositories/member.repo.js';
 import customerRepo from '../repositories/customer.repo.js';
 import accountRepo from '../repositories/account.repo.js';
-import accountService from './account.service.js';
+import projectRepo from '../repositories/project.repo.js';
+import expenseRepo from '../repositories/expense.repo.js';
+import employeeRepo from '../repositories/employee.repo.js';
+import statementRepo from '../repositories/statement.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
 import settingsRepo from '../repositories/settings.repo.js';
 import exportJobRepo from '../repositories/exportJob.repo.js';
@@ -153,9 +156,10 @@ const REPORT_DEFINITIONS = {
     columns: [
       { header: 'Date', key: 'date' },
       { header: 'Time', key: 'time' },
-      { header: 'Description', key: 'description' },
-      { header: 'Due', key: 'due' },
-      { header: 'Paid', key: 'paid' },
+      { header: 'Type', key: 'type' },
+      { header: 'Reference', key: 'reference' },
+      { header: 'Debit', key: 'due' },
+      { header: 'Credit', key: 'paid' },
       { header: 'Loan', key: 'loan' },
       { header: 'Balance', key: 'balance' },
     ],
@@ -166,10 +170,75 @@ const REPORT_DEFINITIONS = {
     columns: [
       { header: 'Date', key: 'date' },
       { header: 'Time', key: 'time' },
-      { header: 'Description', key: 'description' },
+      { header: 'Type', key: 'type' },
+      { header: 'Reference', key: 'reference' },
       { header: 'Debit', key: 'debit' },
       { header: 'Credit', key: 'credit' },
       { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  projectStatement: {
+    title: 'Project Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Type', key: 'type' },
+      { header: 'Reference', key: 'reference' },
+      { header: 'Debit', key: 'debit' },
+      { header: 'Credit', key: 'credit' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  expenseStatement: {
+    title: 'Expense Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Type', key: 'type' },
+      { header: 'Reference', key: 'reference' },
+      { header: 'Debit', key: 'debit' },
+      { header: 'Credit', key: 'credit' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  salaryStatement: {
+    title: 'Salary Statement',
+    columns: [
+      { header: 'Date', key: 'date' },
+      { header: 'Time', key: 'time' },
+      { header: 'Type', key: 'type' },
+      { header: 'Reference', key: 'reference' },
+      { header: 'Debit', key: 'debit' },
+      { header: 'Credit', key: 'credit' },
+      { header: 'Balance', key: 'balance' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  employeeList: {
+    title: 'Employees',
+    columns: [
+      { header: 'Code', key: 'employee_code' },
+      { header: 'Name', key: 'full_name' },
+      { header: 'Phone', key: 'phone' },
+      { header: 'Gender', key: 'gender' },
+      { header: 'Job title', key: 'job_title' },
+      { header: 'Department', key: 'department' },
+      { header: 'Branch', key: 'branch' },
+      { header: 'Shift', key: 'shift' },
+      { header: 'Hire date', key: 'hire_date' },
+      { header: 'Basic salary', key: 'basic_salary' },
+      { header: 'Status', key: 'status' },
+    ],
+    build: (data) => data.rows ?? [],
+  },
+  employeeReport: {
+    title: 'Employee Report',
+    columns: [
+      { header: 'Field', key: 'label' },
+      { header: 'Value', key: 'value' },
     ],
     build: (data) => data.rows ?? [],
   },
@@ -195,155 +264,15 @@ const REPORT_DEFINITIONS = {
       { header: 'Date', key: 'date' },
       { header: 'Time', key: 'time' },
       { header: 'Type', key: 'type' },
-      { header: 'Description', key: 'description' },
+      { header: 'Reference', key: 'reference' },
       { header: 'Debit (in)', key: 'debit' },
       { header: 'Credit (out)', key: 'credit' },
+      { header: 'Loan', key: 'loan' },
       { header: 'Balance', key: 'balance' },
     ],
     build: (data) => data.rows ?? [],
   },
 };
-
-const periodLabel = (month, year) =>
-  dayjs(`${year}-${String(month).padStart(2, '0')}-01`).format('MMMM YYYY');
-
-const timeSortKey = (date, time) => dayjs(time ?? date).valueOf();
-
-const buildMemberStatementRows = (dues, payments, loanEntries = []) => {
-  const items = [];
-  for (const due of dues) {
-    const when = dayjs(due.generated_date);
-    items.push({
-      sort: when.valueOf(),
-      tie: 0,
-      date: when.format('YYYY-MM-DD'),
-      time: due.generated_date,
-      description: `Contribution due — ${periodLabel(due.month, due.year)}`,
-      due: Number(due.amount),
-      paid: 0,
-      loan: 0,
-    });
-  }
-  for (const payment of payments) {
-    const when = dayjs(payment.paid_date);
-    items.push({
-      sort: when.valueOf(),
-      tie: 1,
-      date: when.format('YYYY-MM-DD'),
-      time: payment.created_at ?? payment.paid_date,
-      description: `Payment — ${periodLabel(payment.month, payment.year)}`,
-      due: 0,
-      paid: Number(payment.amount),
-      loan: 0,
-    });
-  }
-  for (const entry of loanEntries) {
-    const amt = Number(entry.amount);
-    if (!amt) continue;
-    const when = dayjs(entry.credit_date);
-    const isLoan = amt > 0;
-    items.push({
-      sort: when.valueOf(),
-      tie: isLoan ? 2 : 3,
-      date: when.format('YYYY-MM-DD'),
-      time: entry.created_at ?? entry.credit_date,
-      description: isLoan
-        ? entry.description?.trim() || 'Member loan'
-        : entry.description?.trim() || 'Loan repayment',
-      due: 0,
-      paid: isLoan ? 0 : Math.abs(amt),
-      loan: isLoan ? amt : 0,
-    });
-  }
-  items.sort((a, b) => {
-    const ta = timeSortKey(a.date, a.time);
-    const tb = timeSortKey(b.date, b.time);
-    return ta !== tb ? ta - tb : a.tie - b.tie;
-  });
-  let balance = 0;
-  const rows = items.map((item) => {
-    balance = Math.round((balance + item.due + item.loan - item.paid) * 100) / 100;
-    return {
-      date: dayjs(item.date).format('DD MMM YYYY'),
-      time: dayjs(item.time).format('HH:mm'),
-      description: item.description,
-      due: item.due,
-      paid: item.paid,
-      loan: item.loan,
-      balance,
-    };
-  });
-  return rows;
-};
-
-const inDateRange = (dateStr, fromDate, toDate) => {
-  const d = String(dateStr ?? '').slice(0, 10);
-  if (fromDate && d < fromDate) return false;
-  if (toDate && d > toDate) return false;
-  return true;
-};
-
-const buildCustomerStatementRows = (invoices, payments, { fromDate, toDate } = {}) => {
-  const items = [];
-  for (const inv of invoices) {
-    if (!inDateRange(inv.invoice_date, fromDate, toDate)) continue;
-    const when = dayjs(inv.invoice_date);
-    items.push({
-      sort: when.valueOf(),
-      date: when.format('YYYY-MM-DD'),
-      time: when.format('HH:mm'),
-      description: `Invoice ${inv.invoice_number}`,
-      debit: Number(inv.total_amount ?? 0),
-      credit: 0,
-    });
-  }
-  for (const pmt of payments) {
-    if (!inDateRange(pmt.payment_date, fromDate, toDate)) continue;
-    const when = dayjs(pmt.payment_date);
-    items.push({
-      sort: when.valueOf(),
-      date: when.format('YYYY-MM-DD'),
-      time: when.format('HH:mm'),
-      description: `Payment ${pmt.payment_number}`,
-      debit: 0,
-      credit: Number(pmt.amount ?? 0),
-    });
-  }
-  items.sort((a, b) => a.sort - b.sort || a.description.localeCompare(b.description));
-  let balance = 0;
-  const rows = items.map((item) => {
-    balance = Math.round((balance + item.debit - item.credit) * 100) / 100;
-    return {
-      date: item.date,
-      time: item.time,
-      description: item.description,
-      debit: item.debit,
-      credit: item.credit,
-      balance,
-    };
-  });
-  return rows;
-};
-
-const movementTypeLabel = (type) => {
-  if (type === 'income') return 'Receipt';
-  if (type === 'expense') return 'Payment';
-  if (type === 'loan_out') return 'Loan out';
-  if (type === 'loan_repay') return 'Loan repayment';
-  if (type === 'opening') return 'Opening';
-  return String(type ?? 'Movement');
-};
-
-const buildAccountStatementRows = (movements) =>
-  (movements ?? []).map((m) => ({
-    date: dayjs(m.movement_date).format('YYYY-MM-DD'),
-    time: dayjs(m.movement_date).format('HH:mm'),
-    type: movementTypeLabel(m.movement_type),
-    description: m.description || m.reference_label || '—',
-    debit: Number(m.debit ?? 0),
-    credit: Number(m.credit ?? 0),
-    balance: Number(m.balance ?? 0),
-  }));
 
 export const reportService = {
   async incomeStatement(fromDate, toDate) {
@@ -449,25 +378,12 @@ export const reportService = {
     const member = await memberRepo.findMemberById(null, memberId);
     if (!member) throw ApiError.notFound('Member not found');
 
-    const [dues, payments, outstanding, credits, creditBalance] = await Promise.all([
-      contributionRepo.memberStatementDues(null, memberId, { fromDate, toDate }),
-      contributionRepo.memberStatementPayments(null, memberId, { fromDate, toDate }),
+    const [rows, outstanding, creditBalance] = await Promise.all([
+      statementRepo.member(null, memberId, fromDate, toDate),
       contributionRepo.memberOutstanding(null, memberId),
-      contributionRepo.memberCreditLedger(null, memberId, { fromDate, toDate }),
       contributionRepo.getMemberCreditBalance(null, memberId),
     ]);
-
-    const rows = buildMemberStatementRows(dues, payments, credits);
-    const duesCharged = dues.reduce((sum, d) => sum + Number(d.amount ?? 0), 0);
-    const loansGranted = credits
-      .filter((e) => Number(e.amount) > 0)
-      .reduce((sum, e) => sum + Number(e.amount), 0);
-    const contributionsPaid = payments.reduce((sum, p) => sum + Number(p.amount ?? 0), 0);
-    const loanRepaid = credits
-      .filter((e) => Number(e.amount) < 0)
-      .reduce((sum, e) => sum + Math.abs(Number(e.amount)), 0);
-    const paid = contributionsPaid + loanRepaid;
-    const closingBalance = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+    const fnTotals = statementRepo.totalsFromRows(rows);
 
     return {
       member: {
@@ -481,12 +397,12 @@ export const reportService = {
         credit_balance: creditBalance,
       },
       totals: {
-        charged: duesCharged,
-        loans: loansGranted,
-        paid,
+        charged: fnTotals.debit,
+        loans: fnTotals.loan,
+        paid: fnTotals.credit,
         outstanding,
         loan_balance: creditBalance,
-        closing_balance: closingBalance,
+        closing_balance: fnTotals.closing_balance,
         credit_balance: creditBalance,
       },
       rows,
@@ -497,16 +413,8 @@ export const reportService = {
     const customer = await customerRepo.findById(null, customerId);
     if (!customer) throw ApiError.notFound('Customer not found');
 
-    const [invoices, payments] = await Promise.all([
-      customerRepo.statementInvoices(null, customerId),
-      customerRepo.statementPayments(null, customerId),
-    ]);
-    const rows = buildCustomerStatementRows(invoices, payments, { fromDate, toDate });
-    const filteredInvoices = invoices.filter((i) => inDateRange(i.invoice_date, fromDate, toDate));
-    const invoiced = filteredInvoices.reduce((sum, i) => sum + Number(i.total_amount ?? 0), 0);
-    const paid = filteredInvoices.reduce((sum, i) => sum + Number(i.paid_amount ?? 0), 0);
-    const outstanding = filteredInvoices.reduce((sum, i) => sum + Number(i.balance ?? 0), 0);
-    const closingBalance = rows.length ? Number(rows[rows.length - 1].balance) : 0;
+    const rows = await statementRepo.customer(null, customerId, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
 
     return {
       customer: {
@@ -517,8 +425,147 @@ export const reportService = {
         phone: customer.phone,
         email: customer.email,
       },
-      totals: { invoiced, paid, outstanding, closing_balance: closingBalance },
+      totals: {
+        invoiced: fnTotals.debit,
+        paid: fnTotals.credit,
+        outstanding: fnTotals.closing_balance,
+        closing_balance: fnTotals.closing_balance,
+      },
       rows,
+    };
+  },
+
+  async projectStatement(projectId, fromDate, toDate) {
+    const project = await projectRepo.findById(null, projectId);
+    if (!project) throw ApiError.notFound('Project not found');
+
+    const rows = await statementRepo.project(null, projectId, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
+
+    return {
+      project: {
+        project_id: project.project_id,
+        project_name: project.project_name,
+        project_code: project.project_code,
+        status: project.status,
+      },
+      totals: {
+        invoiced: fnTotals.debit,
+        paid: fnTotals.credit,
+        outstanding: fnTotals.closing_balance,
+        closing_balance: fnTotals.closing_balance,
+      },
+      rows,
+    };
+  },
+
+  async expenseStatement(expenseId, fromDate, toDate) {
+    const expense = await expenseRepo.findCategoryById(null, expenseId);
+    if (!expense) throw ApiError.notFound('Expense category not found');
+
+    const rows = await statementRepo.expense(null, expenseId, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
+
+    return {
+      expense: {
+        expense_id: expense.expense_id,
+        expense_name: expense.expense_name,
+        expense_code: expense.expense_code,
+      },
+      totals: {
+        charged: fnTotals.debit,
+        paid: fnTotals.credit,
+        outstanding: fnTotals.closing_balance,
+        closing_balance: fnTotals.closing_balance,
+      },
+      rows,
+    };
+  },
+
+  async salaryStatement(employeeId, fromDate, toDate) {
+    const employee = await employeeRepo.findById(null, employeeId);
+    if (!employee) throw ApiError.notFound('Employee not found');
+
+    const rows = await statementRepo.salary(null, employeeId, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
+
+    return {
+      employee: {
+        employee_id: employee.employee_id,
+        employee_code: employee.employee_code,
+        full_name: employee.full_name,
+        phone: employee.phone,
+        job_title: employee.job_title,
+      },
+      totals: {
+        charged: fnTotals.debit,
+        paid: fnTotals.credit,
+        outstanding: fnTotals.closing_balance,
+        closing_balance: fnTotals.closing_balance,
+      },
+      rows,
+    };
+  },
+
+  async employeeList(fromDate, toDate) {
+    const rows = await employeeRepo.list(null, {
+      offset: 0,
+      perPage: 500,
+      order: 'first_name ASC, last_name ASC',
+    });
+    const from = fromDate ? String(fromDate).slice(0, 10) : '';
+    const to = toDate ? String(toDate).slice(0, 10) : '';
+    const filtered = rows.filter((e) => {
+      const hire = e.hire_date instanceof Date
+        ? `${e.hire_date.getFullYear()}-${String(e.hire_date.getMonth() + 1).padStart(2, '0')}-${String(e.hire_date.getDate()).padStart(2, '0')}`
+        : String(e.hire_date ?? '').slice(0, 10);
+      if (from && hire < from) return false;
+      if (to && hire > to) return false;
+      return true;
+    });
+    return {
+      rows: filtered.map((e) => ({
+        employee_code: e.employee_code,
+        full_name: e.full_name,
+        phone: e.phone || '—',
+        gender: e.gender || '—',
+        job_title: e.job_title || '—',
+        department: e.department || '—',
+        branch: e.branch || '—',
+        shift: e.shift || '—',
+        hire_date: String(e.hire_date ?? '').slice(0, 10) || '—',
+        basic_salary: Number(e.basic_salary ?? 0).toFixed(2),
+        status: e.status,
+      })),
+    };
+  },
+
+  async employeeReport(employeeId) {
+    const employee = await employeeRepo.findById(null, employeeId);
+    if (!employee) throw ApiError.notFound('Employee not found');
+    const hire = employee.hire_date instanceof Date ? employee.hire_date : employee.hire_date ? new Date(employee.hire_date) : null;
+    const hireDate =
+      hire && !Number.isNaN(hire.getTime())
+        ? `${hire.getFullYear()}-${String(hire.getMonth() + 1).padStart(2, '0')}-${String(hire.getDate()).padStart(2, '0')}`
+        : '—';
+    return {
+      employee,
+      rows: [
+        { label: 'Code', value: employee.employee_code },
+        { label: 'Name', value: employee.full_name },
+        { label: 'Phone', value: employee.phone || '—' },
+        { label: 'Email', value: employee.email || '—' },
+        { label: 'Gender', value: employee.gender || '—' },
+        { label: 'Job title', value: employee.job_title || '—' },
+        { label: 'Department', value: employee.department || '—' },
+        { label: 'Branch', value: employee.branch || '—' },
+        { label: 'Shift', value: employee.shift || '—' },
+        { label: 'Hire date', value: hireDate },
+        { label: 'Basic salary', value: Number(employee.basic_salary ?? 0).toFixed(2) },
+        { label: 'Status', value: employee.status },
+        { label: 'Address', value: employee.address || '—' },
+        { label: 'Notes', value: employee.notes || '—' },
+      ],
     };
   },
 
@@ -529,16 +576,20 @@ export const reportService = {
   },
 
   async accountStatement(accId, fromDate, toDate) {
-    const { account, movements } = await accountService.statement(accId, { fromDate, toDate });
-    const rows = buildAccountStatementRows(movements);
-    const debits = rows.reduce((sum, r) => sum + Number(r.debit ?? 0), 0);
-    const credits = rows.reduce((sum, r) => sum + Number(r.credit ?? 0), 0);
+    const account = await accountRepo.findById(null, accId);
+    if (!account) throw ApiError.notFound('Account not found');
+
+    const rows = await statementRepo.account(null, accId, fromDate, toDate);
+    const fnTotals = statementRepo.totalsFromRows(rows);
+
     return {
       account,
       totals: {
-        debits,
-        credits,
+        debits: fnTotals.debit,
+        credits: fnTotals.credit,
+        loans: fnTotals.loan,
         balance: Number(account.balance ?? 0),
+        closing_balance: fnTotals.closing_balance,
       },
       rows,
     };
@@ -548,7 +599,7 @@ export const reportService = {
    * Generate a PDF or Excel export for a report kind.
    * Returns { filename, filePath }.
    */
-  async export(kind, { fromDate, toDate, months, batchId, memberId, customerId, accId }, format, userId, ip) {
+  async export(kind, { fromDate, toDate, months, batchId, memberId, customerId, accId, projectId, expenseId, employeeId }, format, userId, ip) {
     const def = REPORT_DEFINITIONS[kind];
     if (!def) throw ApiError.badRequest(`Unknown report kind '${kind}'`);
     if (!['pdf', 'xlsx'].includes(format)) throw ApiError.badRequest('Format must be pdf or xlsx');
@@ -609,6 +660,29 @@ export const reportService = {
       case 'accountStatement': {
         if (!accId) throw ApiError.badRequest('acc_id is required');
         data = await this.accountStatement(accId, fromDate, toDate);
+        break;
+      }
+      case 'projectStatement': {
+        if (!projectId) throw ApiError.badRequest('project_id is required');
+        data = await this.projectStatement(projectId, fromDate, toDate);
+        break;
+      }
+      case 'expenseStatement': {
+        if (!expenseId) throw ApiError.badRequest('expense_id is required');
+        data = await this.expenseStatement(expenseId, fromDate, toDate);
+        break;
+      }
+      case 'salaryStatement': {
+        if (!employeeId) throw ApiError.badRequest('employee_id is required');
+        data = await this.salaryStatement(employeeId, fromDate, toDate);
+        break;
+      }
+      case 'employeeList':
+        data = await this.employeeList(fromDate, toDate);
+        break;
+      case 'employeeReport': {
+        if (!employeeId) throw ApiError.badRequest('employee_id is required');
+        data = await this.employeeReport(employeeId);
         break;
       }
       default:
@@ -687,17 +761,19 @@ export const reportService = {
           ? rows.map((row) => ({
               date: row.date,
               time: row.time,
-              description: row.description,
+              type: row.type,
+              reference: row.reference,
               due: row.due > 0 ? row.due : '',
               paid: row.paid > 0 ? row.paid : '',
               loan: row.loan > 0 ? row.loan : '',
               balance: row.balance,
             }))
-          : kind === 'customerStatement'
+          : kind === 'customerStatement' || kind === 'projectStatement' || kind === 'expenseStatement' || kind === 'salaryStatement'
             ? rows.map((row) => ({
                 date: row.date,
                 time: row.time,
-                description: row.description,
+                type: row.type,
+                reference: row.reference,
                 debit: row.debit > 0 ? row.debit : '',
                 credit: row.credit > 0 ? row.credit : '',
                 balance: row.balance,
@@ -707,9 +783,10 @@ export const reportService = {
                   date: row.date,
                   time: row.time,
                   type: row.type,
-                  description: row.description,
+                  reference: row.reference,
                   debit: row.debit > 0 ? row.debit : '',
                   credit: row.credit > 0 ? row.credit : '',
+                  loan: row.loan > 0 ? row.loan : '',
                   balance: row.balance,
                 }))
               : kind === 'cashFlow'

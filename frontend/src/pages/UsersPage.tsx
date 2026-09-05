@@ -5,6 +5,7 @@ import { Plus, Pencil, Shield, Trash2, Users, UserCheck, UserX } from "lucide-re
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, Button, Modal, ErrorState, Tabs, promptDeleteReason, confirmDialog } from "@/components/ui";
+import type { DropdownItem } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
 import {
   useCreateRole,
@@ -173,12 +174,20 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
     }
 
     createMutation.mutate(
-      { ...payload, username: values.username.trim(), password: values.password },
+      {
+        username: values.username.trim(),
+        password: values.password,
+        fullName: values.fullName.trim(),
+        role: values.role,
+        phone: values.phone.trim() || undefined,
+        email: values.email.trim() || undefined,
+        status: values.status,
+      },
       { onSuccess: closeModal }
     );
   });
 
-  const columns = useMemo<ColumnDef<User, any>[]>(
+  const columns = useMemo<ColumnDef<User>[]>(
     () => [
       userColumnHelper.accessor("username", {
         header: "Username",
@@ -255,7 +264,9 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
         )}
         actions={(row) => {
           const isSelf = row.userId === currentUser?.userId;
-          const actions = [{ label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(row) }];
+          const actions: DropdownItem[] = [
+            { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(row) },
+          ];
 
           if (!isSelf) {
             if (row.status === "active") {
@@ -414,7 +425,7 @@ function RolesTab() {
     createMutation.mutate({ roleName }, { onSuccess: closeModal });
   });
 
-  const columns = useMemo<ColumnDef<AppRoleRecord, any>[]>(
+  const columns = useMemo<ColumnDef<AppRoleRecord>[]>(
     () => [
       roleColumnHelper.accessor("roleName", {
         header: "Role",
@@ -467,7 +478,9 @@ function RolesTab() {
           </div>
         )}
         actions={(row) => {
-          const actions = [{ label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(row) }];
+          const actions: DropdownItem[] = [
+            { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(row) },
+          ];
           const isProtected = PROTECTED_ROLES.has(row.roleName);
           const hasUsers = (row.userCount ?? 0) > 0;
 

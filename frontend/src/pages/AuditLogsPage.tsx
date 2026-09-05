@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { ClipboardList } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, DateRangeFilter, type DateFilterMode, ErrorState, Select, StatCard } from "@/components/ui";
 import { useAuditLogs } from "@/hooks/queries";
 import { addDays, formatDate, formatTime, toDateInput } from "@/utils/format";
@@ -132,11 +131,6 @@ export default function AuditLogsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Audit Logs"
-        subtitle="Super Admin only — every create, update, delete, login, and export is recorded with who did it."
-      />
-
       <StatCard
         label="Entries in range"
         value={String(totalCount)}

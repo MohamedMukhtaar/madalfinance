@@ -14,6 +14,12 @@ import type {
   RentalBilling,
   User,
   AuditLog,
+  Employee,
+  EmployeeOrgKind,
+  EmployeeOrgRecord,
+  OtherIncome,
+  SalaryCharge,
+  SalaryPayment,
 } from "@/types";
 
 /**
@@ -59,6 +65,10 @@ const toQuery = (params?: ListParams): Record<string, unknown> | undefined => {
     customerId: "customer_id",
     memberId: "member_id",
     accId: "acc_id",
+    projectId: "project_id",
+    expenseId: "expense_id",
+    employeeId: "employee_id",
+    salaryPeriod: "salary_period",
     batchId: "batch_id",
     projectType: "project_type",
     projectTypeId: "project_type_id",
@@ -285,6 +295,7 @@ export const financeService = {
     phone?: string;
     email?: string;
     position?: string;
+    jobTitleId?: number | null;
     defaultMonthlyDue?: number;
     joinedDate?: string;
   }): Promise<Member> {
@@ -299,6 +310,7 @@ export const financeService = {
       phone: string;
       email: string;
       position: string;
+      jobTitleId: number | null;
       defaultMonthlyDue: number;
       status: string;
     }>
@@ -314,6 +326,146 @@ export const financeService = {
 
   async deactivateMember(id: number, reason: string): Promise<void> {
     await authApi.delete(`/users/members/${id}`, { reason });
+  },
+
+  /* ------------------------------ EMPLOYEES / SALARY ------------------------------ */
+  async employees(params?: ListParams): Promise<Paged<Employee>> {
+    const res = await authApi.get<Employee[]>("/employees", toQuery(params));
+    return asPaged(res);
+  },
+
+  async createEmployee(data: {
+    firstName: string;
+    lastName?: string;
+    gender?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    jobTitle?: string;
+    department?: string;
+    jobTitleId?: number | null;
+    departmentId?: number | null;
+    branchId?: number | null;
+    shiftId?: number | null;
+    hireDate?: string;
+    basicSalary?: number;
+    notes?: string;
+  }): Promise<Employee> {
+    const res = await authApi.post<Employee>("/employees", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateEmployee(
+    id: number,
+    patch: Partial<{
+      firstName: string;
+      lastName: string;
+      gender: string;
+      phone: string;
+      email: string;
+      address: string;
+      jobTitle: string;
+      department: string;
+      jobTitleId: number | null;
+      departmentId: number | null;
+      branchId: number | null;
+      shiftId: number | null;
+      hireDate: string;
+      basicSalary: number;
+      status: string;
+      notes: string;
+    }>
+  ): Promise<Employee> {
+    const res = await authApi.put<Employee>(`/employees/${id}`, toSnakeCase(patch));
+    return unwrap(res);
+  },
+
+  async deleteEmployee(id: number): Promise<void> {
+    await authApi.delete(`/employees/${id}`);
+  },
+
+  async employeeOrg(kind: EmployeeOrgKind): Promise<EmployeeOrgRecord[]> {
+    const res = await authApi.get<EmployeeOrgRecord[]>(`/employees/${kind}`);
+    return unwrap(res);
+  },
+
+  async createEmployeeOrg(
+    kind: EmployeeOrgKind,
+    data: { name: string; notes?: string; status?: string; startTime?: string; endTime?: string }
+  ): Promise<EmployeeOrgRecord> {
+    const res = await authApi.post<EmployeeOrgRecord>(`/employees/${kind}`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateEmployeeOrg(
+    kind: EmployeeOrgKind,
+    id: number,
+    data: Partial<{ name: string; notes: string; status: string; startTime: string; endTime: string }>
+  ): Promise<EmployeeOrgRecord> {
+    const res = await authApi.put<EmployeeOrgRecord>(`/employees/${kind}/${id}`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async deleteEmployeeOrg(kind: EmployeeOrgKind, id: number): Promise<void> {
+    await authApi.delete(`/employees/${kind}/${id}`);
+  },
+
+  async salaryCharges(params?: ListParams): Promise<Paged<SalaryCharge>> {
+    const res = await authApi.get<SalaryCharge[]>("/salary/charges", toQuery(params));
+    return asPaged(res);
+  },
+
+  async createSalaryCharge(data: {
+    employeeId: number;
+    year?: number;
+    month?: number;
+    salaryPeriod?: string;
+    basicSalary?: number;
+    allowance?: number;
+    deduction?: number;
+    notes?: string;
+  }): Promise<SalaryCharge> {
+    const res = await authApi.post<SalaryCharge>("/salary/charges", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async generateSalaryCharges(data: { year: number; month: number }): Promise<{
+    created: number;
+    skipped: number;
+    period: string;
+    charges: SalaryCharge[];
+  }> {
+    const res = await authApi.post<{
+      created: number;
+      skipped: number;
+      period: string;
+      charges: SalaryCharge[];
+    }>("/salary/charges/generate", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async deleteSalaryCharge(id: number): Promise<void> {
+    await authApi.delete(`/salary/charges/${id}`);
+  },
+
+  async paySalaryCharge(
+    id: number,
+    data: {
+      amount: number;
+      accId?: number;
+      paymentMethod?: string;
+      paymentDate?: string;
+      referenceNumber?: string;
+      notes?: string;
+    }
+  ): Promise<SalaryPayment> {
+    const res = await authApi.post<SalaryPayment>(`/salary/charges/${id}/pay`, toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async salaryPayments(params?: ListParams): Promise<Paged<SalaryPayment>> {
+    const res = await authApi.get<SalaryPayment[]>("/salary/payments", toQuery(params));
+    return asPaged(res);
   },
 
   /** Public team for login page (no auth). */
@@ -350,8 +502,11 @@ export const financeService = {
     await authApi.delete(`/customers/${id}`, { reason });
   },
 
-  async customerStatement(id: number) {
-    const res = await authApi.get<Record<string, unknown>>(`/customers/${id}/statement`);
+  async customerStatement(id: number, params?: ListParams): Promise<import("@/types").CustomerStatement> {
+    const res = await authApi.get<import("@/types").CustomerStatement>(
+      `/customers/${id}/statement`,
+      toQuery(params)
+    );
     return unwrap(res);
   },
 
@@ -399,6 +554,34 @@ export const financeService = {
 
   async uploadProjectAttachment(id: number, file: File, onProgress?: (p: number) => void): Promise<Project> {
     return this.upload<Project>(`/projects/${id}/attachment`, file, onProgress);
+  },
+
+  /* ------------------------------ PROJECT TEMPLATES ------------------------------ */
+  async projectTemplates(params?: ListParams): Promise<import("@/types").ProjectTemplate[]> {
+    const res = await authApi.get<import("@/types").ProjectTemplate[]>("/projects/templates", toQuery(params));
+    return unwrap(res);
+  },
+
+  async createProjectTemplate(data: Record<string, unknown>): Promise<import("@/types").ProjectTemplate> {
+    const res = await authApi.post<import("@/types").ProjectTemplate>("/projects/templates", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async updateProjectTemplate(id: number, patch: Record<string, unknown>): Promise<import("@/types").ProjectTemplate> {
+    const res = await authApi.put<import("@/types").ProjectTemplate>(`/projects/templates/${id}`, toSnakeCase(patch));
+    return unwrap(res);
+  },
+
+  async deleteProjectTemplate(id: number): Promise<void> {
+    await authApi.delete(`/projects/templates/${id}`);
+  },
+
+  async uploadProjectTemplateLogo(
+    id: number,
+    file: File,
+    onProgress?: (p: number) => void
+  ): Promise<import("@/types").ProjectTemplate> {
+    return this.upload<import("@/types").ProjectTemplate>(`/projects/templates/${id}/logo`, file, onProgress);
   },
 
   /* ------------------------------ CONTRACTS ------------------------------ */
@@ -715,16 +898,30 @@ export const financeService = {
   },
 
   /* ------------------------------ INCOME ------------------------------ */
-  async income(params?: ListParams): Promise<Paged<Record<string, unknown>>> {
-    const res = await authApi.get<Record<string, unknown>[]>("/income", toQuery(params));
+  async income(params?: ListParams): Promise<Paged<OtherIncome>> {
+    const res = await authApi.get<OtherIncome[]>("/income", toQuery(params));
     return asPaged(res);
   },
 
-  async incomeCategories(): Promise<Array<{ id: number; name: string }>> {
-    const res = await authApi.get<Array<{ incomeCategoryId: number; categoryName: string }>>(
-      "/income/categories"
-    );
-    return unwrap(res).map((c) => ({ id: c.incomeCategoryId, name: c.categoryName }));
+  async incomeCategories(): Promise<Array<{ name: string }>> {
+    const res = await authApi.get<Array<{ categoryName: string }>>("/income/categories");
+    return (unwrap(res) ?? []).map((c) => ({ name: c.categoryName })).filter((c) => c.name);
+  },
+
+  async createIncome(data: {
+    categoryName?: string;
+    description?: string;
+    amount: number;
+    incomeDate: string;
+    accId?: number;
+    notes?: string;
+  }): Promise<OtherIncome> {
+    const res = await authApi.post<OtherIncome>("/income", toSnakeCase(data));
+    return unwrap(res);
+  },
+
+  async deleteIncome(id: number, reason: string): Promise<void> {
+    await authApi.delete(`/income/${id}`, { reason });
   },
 
   /* ------------------------------ CONTRIBUTIONS ------------------------------ */
@@ -886,6 +1083,31 @@ export const financeService = {
 
   async memberStatement(params: ListParams & { memberId: number }): Promise<import("@/types").MemberStatement> {
     const res = await authApi.get<import("@/types").MemberStatement>("/reports/member-statement", toQuery(params));
+    return unwrap(res);
+  },
+
+  async reportCustomerStatement(
+    params: ListParams & { customerId: number }
+  ): Promise<import("@/types").CustomerStatement> {
+    const res = await authApi.get<import("@/types").CustomerStatement>(
+      "/reports/customer-statement",
+      toQuery(params)
+    );
+    return unwrap(res);
+  },
+
+  async projectStatement(params: ListParams & { projectId: number }): Promise<import("@/types").ProjectStatement> {
+    const res = await authApi.get<import("@/types").ProjectStatement>("/reports/project-statement", toQuery(params));
+    return unwrap(res);
+  },
+
+  async expenseStatement(params: ListParams & { expenseId: number }): Promise<import("@/types").ExpenseStatement> {
+    const res = await authApi.get<import("@/types").ExpenseStatement>("/reports/expense-statement", toQuery(params));
+    return unwrap(res);
+  },
+
+  async salaryStatement(params: ListParams & { employeeId: number }): Promise<import("@/types").SalaryStatement> {
+    const res = await authApi.get<import("@/types").SalaryStatement>("/reports/salary-statement", toQuery(params));
     return unwrap(res);
   },
 

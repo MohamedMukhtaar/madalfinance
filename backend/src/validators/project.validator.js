@@ -1,19 +1,17 @@
 import { body } from 'express-validator';
 
-const projectTypeRule = body('project_type')
-  .trim()
-  .notEmpty()
-  .withMessage('Project type is required')
-  .isIn(['One Time', 'Rental'])
-  .withMessage('Project type must be One Time or Rental');
-
 export const createProjectValidator = [
   body('customer_id').isInt({ min: 1 }).withMessage('Valid customer is required'),
-  projectTypeRule,
-  body('project_name').trim().notEmpty().withMessage('Project name is required').isLength({ max: 150 }),
+  body('template_id').optional({ values: 'null' }).isInt({ min: 1 }).withMessage('Valid registered project is required'),
+  body('project_type')
+    .optional({ checkFalsy: true })
+    .isIn(['One Time', 'Rental'])
+    .withMessage('Project type must be One Time or Rental'),
+  body('project_name').optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
   body('project_price').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Valid project price is required'),
   body('monthly_amount').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Valid monthly rent is required'),
   body('setup_fee').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Valid setup fee is required'),
+  body('discount').optional({ values: 'null' }).isFloat({ min: 0 }).withMessage('Discount cannot be negative'),
   body('billing_day').optional({ values: 'null' }).isInt({ min: 1, max: 28 }).withMessage('Billing day must be 1–28'),
   body('description').optional().trim().isLength({ max: 500 }),
   body('start_date').optional({ values: 'null' }).isISO8601().withMessage('Invalid start date'),
@@ -23,7 +21,10 @@ export const createProjectValidator = [
     .isIn(['Pending', 'In Progress', 'Completed', 'Cancelled'])
     .withMessage('Invalid project status'),
   body().custom((_, { req }) => {
+    if (req.body.template_id) return true;
     const type = req.body.project_type;
+    if (!type) throw new Error('Select a registered project');
+    if (!String(req.body.project_name || '').trim()) throw new Error('Project name is required');
     if (type === 'One Time') {
       const price = Number(req.body.project_price);
       if (!Number.isFinite(price) || price < 0) {

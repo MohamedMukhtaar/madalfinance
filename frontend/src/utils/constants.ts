@@ -12,14 +12,13 @@ import {
   Settings,
   Wallet,
   Tags,
-  PieChart,
-  ScrollText,
-  Building2,
-  Shield,
-  Trash2,
-  Activity,
+  Clock,
   Landmark,
   ClipboardList,
+  Building2,
+  Briefcase,
+  Banknote,
+  Shield,
 } from "lucide-react";
 
 export interface NavChild {
@@ -59,12 +58,25 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Projects",
-    path: "/projects/customers",
+    path: "/projects",
     icon: FolderKanban,
     badgeKey: "projects",
   },
   { label: "Payments", path: "/payments", icon: CreditCard },
   { label: "Accounts", path: "/accounts", icon: Landmark },
+  {
+    label: "Employees",
+    icon: Briefcase,
+    children: [
+      { label: "Employees", path: "/employees", icon: Users },
+      { label: "Departments", path: "/employees/departments", icon: Building2 },
+      { label: "Titles", path: "/employees/titles", icon: Tags },
+      { label: "Branches", path: "/employees/branches", icon: Landmark },
+      { label: "Shifts", path: "/employees/shifts", icon: Clock },
+      { label: "Salary Charges", path: "/salary/charges", icon: Receipt },
+      { label: "Salary Payments", path: "/salary/payments", icon: Banknote },
+    ],
+  },
   {
     label: "Expenses",
     icon: Wallet,
@@ -75,23 +87,10 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   { label: "Transactions", path: "/transactions", icon: ArrowLeftRight },
-  {
-    label: "Reports",
-    icon: BarChart3,
-    children: [
-      { label: "Customer Reports", path: "/reports/customers", icon: Building2 },
-      { label: "Statements", path: "/reports/statements", icon: ScrollText },
-      { label: "Account Reports", path: "/reports/accounts", icon: Landmark },
-      { label: "Expense Reports", path: "/reports/expenses", icon: PieChart },
-      { label: "Member Reports", path: "/reports/members", icon: UsersRound },
-      { label: "Income Statement", path: "/reports/income-statement", icon: ScrollText },
-      { label: "Cash Flow", path: "/reports/cash-flow", icon: Activity },
-    ],
-  },
-  { label: "Settings", path: "/settings", icon: Settings },
+  { label: "Reports", path: "/reports", icon: BarChart3 },
   { label: "Users & Roles", path: "/users", icon: Shield, superAdminOnly: true },
-  { label: "Audit Logs", path: "/audit-logs", icon: ClipboardList, superAdminOnly: true },
-  { label: "Trash", path: "/trash", icon: Trash2, superAdminOnly: true },
+  { label: "Settings", path: "/settings", icon: Settings },
+  { label: "Logs", path: "/logs", icon: ClipboardList, superAdminOnly: true },
 ];
 
 export const PAYMENT_METHODS = [

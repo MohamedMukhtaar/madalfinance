@@ -44,10 +44,12 @@ export const invoiceService = {
       ),
     ]);
     const customer = await customerRepo.findById(null, invoice.customer_id);
+    const project = invoice.project_id ? await projectRepo.findById(null, invoice.project_id) : null;
     return {
       ...invoice,
       customer_name: customer?.customer_name ?? '',
       customer_company: customer?.company_name ?? '',
+      project_name: project?.project_name ?? '',
       items,
       attachments,
       allocations,

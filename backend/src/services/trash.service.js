@@ -10,6 +10,7 @@ import incomeRepo from '../repositories/income.repo.js';
 import memberRepo from '../repositories/member.repo.js';
 import userRepo from '../repositories/user.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
+import accountService from './account.service.js';
 import auditService from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
@@ -78,6 +79,7 @@ const RESTORE_MAP = {
     restore: async (conn, id, userId) => {
       const income = await incomeRepo.findByIdIncludingDeleted(conn, id);
       if (!income) throw ApiError.notFound('Income record not found');
+      const accId = income.acc_id || income.account_id;
       await incomeRepo.restore(conn, id);
       await transactionRepo.create(conn, {
         transaction_date: dayjs().format('YYYY-MM-DD'),
@@ -87,8 +89,12 @@ const RESTORE_MAP = {
         description: `Restored income ${income.income_id} (${income.description || ''})`,
         income: Number(income.amount),
         expense: 0,
+        acc_id: accId,
         created_by: userId,
       });
+      if (accId) {
+        await accountService.credit(conn, accId, Number(income.amount));
+      }
     },
   },
   member: {

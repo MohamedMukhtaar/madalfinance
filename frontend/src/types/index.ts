@@ -37,9 +37,12 @@ export interface User {
 
 export interface Member {
   memberId: number;
+  memberCode?: string;
   userId: number;
   memberName: string;
   position: string | null;
+  jobTitleId?: number | null;
+  phone?: string | null;
   creditBalance?: number;
   joinedDate: string;
   defaultMonthlyDue: number;
@@ -48,6 +51,97 @@ export interface Member {
   avatarPath?: string | null;
   avatarName?: string | null;
   avatarUrl?: string | null;
+}
+
+export type ChargeStatus = "Pending" | "Partial" | "Paid" | "Cancelled";
+
+export interface Employee {
+  employeeId: number;
+  employeeCode: string;
+  firstName: string;
+  lastName?: string | null;
+  fullName: string;
+  gender?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  jobTitle?: string | null;
+  department?: string | null;
+  branch?: string | null;
+  shift?: string | null;
+  shiftStart?: string | null;
+  shiftEnd?: string | null;
+  jobTitleId?: number | null;
+  departmentId?: number | null;
+  branchId?: number | null;
+  shiftId?: number | null;
+  hireDate: string;
+  basicSalary: number;
+  status: "active" | "inactive";
+  notes?: string | null;
+  createdAt?: string;
+}
+
+export type EmployeeOrgKind = "departments" | "titles" | "branches" | "shifts";
+
+export interface EmployeeOrgRecord {
+  departmentId?: number;
+  jobTitleId?: number;
+  branchId?: number;
+  shiftId?: number;
+  departmentName?: string;
+  titleName?: string;
+  branchName?: string;
+  shiftName?: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  notes?: string | null;
+  status: "active" | "inactive";
+  employeeCount?: number;
+  createdAt?: string;
+}
+
+export interface SalaryCharge {
+  salaryChargeId: number;
+  chargeNumber: string;
+  employeeId: number;
+  fullName: string;
+  employeeCode?: string;
+  jobTitle?: string | null;
+  department?: string | null;
+  chargeDate: string;
+  salaryPeriod: string;
+  basicSalary: number;
+  allowance: number;
+  deduction: number;
+  netSalary: number;
+  paidAmount: number;
+  balance: number;
+  status: ChargeStatus;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  createdAt?: string;
+}
+
+export interface SalaryPayment {
+  salaryPaymentId: number;
+  paymentNumber: string;
+  salaryChargeId: number;
+  employeeId: number;
+  fullName: string;
+  employeeCode?: string;
+  chargeNumber?: string;
+  salaryPeriod?: string;
+  accId: number;
+  institution?: string | null;
+  number?: string | null;
+  paymentDate: string;
+  amount: number;
+  paymentMethod: string;
+  referenceNumber?: string | null;
+  notes?: string | null;
+  status: string;
+  createdAt?: string;
 }
 
 export interface Customer {
@@ -69,14 +163,33 @@ export interface Customer {
 
 export type ProjectStatus = "Pending" | "In Progress" | "Completed" | "Cancelled";
 
+export interface ProjectTemplate {
+  templateId: number;
+  templateName: string;
+  projectTypeId: number;
+  projectType: string;
+  description?: string | null;
+  projectPrice: number;
+  monthlyAmount: number;
+  setupFee: number;
+  billingDay: number;
+  status: string;
+  customerCount?: number;
+  logoPath?: string | null;
+  logoFileName?: string | null;
+}
+
 export interface Project {
   projectId: number;
   customerId: number;
+  templateId?: number | null;
+  templateName?: string | null;
   projectTypeId?: number;
   projectType: string;
   projectName: string;
   description?: string | null;
   projectPrice: number;
+  discount?: number;
   startDate: string;
   createdAt?: string;
   expectedFinish: string | null;
@@ -164,6 +277,7 @@ export interface Invoice {
   customerName: string;
   projectId?: number | null;
   projectName?: string;
+  firstItemDescription?: string | null;
   contractId?: number | null;
   invoiceDate: string;
   createdAt?: string;
@@ -225,15 +339,25 @@ export interface Payment {
 
 export type DueStatus = "Pending" | "Partial" | "Paid";
 
-export interface MemberStatementRow {
+/** Row from PostgreSQL statement functions (Date | Time | Type | Reference | Debit | Credit | Loan | Balance). */
+export interface StatementRow {
+  id?: number;
+  name?: string;
+  phone?: string | null;
   date: string;
   time: string;
-  description: string;
+  type: string;
+  reference: string;
+  debit: number;
+  credit: number;
+  loan: number;
   due: number;
   paid: number;
-  loan: number;
   balance: number;
+  description?: string;
 }
+
+export interface MemberStatementRow extends StatementRow {}
 
 export interface MemberStatement {
   member: {
@@ -254,6 +378,72 @@ export interface MemberStatement {
     closingBalance?: number;
   };
   rows: MemberStatementRow[];
+}
+
+export interface CustomerStatement {
+  customer: {
+    customerId: number;
+    customerName: string;
+    customerCode?: string;
+    companyName?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  };
+  totals: {
+    invoiced: number;
+    paid: number;
+    outstanding: number;
+    closingBalance?: number;
+  };
+  rows: StatementRow[];
+}
+
+export interface ProjectStatement {
+  project: {
+    projectId: number;
+    projectName: string;
+    projectCode?: string;
+    status?: string;
+  };
+  totals: {
+    invoiced: number;
+    paid: number;
+    outstanding: number;
+    closingBalance?: number;
+  };
+  rows: StatementRow[];
+}
+
+export interface ExpenseStatement {
+  expense: {
+    expenseId: number;
+    expenseName: string;
+    expenseCode?: string;
+  };
+  totals: {
+    charged: number;
+    paid: number;
+    outstanding: number;
+    closingBalance?: number;
+  };
+  rows: StatementRow[];
+}
+
+export interface SalaryStatement {
+  employee: {
+    employeeId: number;
+    employeeCode?: string;
+    fullName: string;
+    phone?: string | null;
+    jobTitle?: string | null;
+  };
+  totals: {
+    charged: number;
+    paid: number;
+    outstanding: number;
+    closingBalance?: number;
+  };
+  rows: StatementRow[];
 }
 
 export interface MemberDue {
@@ -315,7 +505,7 @@ export interface AccountTransfer {
 
 export interface AccountMovement {
   movementDate: string;
-  movementType: "income" | "expense" | "transfer_in" | "transfer_out" | "loan_out" | "loan_repay" | "opening";
+  movementType: string;
   amount: number;
   referenceLabel: string;
   description: string;
@@ -323,6 +513,8 @@ export interface AccountMovement {
   debit: number;
   /** Cash out (payment) — decreases account balance */
   credit: number;
+  loan?: number;
+  time?: string;
   balance: number;
 }
 
@@ -346,12 +538,14 @@ export interface Expense {
 
 export interface OtherIncome {
   incomeId: number;
-  categoryId: number;
   categoryName: string;
-  description: string;
+  description?: string | null;
   amount: number;
   incomeDate: string;
-  receivedBy?: string | null;
+  accId?: number | null;
+  institution?: string | null;
+  number?: string | null;
+  receivedBy?: number | null;
   notes?: string | null;
 }
 

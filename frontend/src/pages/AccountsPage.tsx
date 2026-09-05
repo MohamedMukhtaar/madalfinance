@@ -2,12 +2,13 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { ArrowLeftRight, Landmark, Plus, Star } from "lucide-react";
+import { ArrowLeftRight, Landmark, Plus, Star, TrendingUp } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Modal, StatCard, StatCardsGrid, Badge, Tabs, MonthNavigator } from "@/components/ui";
+import { Modal, StatCard, StatCardsGrid, Badge, Tabs, DateRangeFilter, type DateFilterMode } from "@/components/ui";
+import { AmountVisibilityToggle } from "@/context/AmountVisibilityContext";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Select } from "@/components/ui/FormField";
 import {
@@ -18,22 +19,25 @@ import {
   useAccountTransfers,
 } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
-import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { formatCurrency, todayISO, formatAccountOptionLabel } from "@/utils/format";
 import { dateTimeColumns } from "@/utils/tableHelpers";
-import { matchesMonth } from "@/utils/monthFilter";
+import { matchesDateFilter } from "@/utils/dateFilter";
 import type { Account, AccountTransfer } from "@/types";
+import { OtherIncomePanel } from "@/pages/IncomePage";
 
-type Tab = "list" | "transfer";
+type Tab = "list" | "transfer" | "income";
 
 const transferHelper = createColumnHelper<AccountTransfer>();
 
 export default function AccountsPage() {
   const { tab: tabParam } = useParams();
   const navigate = useNavigate();
-  const tab: Tab = tabParam === "transfer" ? "transfer" : "list";
+  const tab: Tab = tabParam === "transfer" ? "transfer" : tabParam === "income" ? "income" : "list";
   const { currency } = useSettings();
-  const { month, setMonth } = useSelectedMonth();
+  const [dateMode, setDateMode] = useState<DateFilterMode>("all");
+  const [day, setDay] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const { data: accounts = [], isLoading } = useAccounts();
   const { data: transfers = [], isLoading: transfersLoading } = useAccountTransfers();
   const createMutation = useCreateAccount();
@@ -43,9 +47,9 @@ export default function AccountsPage() {
   const [transferOpen, setTransferOpen] = useState(false);
 
   const totalBalance = accounts.reduce((s, a) => s + Number(a.balance), 0);
-  const monthTransfers = useMemo(
-    () => transfers.filter((t) => matchesMonth(t.transferDate, month)),
-    [transfers, month]
+  const filteredTransfers = useMemo(
+    () => transfers.filter((t) => matchesDateFilter(t.transferDate, { mode: dateMode, date: day, from, to })),
+    [transfers, dateMode, day, from, to]
   );
 
   const transferColumns = useMemo<ColumnDef<AccountTransfer, any>[]>(
@@ -94,16 +98,32 @@ export default function AccountsPage() {
         subtitle="Bank and cash accounts — income deposits here, expenses pay from here."
         actions={
           <>
-            <MonthNavigator value={month} onChange={setMonth} />
+            {tab === "transfer" ? (
+              <>
+                <DateRangeFilter
+                  mode={dateMode}
+                  onModeChange={setDateMode}
+                  date={day}
+                  from={from}
+                  to={to}
+                  onDateChange={setDay}
+                  onFromChange={setFrom}
+                  onToChange={setTo}
+                />
+                <AmountVisibilityToggle />
+              </>
+            ) : (
+              <AmountVisibilityToggle />
+            )}
             {tab === "list" ? (
               <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
                 New account
               </Button>
-            ) : (
+            ) : tab === "transfer" ? (
               <Button leftIcon={<ArrowLeftRight className="h-4 w-4" />} onClick={() => setTransferOpen(true)}>
                 New transfer
               </Button>
-            )}
+            ) : null}
           </>
         }
       />
@@ -111,10 +131,11 @@ export default function AccountsPage() {
       <Tabs
         tabs={[
           { label: "Accounts", value: "list", icon: <Landmark className="h-4 w-4" /> },
-          { label: "Transfers", value: "transfer", icon: <ArrowLeftRight className="h-4 w-4" />, count: monthTransfers.length },
+          { label: "Transfers", value: "transfer", icon: <ArrowLeftRight className="h-4 w-4" />, count: filteredTransfers.length },
+          { label: "Other Income", value: "income", icon: <TrendingUp className="h-4 w-4" /> },
         ]}
         active={tab}
-        onChange={(v) => navigate(v === "transfer" ? "/accounts/transfer" : "/accounts")}
+        onChange={(v) => navigate(v === "list" ? "/accounts" : `/accounts/${v}`)}
       />
 
       {tab === "list" && (
@@ -166,13 +187,15 @@ export default function AccountsPage() {
       {tab === "transfer" && (
         <DataTable
           columns={transferColumns}
-          data={monthTransfers}
+          data={filteredTransfers}
           loading={transfersLoading}
           searchPlaceholder="Search transfers…"
           emptyTitle="No transfers"
-          emptyDescription="No transfers for the selected month."
+          emptyDescription="No transfers for the selected dates."
         />
       )}
+
+      {tab === "income" && <OtherIncomePanel />}
 
       <CreateAccountModal
         open={createOpen}

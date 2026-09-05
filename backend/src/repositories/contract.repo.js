@@ -24,7 +24,7 @@ export const list = (conn, { search, status, customerId, projectId, offset, perP
     params.push(projectId);
   }
   if (search) {
-    conditions.push('(c.contract_number LIKE ? OR cust.customer_name LIKE ?)');
+    conditions.push('(c.contract_number ILIKE ? OR cust.customer_name ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   const where = `WHERE ${conditions.join(' AND ')}`;
@@ -56,7 +56,7 @@ export const count = (conn, { search, status, customerId, projectId }) => {
     params.push(projectId);
   }
   if (search) {
-    conditions.push('(c.contract_number LIKE ? OR cust.customer_name LIKE ?)');
+    conditions.push('(c.contract_number ILIKE ? OR cust.customer_name ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
   return run(
@@ -75,12 +75,16 @@ export const create = (conn, data) => {
     conn,
     `INSERT INTO contracts (customer_id, project_id, contract_number, contract_date, start_date, end_date, contract_amount, remarks, status, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [customer_id, project_id ?? null, contract_number, contract_date, start_date ?? null, end_date ?? null, contract_amount, remarks ?? null, status ?? 'active', created_by]
+    [customer_id, project_id ?? null, contract_number, contract_date, start_date ?? null, end_date ?? null, contract_amount, remarks ?? null, status === 'active' ? 'Active' : status ?? 'Active', created_by]
   ).then((r) => r.insertId);
 };
 
 export const update = (conn, id, data) => {
   const { contract_date, start_date, end_date, contract_amount, remarks, status } = data;
+  const mappedStatus = status
+    ? { active: 'Active', completed: 'Completed', terminated: 'Terminated' }[String(status).toLowerCase()] ||
+      status
+    : null;
   return run(
     conn,
     `UPDATE contracts SET
@@ -91,7 +95,15 @@ export const update = (conn, id, data) => {
         remarks          = COALESCE(?, remarks),
         status           = COALESCE(?, status)
       WHERE contract_id = ? AND deleted_at IS NULL`,
-    [contract_date ?? null, start_date ?? null, end_date ?? null, contract_amount ?? null, remarks ?? null, status ?? null, id]
+    [
+      contract_date ?? null,
+      start_date ?? null,
+      end_date ?? null,
+      contract_amount ?? null,
+      remarks ?? null,
+      mappedStatus,
+      id,
+    ]
   );
 };
 

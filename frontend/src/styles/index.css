@@ -105,6 +105,28 @@ html.dark {
     inset: 0;
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
+
+  /* Hover/highlight: navy fill + white text (wins over tone/ink utilities). */
+  .stat-hover:hover,
+  .stat-hover:focus-visible {
+    background-color: #101848 !important;
+    --tw-ring-color: #101848;
+    color: #ffffff !important;
+  }
+  .stat-hover:hover *,
+  .stat-hover:focus-visible * {
+    color: #ffffff !important;
+  }
+  .stat-hover:hover .stat-hover-icon,
+  .stat-hover:focus-visible .stat-hover-icon {
+    background-color: rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+  }
+  .stat-hover:hover ::selection,
+  .stat-hover:focus-visible ::selection {
+    background-color: rgba(255, 255, 255, 0.28);
+    color: #ffffff;
+  }
 }
 
 .recharts-cartesian-axis-tick-value {

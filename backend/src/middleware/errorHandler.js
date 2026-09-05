@@ -18,15 +18,22 @@ export const errorHandler = (err, _req, res, _next) => {
     message = 'Invalid JSON payload';
   }
 
-  if (err?.code === 'ER_DUP_ENTRY') {
+  if (err?.code === 'ER_DUP_ENTRY' || err?.code === '23505') {
     status = 409;
     message = 'A record with the same unique value already exists';
-  } else if (err?.code === 'ER_NO_REFERENCED_ROW_2' || err?.code === 'ER_NO_REFERENCED_ROW') {
+  } else if (
+    err?.code === '23503' ||
+    err?.code === 'ER_NO_REFERENCED_ROW_2' ||
+    err?.code === 'ER_NO_REFERENCED_ROW' ||
+    err?.code === 'ER_ROW_IS_REFERENCED_2' ||
+    err?.code === 'ER_ROW_IS_REFERENCED'
+  ) {
     status = 400;
-    message = 'Referenced record does not exist';
-  } else if (err?.code === 'ER_ROW_IS_REFERENCED_2' || err?.code === 'ER_ROW_IS_REFERENCED') {
+    const inUse = /still referenced|update or delete/i.test(`${err?.detail || ''} ${err?.message || ''}`);
+    message = inUse ? 'Record is in use and cannot be deleted' : 'Referenced record does not exist';
+  } else if (err?.code === '23514' || err?.code === '23P01' || err?.code === 'P0001') {
     status = 400;
-    message = 'Record is in use and cannot be deleted';
+    message = err.message || 'Database constraint violated';
   }
 
   if (status >= 500) {

@@ -20,16 +20,19 @@ const CustomerDetailPage = lazy(() => import("@/pages/CustomerDetailPage"));
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
 const InvoicesPage = lazy(() => import("@/pages/InvoicesPage"));
 const PaymentsPage = lazy(() => import("@/pages/PaymentsPage"));
+const IncomePage = lazy(() => import("@/pages/IncomePage"));
 const ContributionsPage = lazy(() => import("@/pages/ContributionsPage"));
 const AccountsPage = lazy(() => import("@/pages/AccountsPage"));
 const ExpenseChargesPage = lazy(() => import("@/pages/ExpenseChargesPage"));
 const ExpensesPage = lazy(() => import("@/pages/ExpensesPage"));
 const ExpenseCategoriesPage = lazy(() => import("@/pages/ExpenseCategoriesPage"));
+const EmployeesPage = lazy(() => import("@/pages/EmployeesPage"));
+const SalaryChargesPage = lazy(() => import("@/pages/SalaryChargesPage"));
+const SalaryPaymentsPage = lazy(() => import("@/pages/SalaryPaymentsPage"));
 const TransactionsPage = lazy(() => import("@/pages/TransactionsPage"));
 const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
-const TrashPage = lazy(() => import("@/pages/TrashPage"));
-const AuditLogsPage = lazy(() => import("@/pages/AuditLogsPage"));
+const LogsPage = lazy(() => import("@/pages/LogsPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
 export const router = createBrowserRouter([
@@ -56,7 +59,7 @@ export const router = createBrowserRouter([
       { path: "contributions", element: withLoader(ContributionsPage) },
       { path: "customers", element: withLoader(CustomersPage) },
       { path: "customers/:id", element: withLoader(CustomerDetailPage) },
-      { path: "projects", element: <Navigate to="/projects/customers" replace /> },
+      { path: "projects", element: withLoader(ProjectsPage) },
       { path: "projects/customers", element: withLoader(ProjectsPage) },
       { path: "projects/one-time", element: <Navigate to="/projects/customers" replace /> },
       { path: "projects/rental", element: <Navigate to="/projects/customers" replace /> },
@@ -64,8 +67,13 @@ export const router = createBrowserRouter([
       { path: "invoices", element: withLoader(InvoicesPage) },
       { path: "invoices/:id", element: <Navigate to="/invoices" replace /> },
       { path: "payments", element: withLoader(PaymentsPage) },
+      { path: "income", element: withLoader(IncomePage) },
       { path: "accounts", element: withLoader(AccountsPage) },
       { path: "accounts/:tab", element: withLoader(AccountsPage) },
+      { path: "employees", element: withLoader(EmployeesPage) },
+      { path: "employees/:tab", element: withLoader(EmployeesPage) },
+      { path: "salary/charges", element: withLoader(SalaryChargesPage) },
+      { path: "salary/payments", element: withLoader(SalaryPaymentsPage) },
       { path: "expenses/categories", element: withLoader(ExpenseCategoriesPage) },
       { path: "expenses/charges", element: withLoader(ExpenseChargesPage) },
       { path: "expenses", element: withLoader(ExpensesPage) },
@@ -74,8 +82,10 @@ export const router = createBrowserRouter([
       { path: "reports/:view", element: withLoader(ReportsPage) },
       { path: "settings", element: withLoader(SettingsPage) },
       { path: "users", element: <SuperAdminRoute>{withLoader(UsersPage)}</SuperAdminRoute> },
-      { path: "audit-logs", element: <SuperAdminRoute>{withLoader(AuditLogsPage)}</SuperAdminRoute> },
-      { path: "trash", element: <SuperAdminRoute>{withLoader(TrashPage)}</SuperAdminRoute> },
+      { path: "logs", element: <SuperAdminRoute>{withLoader(LogsPage)}</SuperAdminRoute> },
+      { path: "logs/:tab", element: <SuperAdminRoute>{withLoader(LogsPage)}</SuperAdminRoute> },
+      { path: "audit-logs", element: <Navigate to="/logs" replace /> },
+      { path: "trash", element: <Navigate to="/logs/trash" replace /> },
       { path: "logout", element: <Navigate to="/login" replace /> },
       { path: "*", element: withLoader(NotFoundPage) },
     ],

@@ -125,6 +125,7 @@ export const paymentService = {
         description: `Payment ${payment_number} from ${customer.customer_name}`,
         income: amount,
         expense: 0,
+        acc_id: accId,
         created_by: userId,
       });
 

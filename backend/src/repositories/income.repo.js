@@ -1,92 +1,105 @@
 import run from './_base.js';
 
+const INCOME_COLS = `
+  oi.*,
+  oi.account_id AS acc_id,
+  a.account_name AS institution,
+  a.account_number AS number
+`;
+
 export const findById = (conn, id) =>
-  run(conn, `SELECT * FROM other_income WHERE income_id = ? AND deleted_at IS NULL`, [id]).then(
-    (rows) => rows[0]
-  );
+  run(
+    conn,
+    `SELECT ${INCOME_COLS}
+       FROM other_income oi
+       LEFT JOIN accounts a ON a.account_id = oi.account_id
+      WHERE oi.income_id = ? AND oi.deleted_at IS NULL`,
+    [id]
+  ).then((rows) => rows[0]);
 
 export const findByIdIncludingDeleted = (conn, id) =>
-  run(conn, `SELECT * FROM other_income WHERE income_id = ?`, [id]).then((rows) => rows[0]);
+  run(
+    conn,
+    `SELECT ${INCOME_COLS}
+       FROM other_income oi
+       LEFT JOIN accounts a ON a.account_id = oi.account_id
+      WHERE oi.income_id = ?`,
+    [id]
+  ).then((rows) => rows[0]);
 
-export const list = (conn, { search, categoryId, fromDate, toDate, offset, perPage, order }) => {
-  const conditions = ['i.deleted_at IS NULL'];
+const buildWhere = ({ search, categoryId, fromDate, toDate, accId }) => {
+  const conditions = ['oi.deleted_at IS NULL'];
   const params = [];
   if (categoryId) {
-    conditions.push('i.income_category_id = ?');
+    conditions.push('oi.category_name = ?');
     params.push(categoryId);
   }
   if (fromDate) {
-    conditions.push('i.income_date >= ?');
+    conditions.push('oi.income_date >= ?');
     params.push(fromDate);
   }
   if (toDate) {
-    conditions.push('i.income_date <= ?');
+    conditions.push('oi.income_date <= ?');
     params.push(toDate);
   }
+  if (accId) {
+    conditions.push('oi.account_id = ?');
+    params.push(accId);
+  }
   if (search) {
-    conditions.push('(i.description LIKE ? OR ic.category_name LIKE ?)');
+    conditions.push('(oi.description ILIKE ? OR oi.category_name ILIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
-  const where = `WHERE ${conditions.join(' AND ')}`;
+  return { where: `WHERE ${conditions.join(' AND ')}`, params };
+};
+
+export const list = (conn, filters) => {
+  const { search, categoryId, fromDate, toDate, accId, offset, perPage, order } = filters;
+  const { where, params } = buildWhere({ search, categoryId, fromDate, toDate, accId });
+  const qualifiedOrder = String(order || "income_date DESC").replace(/^([A-Za-z_]+)/, "oi.$1");
   return run(
     conn,
-    `SELECT i.*, ic.category_name
-       FROM other_income i JOIN income_categories ic ON ic.income_category_id = i.income_category_id
-       ${where}
-      ORDER BY ${order}
+    `SELECT ${INCOME_COLS}
+       FROM other_income oi
+       LEFT JOIN accounts a ON a.account_id = oi.account_id
+      ${where}
+      ORDER BY ${qualifiedOrder}
       LIMIT ? OFFSET ?`,
     [...params, perPage, offset]
   );
 };
 
-export const count = (conn, { search, categoryId, fromDate, toDate }) => {
-  const conditions = ['i.deleted_at IS NULL'];
-  const params = [];
-  if (categoryId) {
-    conditions.push('i.income_category_id = ?');
-    params.push(categoryId);
-  }
-  if (fromDate) {
-    conditions.push('i.income_date >= ?');
-    params.push(fromDate);
-  }
-  if (toDate) {
-    conditions.push('i.income_date <= ?');
-    params.push(toDate);
-  }
-  if (search) {
-    conditions.push('(i.description LIKE ? OR ic.category_name LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
-  }
+export const count = (conn, filters) => {
+  const { where, params } = buildWhere(filters);
   return run(
     conn,
-    `SELECT COUNT(*) AS total FROM other_income i JOIN income_categories ic ON ic.income_category_id = i.income_category_id WHERE ${conditions.join(' AND ')}`,
+    `SELECT COUNT(*) AS total FROM other_income oi ${where}`,
     params
   ).then((r) => r[0].total);
 };
 
 export const create = (conn, data) => {
-  const { income_category_id, description, amount, income_date, received_by, notes } = data;
+  const { category_name, description, amount, income_date, acc_id, received_by, notes } = data;
   return run(
     conn,
-    `INSERT INTO other_income (income_category_id, description, amount, income_date, received_by, notes)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [income_category_id, description ?? null, amount, income_date, received_by, notes ?? null]
+    `INSERT INTO other_income (category_name, description, amount, income_date, account_id, received_by, notes)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [category_name || 'Other', description ?? null, amount, income_date, acc_id, received_by, notes ?? null]
   ).then((r) => r.insertId);
 };
 
 export const update = (conn, id, data) => {
-  const { income_category_id, description, amount, income_date, notes } = data;
+  const { category_name, description, amount, income_date, notes } = data;
   return run(
     conn,
     `UPDATE other_income SET
-        income_category_id = COALESCE(?, income_category_id),
-        description        = COALESCE(?, description),
-        amount             = COALESCE(?, amount),
-        income_date        = COALESCE(?, income_date),
-        notes              = COALESCE(?, notes)
+        category_name = COALESCE(?, category_name),
+        description   = COALESCE(?, description),
+        amount        = COALESCE(?, amount),
+        income_date   = COALESCE(?, income_date),
+        notes         = COALESCE(?, notes)
       WHERE income_id = ? AND deleted_at IS NULL`,
-    [income_category_id ?? null, description ?? null, amount ?? null, income_date ?? null, notes ?? null, id]
+    [category_name ?? null, description ?? null, amount ?? null, income_date ?? null, notes ?? null, id]
   );
 };
 
@@ -101,10 +114,10 @@ export const restore = (conn, id) =>
   run(conn, `UPDATE other_income SET deleted_at = NULL, delete_reason = NULL, deleted_by = NULL WHERE income_id = ?`, [id]);
 
 export const categories = (conn) =>
-  run(conn, `SELECT * FROM income_categories ORDER BY category_name`);
-
-export const createCategory = (conn, name) =>
-  run(conn, `INSERT INTO income_categories (category_name) VALUES (?)`, [name]).then((r) => r.insertId);
+  run(
+    conn,
+    `SELECT DISTINCT category_name FROM other_income WHERE deleted_at IS NULL ORDER BY category_name`
+  );
 
 export default {
   findById,
@@ -116,5 +129,4 @@ export default {
   softDelete,
   restore,
   categories,
-  createCategory,
 };
