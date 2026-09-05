@@ -198,6 +198,7 @@ export interface Project {
   customerName?: string;
   customerCode?: string;
   outstanding: number;
+  paidAmount?: number;
   logoPath?: string | null;
   logoFileName?: string | null;
   attachmentPath?: string | null;

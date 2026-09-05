@@ -3,7 +3,6 @@ import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import {
   Check,
   Eye,
-  FilePlus2,
   FileText,
   Paperclip,
   Printer,
@@ -16,22 +15,22 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
-import { GenerateInvoiceModal } from "@/features/invoices/GenerateInvoiceModal";
 import { InvoiceViewModal } from "@/features/invoices/InvoiceViewModal";
 import { BillingPeriodPicker, MONTHS } from "@/features/invoices/BillingPeriodPicker";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
-import { useChargeAllRentals, useCustomers, useDeleteInvoice, useInvoices, useProjects, useRentals } from "@/hooks/queries";
+import { useChargeAllRentals, useCustomers, useDeleteInvoice, useInvoices, useRentals } from "@/hooks/queries";
 import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { INVOICE_STATUS_STYLES } from "@/utils/constants";
 import { describeInvoice, INVOICE_KIND_STYLES } from "@/utils/invoiceKind";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
+import { monthDateBounds, rentalPeriodLabel } from "@/utils/validation";
 import { monthRangeParams } from "@/utils/monthFilter";
 import { printInvoice } from "@/utils/print";
 import { canManage } from "@/utils/roles";
 import { cn } from "@/utils/cn";
-import type { Invoice } from "@/types";
+import type { Invoice, RentalBilling } from "@/types";
 import toast from "react-hot-toast";
 
 const columnHelper = createColumnHelper<Invoice>();
@@ -47,7 +46,6 @@ export default function InvoicesPage() {
 
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(12);
-  const [modalOpen, setModalOpen] = useState(false);
   const [chargeRentOpen, setChargeRentOpen] = useState(false);
   const [billingMonth, setBillingMonth] = useState(String(now.getMonth() + 1));
   const [billingYear, setBillingYear] = useState(String(now.getFullYear()));
@@ -83,22 +81,48 @@ export default function InvoicesPage() {
   const monthParams = useMemo(() => monthRangeParams(month), [month]);
   const { data: monthInvoicesData } = useInvoices({ ...monthParams, perPage: 500 });
   const { data: customersData } = useCustomers();
-  const { data: projectsData } = useProjects();
   const { data: rentalsData } = useRentals();
   const invoices = invoicesData?.rows ?? [];
   const totalCount = invoicesData?.total ?? 0;
   const customers = customersData?.rows ?? [];
-  const projects = projectsData?.rows ?? [];
   const monthInvoices = monthInvoicesData?.rows ?? [];
   const activeRentals = useMemo(
     () => (rentalsData?.rows ?? []).filter((r) => r.status === "Active"),
     [rentalsData]
   );
+  const thisMonth = now.getMonth() + 1;
+  const thisYear = now.getFullYear();
+  const thisMonthRange = useMemo(() => monthDateBounds(thisYear, thisMonth), [thisYear, thisMonth]);
+  const selectedRange = useMemo(
+    () => monthDateBounds(Number(billingYear), Number(billingMonth)),
+    [billingYear, billingMonth]
+  );
+  const { data: thisMonthInvoicesData } = useInvoices({ ...thisMonthRange, perPage: 500 });
+  const { data: selectedPeriodInvoicesData } = useInvoices({ ...selectedRange, perPage: 500 });
+  const thisMonthInvoices = thisMonthInvoicesData?.rows ?? [];
+  const selectedPeriodInvoices = selectedPeriodInvoicesData?.rows ?? [];
+
+  const unchargedThisMonth = useMemo(
+    () => unchargedRentalsForPeriod(activeRentals, thisMonthInvoices, thisYear, thisMonth),
+    [activeRentals, thisMonthInvoices, thisYear, thisMonth]
+  );
+  const unchargedSelected = useMemo(
+    () =>
+      unchargedRentalsForPeriod(
+        activeRentals,
+        selectedPeriodInvoices,
+        Number(billingYear),
+        Number(billingMonth)
+      ),
+    [activeRentals, selectedPeriodInvoices, billingYear, billingMonth]
+  );
   const totalMonthlyRent = useMemo(
-    () => activeRentals.reduce((s, r) => s + r.monthlyAmount, 0),
-    [activeRentals]
+    () => unchargedSelected.reduce((s, r) => s + r.monthlyAmount, 0),
+    [unchargedSelected]
   );
   const periodLabel = `${MONTHS[Number(billingMonth) - 1]?.label ?? billingMonth} ${billingYear}`;
+  const canChargeThisMonth = unchargedThisMonth.length > 0;
+  const canChargeSelected = unchargedSelected.length > 0;
 
   const openChargeRent = () => {
     const d = new Date();
@@ -220,19 +244,14 @@ export default function InvoicesPage() {
           <>
             <MonthNavigator value={month} onChange={setMonth} />
             {manage && (
-              <>
-                <Button
-                  variant="secondary"
-                  onClick={openChargeRent}
-                  leftIcon={<Receipt className="h-4 w-4" />}
-                  disabled={activeRentals.length === 0}
-                >
-                  Charge rent ({activeRentals.length})
-                </Button>
-                <Button onClick={() => setModalOpen(true)} leftIcon={<FilePlus2 className="h-4 w-4" />}>
-                  Generate Invoice
-                </Button>
-              </>
+              <Button
+                variant="secondary"
+                onClick={openChargeRent}
+                leftIcon={<Receipt className="h-4 w-4" />}
+                disabled={!canChargeThisMonth}
+              >
+                Charge rent ({unchargedThisMonth.length})
+              </Button>
             )}
           </>
         }
@@ -379,13 +398,6 @@ export default function InvoicesPage() {
         }
       />
 
-      <GenerateInvoiceModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        customers={customers}
-        projects={projects}
-      />
-
       <Modal
         open={chargeRentOpen}
         onClose={() => setChargeRentOpen(false)}
@@ -398,6 +410,7 @@ export default function InvoicesPage() {
             </Button>
             <Button
               loading={chargeAllMutation.isPending}
+              disabled={!canChargeSelected || chargeAllMutation.isPending}
               onClick={() =>
                 chargeAllMutation.mutate(
                   { force: true, month: Number(billingMonth), year: Number(billingYear) },
@@ -405,7 +418,9 @@ export default function InvoicesPage() {
                 )
               }
             >
-              Charge {activeRentals.length} for {periodLabel}
+              {canChargeSelected
+                ? `Charge ${unchargedSelected.length} for ${periodLabel}`
+                : "Already charged this month"}
             </Button>
           </>
         }
@@ -418,10 +433,15 @@ export default function InvoicesPage() {
             onYearChange={setBillingYear}
           />
           <p>
-            Creates one <span className="font-semibold">monthly rent</span> invoice per active rental for{" "}
+            Creates one <span className="font-semibold">monthly rent</span> invoice per uncharged active rental for{" "}
             <span className="font-semibold text-slate-900 dark:text-white">{periodLabel}</span>. Setup fees are not
             included — they were already invoiced when the rental project was created.
           </p>
+          {!canChargeSelected && (
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+              Same month, no need to charge twice. All active rentals already have rent for {periodLabel}.
+            </p>
+          )}
           <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Estimated total</p>
             <p className="font-mono text-lg font-bold text-brand-600 dark:text-brand-400">
@@ -503,4 +523,22 @@ export default function InvoicesPage() {
       </Modal>
     </div>
   );
+}
+
+function unchargedRentalsForPeriod(
+  rentals: RentalBilling[],
+  invoices: Invoice[],
+  year: number,
+  month: number
+) {
+  const label = rentalPeriodLabel(year, month);
+  const chargedIds = new Set(
+    invoices
+      .filter((inv) => {
+        const meta = describeInvoice(inv);
+        return meta.kind === "rent" && meta.period === label && inv.projectId;
+      })
+      .map((inv) => inv.projectId as number)
+  );
+  return rentals.filter((r) => !chargedIds.has(r.projectId));
 }

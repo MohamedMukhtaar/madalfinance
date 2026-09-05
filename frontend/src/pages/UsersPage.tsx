@@ -19,6 +19,7 @@ import {
 } from "@/hooks/queries";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate, formatTime } from "@/utils/format";
+import { emailRules, phoneRules } from "@/utils/validation";
 import type { AppRoleRecord, User } from "@/types";
 
 const PROTECTED_ROLES = new Set(["Super Admin", "Admin"]);
@@ -375,8 +376,8 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
             ]}
             {...register("status")}
           />
-          <Input label="Phone" {...register("phone")} />
-          <Input label="Email" type="email" {...register("email")} />
+          <Input label="Phone" error={errors.phone?.message} {...register("phone", phoneRules())} />
+          <Input label="Email" type="email" error={errors.email?.message} {...register("email", emailRules())} />
         </form>
       </Modal>
     </>

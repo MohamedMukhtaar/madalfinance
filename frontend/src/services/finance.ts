@@ -1101,7 +1101,7 @@ export const financeService = {
     return unwrap(res);
   },
 
-  async expenseStatement(params: ListParams & { expenseId: number }): Promise<import("@/types").ExpenseStatement> {
+  async expenseStatement(params: ListParams & { expenseId?: number }): Promise<import("@/types").ExpenseStatement> {
     const res = await authApi.get<import("@/types").ExpenseStatement>("/reports/expense-statement", toQuery(params));
     return unwrap(res);
   },

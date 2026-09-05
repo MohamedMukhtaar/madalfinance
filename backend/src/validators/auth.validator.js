@@ -29,5 +29,5 @@ export const changeUsernameValidator = [
 export const updateProfileValidator = [
   body('full_name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Full name is too short'),
   body('phone').optional().trim().isLength({ max: 30 }),
-  body('email').optional().isEmail().withMessage('Invalid email address'),
+  body('email').optional({ values: 'falsy' }).isEmail().withMessage('Invalid email address'),
 ];

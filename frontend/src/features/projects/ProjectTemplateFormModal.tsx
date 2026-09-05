@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
-import { Input, Select, Textarea } from "@/components/ui/FormField";
+import { Input, Textarea } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
 import { FileUpload, type UploadedFile } from "@/components/ui";
 import {
@@ -62,8 +62,12 @@ export function ProjectTemplateFormModal({
   const defaultTypeId = useMemo(() => {
     if (template) return String(template.projectTypeId ?? "");
     if (!defaultProjectType) return "";
-    return String(projectTypes.find((t) => t.name === defaultProjectType)?.id ?? "");
+    const wanted = defaultProjectType.toLowerCase();
+    return String(projectTypes.find((t) => t.name.toLowerCase() === wanted)?.id ?? "");
   }, [template, defaultProjectType, projectTypes]);
+
+  const lockedTypeLabel =
+    selectedType?.name ?? defaultProjectType ?? template?.projectType ?? "";
 
   useEffect(() => {
     if (!open) return;
@@ -162,16 +166,8 @@ export function ProjectTemplateFormModal({
             error={errors.templateName?.message}
             {...register("templateName", { required: "Name is required" })}
           />
-          <Select
-            label="Type"
-            required
-            disabled={isEdit}
-            options={[
-              { value: "", label: "Select type…" },
-              ...projectTypes.map((type) => ({ value: String(type.id), label: type.name })),
-            ]}
-            {...register("projectTypeId", { required: "Type is required" })}
-          />
+          <Input label="Type" required readOnly value={lockedTypeLabel} />
+          <input type="hidden" {...register("projectTypeId", { required: "Type is required" })} />
         </div>
         <Textarea label="Description" placeholder="What this project is" {...register("description")} />
 

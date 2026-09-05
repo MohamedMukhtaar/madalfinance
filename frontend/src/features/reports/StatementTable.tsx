@@ -7,6 +7,7 @@ export function StatementTable({
   rows,
   loading = false,
   showLoan = false,
+  showName = false,
   memberBalance = false,
   currency,
   empty = "No transactions for this period.",
@@ -14,11 +15,12 @@ export function StatementTable({
   rows: StatementRow[];
   loading?: boolean;
   showLoan?: boolean;
+  showName?: boolean;
   memberBalance?: boolean;
   currency: string;
   empty?: string;
 }) {
-  const colCount = showLoan ? 8 : 7;
+  const colCount = 7 + (showLoan ? 1 : 0) + (showName ? 1 : 0);
   return (
     <div className="w-full overflow-x-auto">
       <table className="w-full min-w-full text-left text-sm">
@@ -27,6 +29,7 @@ export function StatementTable({
             <th className="px-3 py-2">Date</th>
             <th className="px-3 py-2">Time</th>
             <th className="px-3 py-2">Type</th>
+            {showName ? <th className="px-3 py-2">Expense</th> : null}
             <th className="px-3 py-2">Reference</th>
             <th className="px-3 py-2 text-right">Debit</th>
             <th className="px-3 py-2 text-right">Credit</th>
@@ -47,6 +50,7 @@ export function StatementTable({
                 <td className="px-3 py-2 text-xs">{formatDate(r.date)}</td>
                 <td className="px-3 py-2 text-xs text-slate-400">{formatTime(r.time)}</td>
                 <td className="px-3 py-2 font-medium">{r.type || "—"}</td>
+                {showName ? <td className="px-3 py-2">{r.name || "—"}</td> : null}
                 <td className="px-3 py-2 font-mono text-xs">{r.reference || "—"}</td>
                 <td className={cn("px-3 py-2 text-right font-mono", r.debit > 0 && "text-rose-600 dark:text-rose-400")}>
                   {r.debit > 0 ? formatCurrency(r.debit, currency) : "—"}

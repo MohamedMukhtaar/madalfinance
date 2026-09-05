@@ -140,6 +140,10 @@ const STEPS = [
     filename: '010_project_discount.sql',
     file: path.join(DATABASE_DIR, 'project_discount.sql'),
   },
+  {
+    filename: '011_expense_statement_all.sql',
+    file: path.join(DATABASE_DIR, 'expense_statement_all.sql'),
+  },
 ];
 
 export const migrate = async () => {

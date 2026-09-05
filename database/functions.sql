@@ -133,7 +133,7 @@ AS $$
             0::NUMERIC AS cr
         FROM expense_charges ec
         JOIN expenses e ON e.expense_id = ec.expense_id
-        WHERE ec.expense_id = p_expense_id
+        WHERE p_expense_id IS NULL OR p_expense_id = 0 OR ec.expense_id = p_expense_id
 
         UNION ALL
 
@@ -149,7 +149,7 @@ AS $$
         FROM expense_payments ep
         JOIN expense_charges ec ON ec.expense_charge_id = ep.expense_charge_id
         JOIN expenses e ON e.expense_id = ec.expense_id
-        WHERE ec.expense_id = p_expense_id
+        WHERE p_expense_id IS NULL OR p_expense_id = 0 OR ec.expense_id = p_expense_id
     ),
     opening AS (
         SELECT COALESCE(SUM(dr - cr), 0) AS opening_balance

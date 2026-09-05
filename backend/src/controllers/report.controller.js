@@ -82,8 +82,9 @@ export const projectStatement = asyncHandler(async (req, res) => {
 });
 
 export const expenseStatement = asyncHandler(async (req, res) => {
-  const expenseId = Number(req.query.expense_id);
-  if (!expenseId) throw ApiError.badRequest('expense_id is required');
+  const raw = req.query.expense_id;
+  const expenseId = raw === undefined || raw === '' ? 0 : Number(raw);
+  if (Number.isNaN(expenseId) || expenseId < 0) throw ApiError.badRequest('Invalid expense_id');
   const data = await reportService.expenseStatement(
     expenseId,
     req.query.from_date || '',

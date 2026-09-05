@@ -57,6 +57,16 @@ function toastErr(err: unknown, fallback: string) {
   toast.error(getErrorMessage(err, fallback));
 }
 
+function patchRentalStatus(old: unknown, id: number, status: string) {
+  if (!old || typeof old !== "object") return old;
+  const data = old as { rows?: Array<{ billingId: number; status: string }> };
+  if (!Array.isArray(data.rows)) return old;
+  return {
+    ...data,
+    rows: data.rows.map((row) => (row.billingId === id ? { ...row, status } : row)),
+  };
+}
+
 type QueryOpts = ListParams & { enabled?: boolean };
 
 function splitQuery(params?: QueryOpts) {
@@ -326,12 +336,19 @@ export function useSetRentalStatus() {
   return useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       financeService.setRentalStatus(id, status),
-    onSuccess: (_d, vars) => {
-      qc.invalidateQueries({ queryKey: ["rentals"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      toast.success(vars.status === "Paused" ? "Rental paused" : "Rental updated");
+    onMutate: async ({ id, status }) => {
+      await qc.cancelQueries({ queryKey: ["rentals"] });
+      const previous = qc.getQueriesData({ queryKey: ["rentals"] });
+      qc.setQueriesData({ queryKey: ["rentals"] }, (old) => patchRentalStatus(old, id, status));
+      return { previous };
     },
-    onError: (err) => toastErr(err, "Failed to update rental"),
+    onError: (err, _vars, ctx) => {
+      ctx?.previous?.forEach(([key, data]) => qc.setQueryData(key, data));
+      toastErr(err, "Failed to update rental");
+    },
+    onSuccess: (_d, vars) => {
+      toast.success(vars.status === "Paused" ? "Rental paused" : "Rental resumed");
+    },
   });
 }
 
@@ -388,16 +405,18 @@ export function useChargeAllRentals() {
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
       const errCount = result.errors?.length ?? 0;
-      if (result.generated > 0) {
+      if (result.generated > 0 && result.skipped > 0) {
         toast.success(
-          `Charged ${result.generated} rental${result.generated === 1 ? "" : "s"}${
-            result.skipped ? ` · ${result.skipped} skipped` : ""
-          }`
+          `Charged ${result.generated} rental${result.generated === 1 ? "" : "s"}. Same month, no need to charge twice for the rest.`
         );
+      } else if (result.generated > 0) {
+        toast.success(`Charged ${result.generated} rental${result.generated === 1 ? "" : "s"}`);
       } else if (errCount) {
         toast.error(result.errors[0]?.message || "No invoices generated");
+      } else if (result.skipped > 0) {
+        toast.success("Same month, no need to charge twice");
       } else {
-        toast.success(result.skipped ? `All caught up (${result.skipped} skipped)` : "No due rentals to charge");
+        toast.success("No due rentals to charge");
       }
     },
     onError: (err) => toastErr(err, "Failed to charge rentals"),
@@ -1370,9 +1389,13 @@ export function useProjectStatement(projectId: number | undefined, params?: Quer
 export function useExpenseStatement(expenseId: number | undefined, params?: QueryOpts) {
   const { enabled, params: query } = splitQuery(params);
   return useQuery({
-    queryKey: ["reports", "expense-statement", expenseId, query],
-    queryFn: () => financeService.expenseStatement({ expenseId: expenseId as number, ...query }),
-    enabled: !!expenseId && enabled,
+    queryKey: ["reports", "expense-statement", expenseId ?? 0, query],
+    queryFn: () =>
+      financeService.expenseStatement({
+        ...(expenseId ? { expenseId } : {}),
+        ...query,
+      }),
+    enabled,
   });
 }
 

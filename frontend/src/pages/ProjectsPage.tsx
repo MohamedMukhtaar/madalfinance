@@ -355,7 +355,7 @@ function CustomerProjectsPanel() {
     <div className="space-y-6">
       <PageHeader
         title="Customer Projects"
-        subtitle="Assign a registered project to a customer. Discount comes off the list price."
+        subtitle="Assign a registered project to a customer. Discount comes off monthly rent or list price — not the setup fee."
         actions={
           <Button
             onClick={() => {
@@ -461,7 +461,9 @@ function CustomerProjectsPanel() {
                           {formatCurrency(p.projectPrice, currency)}
                         </p>
                         {Number(p.discount) > 0 && (
-                          <p className="text-[10px] text-rose-500">−{formatCurrency(p.discount, currency)} off</p>
+                          <p className="text-[10px] text-rose-500">
+                            −{formatCurrency(p.discount, currency)} off {isRental ? "rent" : "price"}
+                          </p>
                         )}
                       </div>
                       <div className="rounded-lg bg-emerald-50/70 px-2 py-2 dark:bg-emerald-500/10">
@@ -469,7 +471,7 @@ function CustomerProjectsPanel() {
                           Paid
                         </p>
                         <p className="mt-0.5 text-sm font-bold text-emerald-700 dark:text-emerald-400">
-                          {formatCurrency(p.projectPrice - p.outstanding, currency)}
+                          {formatCurrency(Number(p.paidAmount ?? 0), currency)}
                         </p>
                       </div>
                       <div className="rounded-lg bg-slate-50 px-2 py-2 dark:bg-slate-800/50">
@@ -479,6 +481,12 @@ function CustomerProjectsPanel() {
                         </p>
                       </div>
                     </div>
+
+                    {isRental && billing && Number(billing.setupFee) > 0 && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        Setup {formatCurrency(Number(billing.setupFee), currency)} invoiced on assign
+                      </p>
+                    )}
 
                     {p.startDate && (
                       <div className="mt-3 flex items-center gap-1 text-xs text-slate-400">

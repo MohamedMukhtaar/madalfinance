@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select, Textarea } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
 import { useCreateCustomer, useUpdateCustomer } from "@/hooks/queries";
+import { emailRules, phoneRules } from "@/utils/validation";
 import type { Customer } from "@/types";
 
 interface CustomerForm {
@@ -66,15 +67,21 @@ export function CustomerFormModal({
   }, [open, customer, reset]);
 
   const loading = createMutation.isPending || updateMutation.isPending;
+  const submittingRef = useRef(false);
 
   const onSubmit = (data: CustomerForm) => {
+    if (loading || submittingRef.current) return;
+    submittingRef.current = true;
+    const done = () => {
+      submittingRef.current = false;
+    };
     if (isEdit && customer) {
       updateMutation.mutate(
         { id: customer.customerId, patch: data },
-        { onSuccess: () => onClose() }
+        { onSuccess: () => onClose(), onSettled: done }
       );
     } else {
-      createMutation.mutate(data, { onSuccess: () => onClose() });
+      createMutation.mutate(data, { onSuccess: () => onClose(), onSettled: done });
     }
   };
 
@@ -87,8 +94,8 @@ export function CustomerFormModal({
       subtitle={isEdit ? customer?.customerCode : "Create a customer record in the system"}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={loading} onClick={handleSubmit(onSubmit)}>
+          <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
+          <Button type="button" loading={loading} disabled={loading} onClick={handleSubmit(onSubmit)}>
             {isEdit ? "Save changes" : "Create customer"}
           </Button>
         </>
@@ -113,10 +120,7 @@ export function CustomerFormModal({
             required
             placeholder="+252 61 555 0123"
             error={errors.phone?.message}
-            {...register("phone", {
-              required: "Phone is required",
-              pattern: { value: /^[+0-9 ()-]{7,20}$/, message: "Enter a valid phone number" },
-            })}
+            {...register("phone", phoneRules(true))}
           />
           <Input
             label="Email"
@@ -124,10 +128,7 @@ export function CustomerFormModal({
             type="email"
             placeholder="customer@company.com"
             error={errors.email?.message}
-            {...register("email", {
-              required: "Email is required",
-              pattern: { value: /^\S+@\S+\.\S+$/, message: "Enter a valid email address" },
-            })}
+            {...register("email", emailRules(true))}
           />
           <Input label="Address" placeholder="Street, district" {...register("address")} />
           <Input label="City" placeholder="e.g. Mogadishu" {...register("city")} />

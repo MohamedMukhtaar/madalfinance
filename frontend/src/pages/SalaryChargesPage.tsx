@@ -6,6 +6,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, Button, Modal, MonthNavigator, StatCard, confirmDialog } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
+import { HrTabs } from "@/features/hr/HrTabs";
 import {
   useAccounts,
   useCreateSalaryCharge,
@@ -99,6 +100,7 @@ export default function SalaryChargesPage() {
 
   return (
     <div className="space-y-6">
+      <HrTabs />
       <PageHeader
         title="Salary charges"
         subtitle="Generate monthly payroll charges, then record payments against them."

@@ -4,6 +4,7 @@ import { Banknote, Receipt } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, StatCard } from "@/components/ui";
+import { HrTabs } from "@/features/hr/HrTabs";
 import { useSalaryPayments } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { PAYMENT_STATUS_STYLES } from "@/utils/constants";
@@ -64,6 +65,7 @@ export default function SalaryPaymentsPage() {
 
   return (
     <div className="space-y-6">
+      <HrTabs />
       <PageHeader title="Salary payments" subtitle="Cash outflows posted against salary charges." />
 
       <div className="grid gap-4 sm:grid-cols-2">

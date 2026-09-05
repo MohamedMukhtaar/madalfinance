@@ -197,6 +197,7 @@ const REPORT_DEFINITIONS = {
       { header: 'Date', key: 'date' },
       { header: 'Time', key: 'time' },
       { header: 'Type', key: 'type' },
+      { header: 'Name', key: 'name' },
       { header: 'Reference', key: 'reference' },
       { header: 'Debit', key: 'debit' },
       { header: 'Credit', key: 'credit' },
@@ -460,10 +461,13 @@ export const reportService = {
   },
 
   async expenseStatement(expenseId, fromDate, toDate) {
-    const expense = await expenseRepo.findCategoryById(null, expenseId);
+    const id = Number(expenseId) || 0;
+    const expense = id
+      ? await expenseRepo.findCategoryById(null, id)
+      : { expense_id: 0, expense_name: 'All expenses', expense_code: 'ALL' };
     if (!expense) throw ApiError.notFound('Expense category not found');
 
-    const rows = await statementRepo.expense(null, expenseId, fromDate, toDate);
+    const rows = await statementRepo.expense(null, id, fromDate, toDate);
     const fnTotals = statementRepo.totalsFromRows(rows);
 
     return {
@@ -668,8 +672,7 @@ export const reportService = {
         break;
       }
       case 'expenseStatement': {
-        if (!expenseId) throw ApiError.badRequest('expense_id is required');
-        data = await this.expenseStatement(expenseId, fromDate, toDate);
+        data = await this.expenseStatement(expenseId || 0, fromDate, toDate);
         break;
       }
       case 'salaryStatement': {
@@ -773,6 +776,7 @@ export const reportService = {
                 date: row.date,
                 time: row.time,
                 type: row.type,
+                name: row.name,
                 reference: row.reference,
                 debit: row.debit > 0 ? row.debit : '',
                 credit: row.credit > 0 ? row.credit : '',

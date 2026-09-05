@@ -6,6 +6,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, Modal, StatCard } from "@/components/ui";
 import { Input } from "@/components/ui/FormField";
+import { ExpenseTabs } from "@/features/expenses/ExpenseTabs";
 import { useCreateExpenseCategory, useExpenseCategories } from "@/hooks/queries";
 
 type Category = { id: number; name: string };
@@ -44,6 +45,7 @@ export default function ExpenseCategoriesPage() {
 
   return (
     <div className="space-y-6">
+      <ExpenseTabs />
       <PageHeader
         title="Expense Categories"
         subtitle="Organize spending with reusable expense categories."

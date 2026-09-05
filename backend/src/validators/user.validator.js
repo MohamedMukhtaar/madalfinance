@@ -6,7 +6,7 @@ export const createUserValidator = [
   body('full_name').trim().notEmpty().withMessage('Full name is required'),
   body('role').trim().notEmpty().withMessage('Role is required'),
   body('phone').optional({ nullable: true }).trim().isLength({ max: 30 }),
-  body('email').optional({ nullable: true }).trim().isEmail().withMessage('Invalid email'),
+  body('email').optional({ values: 'falsy', nullable: true }).trim().isEmail().withMessage('Invalid email'),
   body('status').optional().isIn(['active', 'inactive']),
 ];
 
@@ -16,6 +16,6 @@ export const updateUserValidator = [
   body('full_name').optional().trim().notEmpty(),
   body('role').optional().trim().notEmpty(),
   body('phone').optional({ nullable: true }).trim().isLength({ max: 30 }),
-  body('email').optional({ nullable: true }).trim().isEmail(),
+  body('email').optional({ values: 'falsy', nullable: true }).trim().isEmail().withMessage('Invalid email'),
   body('status').optional().isIn(['active', 'inactive']),
 ];

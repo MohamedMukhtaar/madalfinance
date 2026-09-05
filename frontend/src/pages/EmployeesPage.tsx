@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { Briefcase, FileDown, FileSpreadsheet, Filter, Pencil, Plus, RotateCcw, Trash2, Users } from "lucide-react";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge, Button, Card, Modal, StatCard, Tabs, confirmDialog } from "@/components/ui";
+import { Badge, Button, Card, Modal, StatCard, confirmDialog } from "@/components/ui";
+import { HrTabs } from "@/features/hr/HrTabs";
 import { Input, Select, Textarea, fieldBase } from "@/components/ui/FormField";
 import {
   useCreateEmployee,
@@ -21,6 +22,7 @@ import {
 import { useSettings } from "@/context/SettingsContext";
 import { CUSTOMER_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate, todayISO } from "@/utils/format";
+import { emailRules, phoneRules } from "@/utils/validation";
 import { financeService } from "@/services/finance";
 import { api, getErrorMessage } from "@/services/api";
 import { cn } from "@/utils/cn";
@@ -131,19 +133,11 @@ const GENDER_CHIPS = [
 
 export default function EmployeesPage() {
   const { tab } = useParams();
-  const navigate = useNavigate();
   const view: "staff" | EmployeeOrgKind = ORG_TABS.some((t) => t.value === tab) ? (tab as EmployeeOrgKind) : "staff";
 
   return (
     <div className="space-y-6">
-      <Tabs
-        tabs={[
-          { label: "Employees", value: "staff" },
-          ...ORG_TABS.map((t) => ({ label: t.label, value: t.value })),
-        ]}
-        active={view}
-        onChange={(value) => navigate(value === "staff" ? "/employees" : `/employees/${value}`)}
-      />
+      <HrTabs />
       {view === "staff" ? <StaffPanel /> : <OrgPanel kind={view} />}
     </div>
   );
@@ -688,8 +682,8 @@ function EmployeeFormModal({
           ]}
           {...register("gender")}
         />
-        <Input label="Phone" {...register("phone")} />
-        <Input label="Email" type="email" {...register("email")} />
+        <Input label="Phone" error={errors.phone?.message} {...register("phone", phoneRules())} />
+        <Input label="Email" type="email" error={errors.email?.message} {...register("email", emailRules())} />
         <Select label="Department" options={options(departments, "departments", "Select department")} {...register("departmentId")} />
         <Select label="Title" options={options(titles, "titles", "Select title")} {...register("jobTitleId")} />
         <Select label="Branch" options={options(branches, "branches", "Select branch")} {...register("branchId")} />

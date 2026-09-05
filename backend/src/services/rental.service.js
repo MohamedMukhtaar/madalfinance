@@ -173,7 +173,7 @@ export const rentalService = {
 
       const existing = await invoiceRepo.findRentalMonthlyForPeriod(conn, project.project_id, periodLabel);
       if (existing) {
-        throw ApiError.conflict(`Invoice ${existing.invoice_number} already exists for ${periodLabel}`);
+        throw ApiError.conflict('Same month, no need to charge twice');
       }
 
       const billDate =

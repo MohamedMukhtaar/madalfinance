@@ -6,7 +6,9 @@ const select = `
          pc.customer_id,
          c.customer_name, c.customer_code,
          (SELECT COALESCE(SUM(total_amount - paid_amount), 0) FROM invoices i
-           WHERE i.project_id = p.project_id AND i.deleted_at IS NULL AND i.status IN ('Issued','Partial','Overdue')) AS outstanding
+           WHERE i.project_id = p.project_id AND i.deleted_at IS NULL AND i.status IN ('Issued','Partial','Overdue')) AS outstanding,
+         (SELECT COALESCE(SUM(paid_amount), 0) FROM invoices i
+           WHERE i.project_id = p.project_id AND i.deleted_at IS NULL AND i.status IN ('Issued','Partial','Overdue','Paid')) AS paid_amount
     FROM projects p
     JOIN project_types pt ON pt.project_type_id = p.project_type_id
     LEFT JOIN project_templates t ON t.template_id = p.template_id

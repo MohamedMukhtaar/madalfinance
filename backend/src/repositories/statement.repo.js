@@ -62,7 +62,7 @@ export const project = (conn, id, fromDate, toDate) =>
   callFn(conn, 'project_statement', id, fromDate, toDate);
 
 export const expense = (conn, id, fromDate, toDate) =>
-  callFn(conn, 'expense_statement', id, fromDate, toDate);
+  callFn(conn, 'expense_statement', id || 0, fromDate, toDate);
 
 export const salary = (conn, id, fromDate, toDate) =>
   callFn(conn, 'salary_statement', id, fromDate, toDate);

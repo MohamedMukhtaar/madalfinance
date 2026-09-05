@@ -13,6 +13,7 @@ import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
 import { matchesMonth } from "@/utils/monthFilter";
+import { ExpenseTabs } from "@/features/expenses/ExpenseTabs";
 import { EXPENSE_CATEGORY_COLORS } from "@/utils/constants";
 import { cn } from "@/utils/cn";
 import type { Expense } from "@/types";
@@ -142,6 +143,7 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-6">
+      <ExpenseTabs />
       <PageHeader
         title="Expense Payments"
         subtitle="View-only log of paid expenses. Add charges in Expense Charges, then Pay."
@@ -154,18 +156,6 @@ export default function ExpensesPage() {
         <StatCard index={2} loading={isLoading} label="Categories" value={String(totals.categories)} icon={<TrendingDown className="h-4 w-4" />} iconClassName="bg-secondary-50 text-primary dark:bg-secondary-500/10 dark:text-secondary-300" />
         <StatCard index={3} loading={isLoading} label="Largest" value={formatCurrency(totals.largest, currency)} icon={<TrendingDown className="h-4 w-4" />} iconClassName="bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400" />
       </StatCardsGrid>
-
-      {byCategory.length > 0 && (
-        <ChartCard title="Spending by Category" subtitle="Selected month" className="max-w-xs">
-          <DonutChart
-            data={byCategory}
-            centerValue={formatCurrency(byCategory.reduce((s, d) => s + d.value, 0), currency)}
-            centerLabel="Total"
-            height={160}
-            loading={!expenses}
-          />
-        </ChartCard>
-      )}
 
       <DataTable
             columns={columns}
@@ -203,6 +193,18 @@ export default function ExpensesPage() {
               },
             ]}
           />
+
+      {byCategory.length > 0 && (
+        <ChartCard title="Expense by Category" subtitle="Selected month" className="max-w-xs">
+          <DonutChart
+            data={byCategory}
+            centerValue={formatCurrency(byCategory.reduce((s, d) => s + d.value, 0), currency)}
+            centerLabel="Total"
+            height={160}
+            loading={!expenses}
+          />
+        </ChartCard>
+      )}
 
       <Modal
         open={!!receiptFor}

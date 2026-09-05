@@ -54,6 +54,32 @@ export const count = (conn, { search, status }) => {
   );
 };
 
+export const findByEmail = (conn, email, excludeId = null) => {
+  const value = String(email || '').trim().toLowerCase();
+  if (!value) return Promise.resolve(undefined);
+  const params = [value];
+  let sql = `SELECT * FROM customers WHERE deleted_at IS NULL AND lower(email) = ?`;
+  if (excludeId) {
+    sql += ` AND customer_id <> ?`;
+    params.push(excludeId);
+  }
+  return run(conn, sql, params).then((rows) => rows[0]);
+};
+
+export const findByPhone = (conn, phone, excludeId = null) => {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return Promise.resolve(undefined);
+  const params = [digits];
+  let sql = `SELECT * FROM customers
+              WHERE deleted_at IS NULL
+                AND regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ?`;
+  if (excludeId) {
+    sql += ` AND customer_id <> ?`;
+    params.push(excludeId);
+  }
+  return run(conn, sql, params).then((rows) => rows[0]);
+};
+
 export const create = (conn, data) => {
   const { customer_code, customer_name, company_name, phone, email, address, city, notes, status } = data;
   return run(
@@ -158,6 +184,8 @@ export const transactionHistory = (conn, customerId) =>
 export default {
   findById,
   findByCode,
+  findByEmail,
+  findByPhone,
   list,
   count,
   create,

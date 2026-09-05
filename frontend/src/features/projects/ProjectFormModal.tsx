@@ -241,16 +241,20 @@ export function ProjectFormModal({
               </p>
             </div>
             <Input
-              label="Discount"
+              label={isRental ? "Discount (off monthly rent)" : "Discount (off list price)"}
               type="number"
               step="0.01"
               min={0}
-              hint={`Charged: ${formatCurrency(netPrice, currency)} (list ${formatCurrency(listPrice, currency)} − discount)`}
+              hint={
+                isRental
+                  ? `Monthly charged ${formatCurrency(netPrice, currency)} (list ${formatCurrency(listPrice, currency)} − discount). Setup ${formatCurrency(Number(selected.setupFee || 0), currency)} is billed in full.`
+                  : `Charged: ${formatCurrency(netPrice, currency)} (list ${formatCurrency(listPrice, currency)} − discount)`
+              }
               error={errors.discount?.message}
               {...register("discount", {
                 min: { value: 0, message: "Discount cannot be negative" },
                 validate: (value) =>
-                  Number(value || 0) <= listPrice || "Discount cannot be greater than the project price",
+                  Number(value || 0) <= listPrice || "Discount cannot be greater than the monthly rent / list price",
               })}
             />
           </div>
@@ -336,7 +340,7 @@ export function ProjectFormModal({
 
         {templateSelected && isRental && !isEdit && (
           <p className="rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
-            Setup fee (if any) becomes an invoice right away. Monthly rent is charged from Invoices → Charge rent.
+            Setup fee is invoiced in full when you assign. Discount applies to monthly rent only. Charge that rent from Invoices → Charge rent.
           </p>
         )}
       </form>

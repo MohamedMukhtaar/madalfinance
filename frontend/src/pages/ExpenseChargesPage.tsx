@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal, StatCard, promptDeleteReason } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
 import { ExpenseFormModal } from "@/features/expenses/ExpenseFormModal";
+import { ExpenseTabs } from "@/features/expenses/ExpenseTabs";
 import { useExpenseCategories } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, formatDate, todayISO } from "@/utils/format";
@@ -111,6 +112,7 @@ export default function ExpenseChargesPage() {
 
   return (
     <div className="space-y-6">
+      <ExpenseTabs />
       <PageHeader
         title="Expense Charges"
         subtitle="Bills and obligations to pay. Record the actual payment from each line."

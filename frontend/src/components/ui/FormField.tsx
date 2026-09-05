@@ -81,21 +81,27 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
   ({ className, label, error, hint, required, options, children, ...props }, ref) => {
     return (
       <Field label={label} error={error} hint={hint} required={required}>
-        <select ref={ref} className={cn(fieldBase, "h-10 cursor-pointer appearance-none pr-9", className)} {...props}>
-          {options.map((opt, i) =>
-            typeof opt === "string" ? (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ) : (
-              <option key={i} value={opt.value}>
-                {opt.label}
-              </option>
-            )
-          )}
-          {children}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-[9px] h-4 w-4 text-slate-400" />
+        <div className="relative">
+          <select
+            ref={ref}
+            className={cn(fieldBase, "h-10 cursor-pointer appearance-none pr-9", className)}
+            {...props}
+          >
+            {options.map((opt, i) =>
+              typeof opt === "string" ? (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ) : (
+                <option key={i} value={opt.value}>
+                  {opt.label}
+                </option>
+              )
+            )}
+            {children}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        </div>
       </Field>
     );
   }

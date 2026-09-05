@@ -85,7 +85,7 @@ import toast from "react-hot-toast";
 const VIEWS = [
   { id: "customers", label: "Collections", path: "/reports/customers" },
   { id: "statements", label: "Statements", path: "/reports/statements" },
-  { id: "employees", label: "Payroll", path: "/reports/employees" },
+  { id: "employees", label: "HR", path: "/reports/employees" },
   { id: "accounts", label: "Cash books", path: "/reports/accounts" },
   { id: "expenses", label: "Spending", path: "/reports/expenses" },
   { id: "members", label: "Member dues", path: "/reports/members" },
@@ -348,7 +348,7 @@ export default function ReportsPage() {
   );
   const { data: expenseStatementData, isLoading: expenseStatementLoading } = useExpenseStatement(
     statementExpenseId || undefined,
-    { ...dateParams, enabled: view === "statements" && statementType === "expense" && !!statementExpenseId }
+    { ...dateParams, enabled: view === "statements" && statementType === "expense" }
   );
   const { data: accountStatementData } = useAccountStatement(
     reportAccountId || undefined,
@@ -696,8 +696,11 @@ export default function ReportsPage() {
         if (statementType === "project" && statementProjectId) {
           return { kind: "projectStatement", params: { projectId: statementProjectId } };
         }
-        if (statementType === "expense" && statementExpenseId) {
-          return { kind: "expenseStatement", params: { expenseId: statementExpenseId } };
+        if (statementType === "expense") {
+          return {
+            kind: "expenseStatement",
+            params: statementExpenseId ? { expenseId: statementExpenseId } : {},
+          };
         }
         return null;
       case "employees":
@@ -1287,7 +1290,7 @@ export default function ReportsPage() {
                   value={statementExpenseId}
                   onChange={(e) => setStatementExpenseId(e.target.value ? Number(e.target.value) : "")}
                 >
-                  <option value="">Select a category…</option>
+                  <option value="">All expenses</option>
                   {expenseCategories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -1354,10 +1357,10 @@ export default function ReportsPage() {
                 empty="No invoices or payments for this project in this period."
               />
             </Card>
-          ) : statementType === "expense" && selectedExpense ? (
+          ) : statementType === "expense" ? (
             <Card>
               <CardHeader
-                title={`${selectedExpense.name} — Expense Statement`}
+                title={`${selectedExpense?.name ?? "All expenses"} — Expense Statement`}
                 subtitle={`Period: ${periodHint}`}
                 action={
                   <Button size="sm" variant="secondary" onClick={() => handleExport("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
@@ -1369,7 +1372,8 @@ export default function ReportsPage() {
                 rows={expenseStatementRows}
                 loading={expenseStatementLoading}
                 currency={currency}
-                empty="No charges or payments for this expense in this period."
+                showName={!selectedExpense}
+                empty="No charges or payments for this period."
               />
             </Card>
           ) : (

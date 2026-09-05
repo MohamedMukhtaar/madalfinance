@@ -27,6 +27,14 @@ export const customerService = {
 
   async create(data, userId, ip) {
     return withTransaction(async (conn) => {
+      const email = String(data.email || '').trim();
+      const phone = String(data.phone || '').trim();
+      if (email && (await customerRepo.findByEmail(conn, email))) {
+        throw ApiError.conflict('A customer with this email already exists');
+      }
+      if (phone && (await customerRepo.findByPhone(conn, phone))) {
+        throw ApiError.conflict('A customer with this phone already exists');
+      }
       const customer_code = await customerRepo.nextCode(conn);
       const id = await customerRepo.create(conn, { ...data, customer_code });
       await auditService.log({
@@ -38,9 +46,16 @@ export const customerService = {
 
   async update(id, data, userId, ip) {
     return withTransaction(async (conn) => {
-      await customerRepo.findById(conn, id).then((c) => {
-        if (!c) throw ApiError.notFound('Customer not found');
-      });
+      const existing = await customerRepo.findById(conn, id);
+      if (!existing) throw ApiError.notFound('Customer not found');
+      const email = data.email != null ? String(data.email).trim() : '';
+      const phone = data.phone != null ? String(data.phone).trim() : '';
+      if (email && (await customerRepo.findByEmail(conn, email, id))) {
+        throw ApiError.conflict('A customer with this email already exists');
+      }
+      if (phone && (await customerRepo.findByPhone(conn, phone, id))) {
+        throw ApiError.conflict('A customer with this phone already exists');
+      }
       await customerRepo.update(conn, id, data);
       await auditService.log({ module: 'Customer', action: 'UPDATE', userId, recordId: id, ip });
       return customerRepo.findById(conn, id);

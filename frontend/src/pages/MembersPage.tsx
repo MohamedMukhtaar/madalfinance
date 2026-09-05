@@ -17,6 +17,7 @@ import {
 import { useSettings } from "@/context/SettingsContext";
 import { DUE_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
+import { emailRules, phoneRules } from "@/utils/validation";
 import type { EmployeeOrgRecord, Member } from "@/types";
 
 const columnHelper = createColumnHelper<Member>();
@@ -347,8 +348,8 @@ function MemberFormModal({
           ]}
           {...register("jobTitleId")}
         />
-        <Input label="Phone" {...register("phone")} />
-        <Input label="Email" type="email" {...register("email")} />
+        <Input label="Phone" error={errors.phone?.message} {...register("phone", phoneRules())} />
+        <Input label="Email" type="email" error={errors.email?.message} {...register("email", emailRules())} />
         <Input
           label="Default monthly due"
           type="number"
