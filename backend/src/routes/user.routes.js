@@ -42,6 +42,15 @@ router.get('/audit-logs', authorize(...SUPER), userController.listAuditLogs);
 router.post('/', authorize(...SUPER), validate(createUserValidator), userController.createUser);
 router.get('/:id', authorize(...SUPER), userController.getUser);
 router.put('/:id', authorize(...SUPER), validate(updateUserValidator), userController.updateUser);
+router.post(
+  '/:id/avatar',
+  authorize(...SUPER),
+  uploadLimiter,
+  singleUpload('users'),
+  userController.uploadUserAvatar
+);
+router.get('/:id/devices', authorize(...SUPER), userController.listUserDevices);
+router.delete('/:id/devices/:deviceId', authorize(...SUPER), userController.removeUserDevice);
 router.delete('/:id', authorize(...SUPER), userController.deactivateUser);
 
 export default router;

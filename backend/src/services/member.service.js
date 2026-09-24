@@ -34,17 +34,6 @@ export const memberService = {
     return member;
   },
 
-  /** Public login-page team strip (no secrets). */
-  async publicTeam() {
-    const rows = await memberRepo.listPublicTeam(null);
-    return rows.map((m) => ({
-      member_id: m.member_id,
-      member_name: m.member_name,
-      position: m.position,
-      avatar_url: m.avatar_path ? `/api/public/avatars/${encodeURIComponent(m.avatar_path)}` : null,
-    }));
-  },
-
   async create(data, userId, ip) {
     return withTransaction(async (conn) => {
       const fullName = String(data.full_name || '').trim();

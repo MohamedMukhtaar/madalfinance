@@ -765,7 +765,16 @@ export function useDeleteRole() {
 export function useCreateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: Parameters<typeof financeService.createUser>[0]) => financeService.createUser(data),
+    mutationFn: async ({
+      photo,
+      ...data
+    }: Parameters<typeof financeService.createUser>[0] & { photo?: File | null }) => {
+      const user = await financeService.createUser(data);
+      if (photo) {
+        return financeService.uploadUserAvatar(user.userId, photo);
+      }
+      return user;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["users"] });
       toast.success("User created");
@@ -777,8 +786,21 @@ export function useCreateUser() {
 export function useUpdateUser() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Parameters<typeof financeService.updateUser>[1] }) =>
-      financeService.updateUser(id, data),
+    mutationFn: async ({
+      id,
+      data,
+      photo,
+    }: {
+      id: number;
+      data: Parameters<typeof financeService.updateUser>[1];
+      photo?: File | null;
+    }) => {
+      const user = await financeService.updateUser(id, data);
+      if (photo) {
+        return financeService.uploadUserAvatar(id, photo);
+      }
+      return user;
+    },
     onSuccess: (user) => {
       qc.invalidateQueries({ queryKey: ["users"] });
       toast.success("User updated");

@@ -2,6 +2,7 @@ import userService from '../services/user.service.js';
 import roleService from '../services/role.service.js';
 import memberService from '../services/member.service.js';
 import auditService from '../services/audit.service.js';
+import deviceService from '../services/device.service.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -115,6 +116,24 @@ export const uploadMemberAvatar = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, member, 'Member photo uploaded');
 });
 
+export const uploadUserAvatar = asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('No image uploaded');
+  const user = await userService.uploadAvatar(Number(req.params.id), req.file, req.user.id, req.ip);
+  return ApiResponse.success(res, user, 'User photo uploaded');
+});
+
+export const listUserDevices = asyncHandler(async (req, res) => {
+  const devices = await deviceService.listForUser(Number(req.params.id));
+  return ApiResponse.success(res, devices, 'Devices fetched');
+});
+
+export const removeUserDevice = asyncHandler(async (req, res) => {
+  const userId = Number(req.params.id);
+  await deviceService.revoke(userId, Number(req.params.deviceId));
+  await auditService.log({ module: 'User', action: 'REMOVE_DEVICE', userId: req.user.id, recordId: userId, ip: req.ip });
+  return ApiResponse.success(res, null, 'Device removed');
+});
+
 export default {
   listUsers,
   getUser,
@@ -131,4 +150,7 @@ export default {
   updateMember,
   deactivateMember,
   uploadMemberAvatar,
+  uploadUserAvatar,
+  listUserDevices,
+  removeUserDevice,
 };

@@ -152,18 +152,6 @@ export const saveAvatar = (conn, id, { avatar_path, avatar_name }) =>
     id,
   ]);
 
-export const listPublicTeam = (conn) =>
-  run(
-    conn,
-    `SELECT m.member_id, m.full_name AS member_name, COALESCE(jt.title_name, m.position) AS position,
-            m.avatar_path, m.avatar_name
-       FROM members m
-  LEFT JOIN job_titles jt ON jt.job_title_id = m.job_title_id
-      WHERE m.status = 'active' AND m.deleted_at IS NULL
-      ORDER BY m.member_id ASC
-      LIMIT 12`
-  );
-
 export default {
   listMembers,
   countMembers,
@@ -174,5 +162,4 @@ export default {
   softDelete,
   restore,
   saveAvatar,
-  listPublicTeam,
 };

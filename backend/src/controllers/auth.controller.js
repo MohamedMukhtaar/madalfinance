@@ -12,6 +12,21 @@ export const login = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, data, 'Login successful');
 });
 
+export const deviceOptions = asyncHandler(async (req, res) => {
+  const data = await authService.deviceOptions(
+    req.body.device_ticket,
+    req.body.credential_id || null,
+    req.body.any_known_device === true
+  );
+  return ApiResponse.success(res, data, 'Device check ready');
+});
+
+export const deviceVerify = asyncHandler(async (req, res) => {
+  const { ip, device } = clientInfo(req);
+  const data = await authService.deviceVerify(req.body.device_ticket, req.body.response, ip, device);
+  return ApiResponse.success(res, data, 'Login successful');
+});
+
 export const refresh = asyncHandler(async (req, res) => {
   const { refresh_token } = req.body;
   const { ip, device } = clientInfo(req);
@@ -50,4 +65,9 @@ export const changeUsername = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, null, 'Username changed');
 });
 
-export default { login, refresh, logout, me, updateProfile, changePassword, changeUsername };
+export const unlock = asyncHandler(async (req, res) => {
+  await authService.unlock(req.user.id, req.body.password, req.ip);
+  return ApiResponse.success(res, null, 'Session unlocked');
+});
+
+export default { login, deviceOptions, deviceVerify, refresh, logout, me, updateProfile, changePassword, changeUsername, unlock };

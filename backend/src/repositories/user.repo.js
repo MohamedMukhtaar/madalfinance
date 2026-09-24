@@ -2,13 +2,14 @@ import run from './_base.js';
 
 const publicCols = `
   u.user_id, u.username, u.full_name, u.phone, u.email, u.status,
-  u.last_login, u.created_at, u.updated_at, r.role_name AS role
+  u.last_login, u.created_at, u.updated_at, u.avatar_path, u.avatar_name, r.role_name AS role
 `;
 
 export const findByUsername = (conn, username) =>
   run(
     conn,
     `SELECT u.user_id, u.username, u.password_hash AS password, u.full_name, u.phone, u.email, u.status,
+            u.avatar_path, u.avatar_name,
             r.role_name AS role
        FROM users u
        JOIN roles r ON r.role_id = u.role_id
@@ -20,6 +21,7 @@ export const findByIdWithPassword = (conn, id) =>
   run(
     conn,
     `SELECT u.user_id, u.username, u.password_hash AS password, u.full_name, u.phone, u.email, u.status,
+            u.avatar_path, u.avatar_name,
             r.role_name AS role
        FROM users u
        JOIN roles r ON r.role_id = u.role_id
@@ -136,6 +138,13 @@ export const update = (conn, id, data) =>
     ]
   );
 
+export const saveAvatar = (conn, id, { avatar_path, avatar_name }) =>
+  run(conn, `UPDATE users SET avatar_path = ?, avatar_name = ? WHERE user_id = ?`, [
+    avatar_path,
+    avatar_name,
+    id,
+  ]);
+
 export const setStatus = (conn, id, status) =>
   run(conn, `UPDATE users SET status = ? WHERE user_id = ?`, [status, id]);
 
@@ -181,6 +190,7 @@ export default {
   usernameExists,
   create,
   update,
+  saveAvatar,
   setStatus,
   countActiveByRole,
   softDelete,

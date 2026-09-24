@@ -31,6 +31,10 @@ export interface User {
   lastLogin?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  avatarPath?: string | null;
+  avatarName?: string | null;
+  /** Public URL for avatarPath, derived client-side. */
+  avatarUrl?: string | null;
   /** Derived client-side from username (not sent by the API). */
   avatarColor?: string;
 }
@@ -452,6 +456,8 @@ export interface MemberDue {
   batchId: number;
   memberId: number;
   memberName: string;
+  avatarPath?: string | null;
+  avatarUrl?: string | null;
   amount: number;
   paidAmount: number;
   balance: number;

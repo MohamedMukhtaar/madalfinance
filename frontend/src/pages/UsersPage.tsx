@@ -1,10 +1,23 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
-import { Plus, Pencil, Shield, Trash2, Users, UserCheck, UserX } from "lucide-react";
+import { Laptop, Plus, Pencil, Shield, Trash2, Users, UserCheck, UserX } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge, Button, Modal, ErrorState, Tabs, promptDeleteReason, confirmDialog } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Modal,
+  ErrorState,
+  Tabs,
+  FileUpload,
+  promptDeleteReason,
+  confirmDialog,
+  type UploadedFile,
+} from "@/components/ui";
 import type { DropdownItem } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
 import {
@@ -18,6 +31,8 @@ import {
   useUsers,
 } from "@/hooks/queries";
 import { useAuth } from "@/context/AuthContext";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
 import { formatDate, formatTime } from "@/utils/format";
 import { emailRules, phoneRules } from "@/utils/validation";
 import type { AppRoleRecord, User } from "@/types";
@@ -93,6 +108,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
   const users = data?.rows ?? [];
   const [modalOpen, setModalOpen] = useState(false);
   const [editFor, setEditFor] = useState<User | undefined>();
+  const [photoFiles, setPhotoFiles] = useState<UploadedFile[]>([]);
 
   const {
     register,
@@ -113,6 +129,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
   const openCreate = () => {
     setEditFor(undefined);
+    setPhotoFiles([]);
     reset({
       username: "",
       password: "",
@@ -127,6 +144,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
   const openEdit = (user: User) => {
     setEditFor(user);
+    setPhotoFiles([]);
     reset({
       username: user.username,
       password: "",
@@ -142,9 +160,11 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
   const closeModal = () => {
     setModalOpen(false);
     setEditFor(undefined);
+    setPhotoFiles([]);
   };
 
   const onSubmit = handleSubmit((values) => {
+    const photo = photoFiles[0]?.file ?? null;
     const isSelf = editFor?.userId === currentUser?.userId;
     const payload: Record<string, unknown> = {
       fullName: values.fullName.trim(),
@@ -161,7 +181,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
     if (editFor) {
       updateMutation.mutate(
-        { id: editFor.userId, data: payload },
+        { id: editFor.userId, data: payload, photo },
         {
           onSuccess: (updated) => {
             if (updated.userId === currentUser?.userId) {
@@ -183,6 +203,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
         phone: values.phone.trim() || undefined,
         email: values.email.trim() || undefined,
         status: values.status,
+        photo,
       },
       { onSuccess: closeModal }
     );
@@ -190,6 +211,13 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
+      userColumnHelper.accessor("avatarUrl", {
+        header: "Image",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Avatar name={row.original.fullName} src={row.original.avatarUrl ?? undefined} size="sm" />
+        ),
+      }),
       userColumnHelper.accessor("username", {
         header: "Username",
         cell: (info) => (
@@ -253,8 +281,13 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
         searchPlaceholder="Search users…"
         renderMobileCard={(row) => (
           <div className="space-y-1">
-            <p className="font-mono text-xs font-bold text-brand-600">{row.username}</p>
-            <p className="font-semibold text-slate-800 dark:text-slate-100">{row.fullName}</p>
+            <div className="flex items-center gap-2">
+              <Avatar name={row.fullName} src={row.avatarUrl ?? undefined} size="sm" />
+              <div>
+                <p className="font-mono text-xs font-bold text-brand-600">{row.username}</p>
+                <p className="font-semibold text-slate-800 dark:text-slate-100">{row.fullName}</p>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Badge className={ROLE_STYLES[row.role] ?? ""}>{row.role}</Badge>
               <Badge className={STATUS_STYLES[row.status]} dot>
@@ -378,9 +411,86 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
           />
           <Input label="Phone" error={errors.phone?.message} {...register("phone", phoneRules())} />
           <Input label="Email" type="email" error={errors.email?.message} {...register("email", emailRules())} />
+          <div className="sm:col-span-2">
+            <p className="mb-1.5 text-xs font-semibold text-ink-soft">Profile photo</p>
+            {editFor?.avatarUrl && photoFiles.length === 0 && (
+              <div className="mb-3 flex items-center gap-3">
+                <Avatar name={editFor.fullName} src={editFor.avatarUrl} size="lg" />
+                <p className="text-xs text-slate-400">Current photo — upload a new one to replace it.</p>
+              </div>
+            )}
+            <FileUpload
+              label="Upload user photo (JPG / PNG)"
+              accept="image/jpeg,image/png,image/webp"
+              hint="JPG, PNG or WebP up to 10MB"
+              value={photoFiles}
+              onChange={setPhotoFiles}
+            />
+          </div>
         </form>
+        {editFor && <UserDevices userId={editFor.userId} />}
       </Modal>
     </>
+  );
+}
+
+/** Devices this user has confirmed with the device lock at sign-in; removing one forces re-verification there. */
+function UserDevices({ userId }: { userId: number }) {
+  const qc = useQueryClient();
+  const { data: devices = [], isLoading } = useQuery({
+    queryKey: ["users", userId, "devices"],
+    queryFn: () => financeService.userDevices(userId),
+  });
+  const removeMutation = useMutation({
+    mutationFn: (deviceId: number) => financeService.removeUserDevice(userId, deviceId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users", userId, "devices"] });
+      toast.success("Device removed");
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "Failed to remove device")),
+  });
+
+  return (
+    <div className="mt-6 border-t border-line pt-4">
+      <p className="text-xs font-semibold text-ink-soft">Verified devices</p>
+      <p className="mt-0.5 text-xs text-ink-muted">
+        Devices confirmed with their PIN, fingerprint or face at sign-in. Remove a lost device — it will need the device lock
+        and password again.
+      </p>
+      <div className="mt-3 space-y-2">
+        {isLoading && <p className="text-xs text-ink-muted">Loading…</p>}
+        {!isLoading && devices.length === 0 && <p className="text-xs text-ink-muted">No devices verified yet.</p>}
+        {devices.map((d) => (
+          <div key={d.deviceId} className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 ring-1 ring-line">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Laptop className="h-4 w-4 shrink-0 text-ink-muted" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{d.deviceName ?? "Device"}</p>
+                <p className="text-[11px] text-ink-muted">
+                  Added {formatDate(d.createdAt)}
+                  {d.lastUsedAt ? ` · last used ${formatDate(d.lastUsedAt)} ${formatTime(d.lastUsedAt)}` : ""}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={removeMutation.isPending && removeMutation.variables === d.deviceId}
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: `Remove ${d.deviceName ?? "this device"}?`,
+                  text: "Signing in on it will require the device lock and password again.",
+                  confirmText: "Remove",
+                });
+                if (ok) removeMutation.mutate(d.deviceId);
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

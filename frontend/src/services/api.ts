@@ -11,6 +11,10 @@ import axios, { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig 
 export const ACCESS_TOKEN_KEY = "madal_access_token";
 export const REFRESH_TOKEN_KEY = "madal_refresh_token";
 export const USER_KEY = "madal_user";
+/** Set while the idle lock screen is showing; shared across tabs and reloads. */
+export const LOCKED_KEY = "madal_locked";
+/** Epoch ms of the last user interaction in any tab. */
+export const LAST_ACTIVITY_KEY = "madal_last_activity";
 
 /** Converts snake_case keys (backend wire format) to camelCase. */
 function toCamelKey(key: string): string {
@@ -67,8 +71,14 @@ export function getFieldErrors(err: unknown): Record<string, string> {
   return {};
 }
 
+/** API root, e.g. "/api" behind the Vite proxy or "https://api.example.com/api" in production. */
+export const API_BASE_URL = String(import.meta.env.VITE_API_URL ?? "/api").replace(/\/+$/, "");
+
+/** Absolute URL for a public API path (images in <img src>), honouring VITE_API_URL. */
+export const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? "/api",
+  baseURL: API_BASE_URL,
   timeout: 20000,
   headers: { "Content-Type": "application/json" },
 });
@@ -94,6 +104,8 @@ export const clearTokens = () => {
     store.removeItem(REFRESH_TOKEN_KEY);
     store.removeItem(USER_KEY);
   }
+  localStorage.removeItem(LOCKED_KEY);
+  localStorage.removeItem(LAST_ACTIVITY_KEY);
 };
 
 /** Notifies app-level listeners (AuthContext) that the session expired. */
@@ -140,7 +152,8 @@ async function performRefresh(): Promise<string | null> {
 
 api.interceptors.response.use(undefined, async (error: AxiosError) => {
   const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
-  const isAuthEndpoint = original?.url?.includes("/auth/");
+  // Unlock runs on a possibly-expired access token after idling, so it may refresh like any other call.
+  const isAuthEndpoint = original?.url?.includes("/auth/") && !original.url.includes("/auth/unlock");
 
   if (error.response?.status === 401 && original && !original._retry && !isAuthEndpoint) {
     original._retry = true;

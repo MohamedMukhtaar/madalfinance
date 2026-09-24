@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Download, Eye, Pencil, Plus, Trash2, Users, CircleCheck, ReceiptText } from "lucide-react";
+import { FileDown, FileSpreadsheet, Eye, Pencil, Plus, Trash2, Users, CircleCheck, ReceiptText } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,10 @@ import { CustomerFormModal } from "@/features/customers/CustomerFormModal";
 import { useCustomers, useDeleteCustomer, usePayments } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { CUSTOMER_STATUS_STYLES } from "@/utils/constants";
-import { downloadCSV, formatCurrency, formatDate, formatTime } from "@/utils/format";
+import toast from "react-hot-toast";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
+import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { matchesDateFilter } from "@/utils/dateFilter";
 import type { Customer } from "@/types";
 import { cn } from "@/utils/cn";
@@ -145,22 +148,13 @@ export default function CustomersPage() {
     [currency]
   );
 
-  const exportCSV = () => {
-    downloadCSV(
-      customers.map((c) => ({
-        Code: c.customerCode,
-        Name: c.customerName,
-        Company: c.companyName ?? "",
-        Phone: c.phone,
-        Email: c.email,
-        City: c.city ?? "",
-        Projects: c.projectCount,
-        Outstanding: c.outstandingBalance,
-        Status: c.status,
-        Created: c.createdAt,
-      })),
-      "customers.csv"
-    );
+  const exportList = async (format: "pdf" | "xlsx") => {
+    try {
+      await financeService.downloadReport("customerList", format, "customers");
+      toast.success(`${format === "pdf" ? "PDF" : "Excel"} downloaded`);
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to export customers"));
+    }
   };
 
   const handleDelete = async (c: Customer) => {
@@ -179,8 +173,11 @@ export default function CustomersPage() {
         subtitle="Manage your client base, balances and records."
         actions={
           <>
-            <Button variant="secondary" onClick={exportCSV} leftIcon={<Download className="h-4 w-4" />}>
-              Export
+            <Button variant="secondary" onClick={() => void exportList("pdf")} leftIcon={<FileDown className="h-4 w-4" />}>
+              PDF
+            </Button>
+            <Button variant="secondary" onClick={() => void exportList("xlsx")} leftIcon={<FileSpreadsheet className="h-4 w-4" />}>
+              Excel
             </Button>
             <Button
               onClick={() => {

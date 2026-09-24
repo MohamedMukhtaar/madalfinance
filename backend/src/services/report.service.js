@@ -235,6 +235,21 @@ const REPORT_DEFINITIONS = {
     ],
     build: (data) => data.rows ?? [],
   },
+  customerList: {
+    title: 'Customers',
+    columns: [
+      { header: 'Code', key: 'customer_code', width: 14 },
+      { header: 'Name', key: 'customer_name', width: 28 },
+      { header: 'Company', key: 'company_name', width: 24 },
+      { header: 'Phone', key: 'phone', width: 18 },
+      { header: 'Email', key: 'email', width: 28 },
+      { header: 'City', key: 'city', width: 16 },
+      { header: 'Projects', key: 'project_count', width: 12 },
+      { header: 'Outstanding', key: 'outstanding_balance', width: 17 },
+      { header: 'Status', key: 'status', width: 12 },
+    ],
+    build: (data) => data.rows ?? [],
+  },
   employeeReport: {
     title: 'Employee Report',
     columns: [
@@ -511,6 +526,15 @@ export const reportService = {
     };
   },
 
+  async customerList() {
+    const rows = await customerRepo.list(null, {
+      offset: 0,
+      perPage: 5000,
+      order: 'customer_name ASC',
+    });
+    return { rows };
+  },
+
   async employeeList(fromDate, toDate) {
     const rows = await employeeRepo.list(null, {
       offset: 0,
@@ -683,6 +707,9 @@ export const reportService = {
       case 'employeeList':
         data = await this.employeeList(fromDate, toDate);
         break;
+      case 'customerList':
+        data = await this.customerList();
+        break;
       case 'employeeReport': {
         if (!employeeId) throw ApiError.badRequest('employee_id is required');
         data = await this.employeeReport(employeeId);
@@ -809,6 +836,7 @@ export const reportService = {
         subtitle,
         columns: exportDef.columns,
         rows: excelRows,
+        settings,
       });
     }
 

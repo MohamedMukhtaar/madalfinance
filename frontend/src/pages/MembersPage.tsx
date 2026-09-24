@@ -377,6 +377,7 @@ function MemberFormModal({
           <FileUpload
             label="Upload member photo (JPG / PNG)"
             accept="image/jpeg,image/png,image/webp"
+            hint="JPG, PNG or WebP up to 10MB"
             value={photoFiles}
             onChange={setPhotoFiles}
           />

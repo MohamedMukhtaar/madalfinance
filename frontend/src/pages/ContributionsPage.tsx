@@ -7,6 +7,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import {
+  Avatar,
   Badge,
   StatCard,
   StatCardsGrid,
@@ -101,7 +102,10 @@ export default function ContributionsPage() {
       columnHelper.accessor("memberName", {
         header: "Member",
         cell: (info) => (
-          <span className="font-semibold text-slate-800 dark:text-slate-100">{info.getValue()}</span>
+          <div className="flex items-center gap-2.5">
+            <Avatar name={info.getValue() ?? ""} src={info.row.original.avatarUrl ?? undefined} size="sm" />
+            <span className="font-semibold text-slate-800 dark:text-slate-100">{info.getValue()}</span>
+          </div>
         ),
       }),
       columnHelper.accessor("amount", {

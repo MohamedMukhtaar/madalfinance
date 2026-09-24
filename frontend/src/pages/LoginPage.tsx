@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Info, Lock, LogIn, User } from "lucide-react";
+import { Eye, EyeOff, Fingerprint, Info, Lock, LogIn, User } from "lucide-react";
 import { Input, Checkbox } from "@/components/ui";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
@@ -20,6 +20,7 @@ export default function LoginPage() {
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string>();
+  const [deviceStep, setDeviceStep] = useState(false);
 
   const {
     register,
@@ -31,12 +32,15 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginForm) => {
     setServerError(undefined);
+    setDeviceStep(false);
     try {
-      await login(data.username, data.password, data.remember);
+      await login(data.username, data.password, data.remember, () => setDeviceStep(true));
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname;
       navigate(from ?? "/", { replace: true });
     } catch (err) {
       setServerError(getErrorMessage(err, "Invalid username or password."));
+    } finally {
+      setDeviceStep(false);
     }
   };
 
@@ -90,6 +94,13 @@ export default function LoginPage() {
           )}
         </div>
 
+        {deviceStep && (
+          <div className="flex items-start gap-2.5 rounded-xl bg-brand-50 px-3.5 py-2.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">
+            <Fingerprint className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Password accepted. Confirm it's you with this device's PIN, fingerprint or face (Windows Hello on Windows).</span>
+          </div>
+        )}
+
         {serverError && (
           <motion.div
             initial={{ opacity: 0, y: -6 }}
@@ -106,7 +117,7 @@ export default function LoginPage() {
         </div>
 
         <Button type="submit" size="lg" variant="primary" loading={isSubmitting} rightIcon={<LogIn className="h-4 w-4" />} className="w-full">
-          {isSubmitting ? "Signing in…" : "Sign in"}
+          {deviceStep ? "Waiting for device…" : isSubmitting ? "Signing in…" : "Sign in"}
         </Button>
       </form>
     </motion.div>
