@@ -40,6 +40,15 @@ export const readTicket = (ticket, stage) => {
   return payload;
 };
 
+/*
+ * Google Password Manager passkeys (published AAGUID). On Android they are unlocked with the
+ * phone's own screen lock, which is what we want; on a laptop/desktop Chrome protects them with
+ * a separate Google PIN instead of the computer's lock, so they are refused there and the user
+ * is asked to set up Windows Hello (or Touch ID) instead.
+ */
+const GOOGLE_PASSWORD_MANAGER_AAGUID = 'ea9b8d66-4d01-1d21-3ce4-b6b48cb575d4';
+const isMobileAgent = (ua = '') => /Android|iPhone|iPad|iPod/i.test(String(ua));
+
 const toStoredKey = (bytes) => Buffer.from(bytes).toString('base64url');
 const fromStoredKey = (text) => new Uint8Array(Buffer.from(text, 'base64url'));
 const splitTransports = (value) => (value ? value.split(',') : undefined);
@@ -169,6 +178,11 @@ export const deviceService = {
         throw ApiError.unauthorized(`Device verification failed: ${err.message}`);
       }
       if (!result.verified) throw ApiError.unauthorized('Device verification failed');
+      if (result.registrationInfo.aaguid === GOOGLE_PASSWORD_MANAGER_AAGUID && !isMobileAgent(userAgent)) {
+        throw ApiError.badRequest(
+          "This computer saved the key in Google Password Manager, which uses a separate Google PIN. Set up Windows Hello (Settings → Accounts → Sign-in options → PIN) so the laptop's own PIN is used, then sign in again."
+        );
+      }
       const { credential } = result.registrationInfo;
       const deviceId = await userDeviceRepo.create(null, {
         user_id: user.user_id,
