@@ -1,6 +1,11 @@
 import type { AppSettings, Invoice, Payment } from "@/types";
 import { formatCurrency, formatDate } from "./format";
 import { describeInvoice, lineItemDisplay } from "./invoiceKind";
+import { financeService } from "@/services/finance";
+import defaultLogo from "@/assets/madal-logo.png";
+
+/** Replaced with the company logo <img> once it has been loaded. */
+const LOGO_SLOT = "<!--company-logo-->";
 
 export interface ExpenseChargeDoc {
   id: string;
@@ -43,6 +48,7 @@ const DOC_STYLES = `
     border-bottom: 1px solid #e2e8f0;
     background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
   }
+  .logo { display: block; max-height: 56px; max-width: 200px; object-fit: contain; margin-bottom: 10px; }
   .brand { font-size: 20px; font-weight: 800; color: #101848; line-height: 1.2; }
   .sub { color: #64748b; font-size: 12px; margin-top: 6px; line-height: 1.5; }
   .doc-side { text-align: right; min-width: 180px; }
@@ -215,6 +221,7 @@ function companyBlock(settings: AppSettings): string {
   const contact = [settings.companyPhone, settings.companyEmail].filter(Boolean).join(" · ");
   return `
     <div>
+      ${LOGO_SLOT}
       <div class="brand">${esc(settings.companyName)}</div>
       ${settings.companyAddress ? `<div class="sub">${esc(settings.companyAddress)}</div>` : ""}
       ${contact ? `<div class="sub">${esc(contact)}</div>` : ""}
@@ -229,21 +236,59 @@ function metaItem(label: string, value: string): string {
     </div>`;
 }
 
-function openPrintWindow(title: string, bodyHtml: string) {
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
+/** Company logo from Settings (falls back to the Madal logo) as a data URL the print window can show. */
+async function loadLogoDataUrl(settings: AppSettings): Promise<string | null> {
+  try {
+    if (settings.logo) {
+      return await blobToDataUrl(await financeService.fetchFileBlob("logos", settings.logo, { inline: true }));
+    }
+  } catch {
+    /* fall through to the bundled logo */
+  }
+  try {
+    return await blobToDataUrl(await (await fetch(defaultLogo)).blob());
+  } catch {
+    return null;
+  }
+}
+
+function openPrintWindow(title: string, bodyHtml: string, settings: AppSettings) {
+  // Open synchronously (inside the click) so popup blockers allow it, then fill it once the logo is ready.
   const win = window.open("", "_blank", "width=900,height=800");
   if (!win) return;
-  win.document.write(`<!doctype html>
+  win.document.write(`<!doctype html><title>${esc(title)}</title><p style="font-family:system-ui;padding:32px;color:#64748b">Preparing document…</p>`);
+
+  void loadLogoDataUrl(settings).then((logo) => {
+    if (win.closed) return;
+    const html = bodyHtml.replace(
+      LOGO_SLOT,
+      logo ? `<img class="logo" src="${logo}" alt="${esc(settings.companyName)}" />` : ""
+    );
+    win.document.open();
+    win.document.write(`<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
 <title>${esc(title)}</title>
 <style>${DOC_STYLES}</style>
 </head>
-<body>${bodyHtml}</body>
+<body>${html}</body>
 </html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => win.print(), 300);
+    win.document.close();
+    win.focus();
+    const imgs = Array.from(win.document.images);
+    Promise.all(imgs.map((img) => (img.complete ? null : new Promise((r) => (img.onload = img.onerror = r))))).then(() =>
+      setTimeout(() => win.print(), 150)
+    );
+  });
 }
 
 export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): string {
@@ -311,7 +356,7 @@ export function buildInvoiceHTML(invoice: Invoice, settings: AppSettings): strin
 }
 
 export function printInvoice(invoice: Invoice, settings: AppSettings) {
-  openPrintWindow(invoice.invoiceNumber, buildInvoiceHTML(invoice, settings));
+  openPrintWindow(invoice.invoiceNumber, buildInvoiceHTML(invoice, settings), settings);
 }
 
 export function buildPaymentHTML(
@@ -384,7 +429,7 @@ export function printPayment(
   settings: AppSettings,
   customer?: { companyName?: string | null; phone?: string | null; address?: string | null; city?: string | null }
 ) {
-  openPrintWindow(payment.paymentNumber, buildPaymentHTML(payment, settings, customer));
+  openPrintWindow(payment.paymentNumber, buildPaymentHTML(payment, settings, customer), settings);
 }
 
 export function buildChargeHTML(charge: ExpenseChargeDoc, settings: AppSettings): string {
@@ -419,5 +464,5 @@ export function buildChargeHTML(charge: ExpenseChargeDoc, settings: AppSettings)
 }
 
 export function printCharge(charge: ExpenseChargeDoc, settings: AppSettings) {
-  openPrintWindow(`Charge ${charge.id}`, buildChargeHTML(charge, settings));
+  openPrintWindow(`Charge ${charge.id}`, buildChargeHTML(charge, settings), settings);
 }

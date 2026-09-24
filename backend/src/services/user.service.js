@@ -8,6 +8,7 @@ import ApiError from '../utils/ApiError.js';
 import { withTransaction } from '../config/db.js';
 import { ROLES } from '../utils/constants.js';
 import { requireDeleteReason } from '../helpers/deleteReason.js';
+import { deleteStoredFile } from '../helpers/fileHelper.js';
 
 const resolveRoleId = async (conn, roleName) => {
   const role = await roleRepo.findByName(conn, roleName);
@@ -124,6 +125,20 @@ export const userService = {
       await auditService.log({ module: 'User', action: 'UPDATE', userId: actorId, recordId: id, ip });
       return userRepo.findById(conn, id);
     });
+  },
+
+  async uploadAvatar(id, file, actorId, ip) {
+    const user = await userRepo.findById(null, id);
+    if (!user) throw ApiError.notFound('User not found');
+    if (user.avatar_path) {
+      deleteStoredFile('users', user.avatar_path);
+    }
+    await userRepo.saveAvatar(null, id, {
+      avatar_path: file.filename,
+      avatar_name: file.originalname,
+    });
+    await auditService.log({ module: 'User', action: 'UPLOAD_AVATAR', userId: actorId, recordId: id, ip });
+    return userRepo.findById(null, id);
   },
 
   async deactivate(id, reason, actorId, ip) {

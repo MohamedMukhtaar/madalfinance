@@ -5,6 +5,22 @@ export const loginValidator = [
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
+export const deviceOptionsValidator = [
+  body('device_ticket').isString().notEmpty().withMessage('Device ticket is required'),
+  body('credential_id').optional({ values: 'null' }).isString().isLength({ max: 512 }),
+  body('any_known_device').optional().isBoolean(),
+];
+
+export const deviceVerifyValidator = [
+  body('device_ticket').isString().notEmpty().withMessage('Device ticket is required'),
+  body('response').isObject().withMessage('Device response is required'),
+  body('response.id').isString().isLength({ min: 1, max: 512 }),
+];
+
+export const unlockValidator = [
+  body('password').notEmpty().withMessage('Password is required'),
+];
+
 export const refreshValidator = [
   body('refresh_token').notEmpty().withMessage('Refresh token is required'),
 ];

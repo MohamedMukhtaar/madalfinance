@@ -1,4 +1,4 @@
-import { authApi, api, normalizePayload, type ApiEnvelope } from "./api";
+import { authApi, api, apiUrl, type ApiEnvelope } from "./api";
 import type {
   AppSettings,
   Attachment,
@@ -88,8 +88,17 @@ function withMemberAvatar(m: Member): Member {
   return {
     ...m,
     avatarUrl: m.avatarPath
-      ? `/api/public/avatars/${encodeURIComponent(m.avatarPath)}`
+      ? apiUrl(`/public/avatars/${encodeURIComponent(m.avatarPath)}`)
       : m.avatarUrl ?? null,
+  };
+}
+
+function withUserAvatar<U extends { avatarPath?: string | null; avatarUrl?: string | null }>(u: U): U {
+  return {
+    ...u,
+    avatarUrl: u.avatarPath
+      ? apiUrl(`/public/user-avatars/${encodeURIComponent(u.avatarPath)}`)
+      : u.avatarUrl ?? null,
   };
 }
 
@@ -127,6 +136,28 @@ interface LoginResult {
   accessToken: string;
   refreshToken: string;
   expiresAt?: string;
+  /** WebAuthn credential of this device, remembered so the next sign-in authenticates instead of registering. */
+  credentialId?: string;
+}
+
+/** Password accepted; the device's own lock must confirm before tokens are issued. */
+export interface PasswordStep {
+  deviceVerificationRequired: true;
+  deviceTicket: string;
+  userId: number;
+}
+
+export interface UserDevice {
+  deviceId: number;
+  deviceName: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface DeviceOptionsResult {
+  mode: "register" | "authenticate";
+  options: Record<string, unknown>;
+  ticket: string;
 }
 
 interface InvoiceDetailRaw {
@@ -163,14 +194,38 @@ interface InvoiceDetailRaw {
 
 export const financeService = {
   /* ------------------------------ AUTH ------------------------------ */
-  async login(username: string, password: string): Promise<LoginResult> {
-    const res = await authApi.post<LoginResult>("/auth/login", { username, password });
+  async login(username: string, password: string): Promise<PasswordStep> {
+    const res = await authApi.post<PasswordStep>("/auth/login", { username, password });
     return unwrap(res);
+  },
+
+  async deviceOptions(
+    deviceTicket: string,
+    credentialId?: string | null,
+    anyKnownDevice = false
+  ): Promise<DeviceOptionsResult> {
+    // WebAuthn option names have no underscores, so the camelCase response normalizer leaves them intact.
+    const res = await authApi.post<DeviceOptionsResult>("/auth/device/options", {
+      device_ticket: deviceTicket,
+      credential_id: credentialId ?? null,
+      any_known_device: anyKnownDevice,
+    });
+    return unwrap(res);
+  },
+
+  async deviceVerify(deviceTicket: string, response: unknown): Promise<LoginResult> {
+    const res = await authApi.post<LoginResult>("/auth/device/verify", { device_ticket: deviceTicket, response });
+    const result = unwrap(res);
+    return { ...result, user: withUserAvatar(result.user) };
   },
 
   async me(): Promise<User> {
     const res = await authApi.get<{ user: User }>("/auth/me");
-    return unwrap(res).user;
+    return withUserAvatar(unwrap(res).user);
+  },
+
+  async unlock(password: string): Promise<void> {
+    await authApi.post("/auth/unlock", { password });
   },
 
   async logout(refreshToken: string): Promise<void> {
@@ -216,7 +271,8 @@ export const financeService = {
   /* ------------------------------ USERS / MEMBERS ------------------------------ */
   async users(params?: ListParams): Promise<Paged<User>> {
     const res = await authApi.get<User[]>("/users", toQuery(params));
-    return asPaged(res);
+    const paged = asPaged(res);
+    return { ...paged, rows: paged.rows.map(withUserAvatar) };
   },
 
   async roles(): Promise<import("@/types").AppRoleRecord[]> {
@@ -264,7 +320,21 @@ export const financeService = {
     }
   ): Promise<User> {
     const res = await authApi.put<User>(`/users/${id}`, toSnakeCase(data));
+    return withUserAvatar(unwrap(res));
+  },
+
+  async userDevices(id: number): Promise<UserDevice[]> {
+    const res = await authApi.get<UserDevice[]>(`/users/${id}/devices`);
     return unwrap(res);
+  },
+
+  async removeUserDevice(id: number, deviceId: number): Promise<void> {
+    await authApi.delete(`/users/${id}/devices/${deviceId}`);
+  },
+
+  async uploadUserAvatar(id: number, file: File, onProgress?: (p: number) => void): Promise<User> {
+    const user = await this.upload<User>(`/users/${id}/avatar`, file, onProgress);
+    return withUserAvatar(user);
   },
 
   async deleteUser(id: number, reason: string): Promise<void> {
@@ -466,15 +536,6 @@ export const financeService = {
   async salaryPayments(params?: ListParams): Promise<Paged<SalaryPayment>> {
     const res = await authApi.get<SalaryPayment[]>("/salary/payments", toQuery(params));
     return asPaged(res);
-  },
-
-  /** Public team for login page (no auth). */
-  async publicTeam(): Promise<Array<{ memberId: number; memberName: string; position?: string; avatarUrl?: string | null }>> {
-    const res = await api.get("/public/team");
-    const envelope = normalizePayload(res.data) as ApiEnvelope<
-      Array<{ memberId: number; memberName: string; position?: string; avatarUrl?: string | null }>
-    >;
-    return envelope.data ?? [];
   },
 
   /* ------------------------------ CUSTOMERS ------------------------------ */
@@ -941,6 +1002,7 @@ export const financeService = {
       amount: Number(d.amount ?? 0),
       balance: Math.max(0, Number(d.amount ?? 0) - Number(d.paidAmount ?? 0)),
       attachmentCount: Number(d.attachmentCount ?? 0),
+      avatarUrl: d.avatarPath ? apiUrl(`/public/avatars/${encodeURIComponent(d.avatarPath)}`) : null,
     });
     if (data && typeof data === "object" && "batch" in data) {
       const wrapped = data as { batch: DueBatch; dues: MemberDue[] };
@@ -1109,6 +1171,24 @@ export const financeService = {
   async salaryStatement(params: ListParams & { employeeId: number }): Promise<import("@/types").SalaryStatement> {
     const res = await authApi.get<import("@/types").SalaryStatement>("/reports/salary-statement", toQuery(params));
     return unwrap(res);
+  },
+
+  /** Downloads a branded PDF / Excel export (company logo + details from Settings) as a file. */
+  async downloadReport(kind: string, format: "pdf" | "xlsx", filenameBase: string, params?: ListParams): Promise<void> {
+    const url = await this.exportReportUrl(kind, format, params);
+    const response = await api.get<Blob>(url.replace(/^\/api/, ""), { responseType: "blob", timeout: 60000 });
+    if (String(response.headers["content-type"] ?? "").includes("application/json")) {
+      const parsed = JSON.parse(await response.data.text()) as { message?: string };
+      throw new Error(parsed.message || "Export failed");
+    }
+    const blobUrl = URL.createObjectURL(response.data);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `${filenameBase}-${new Date().toISOString().slice(0, 10)}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
   },
 
   async exportReportUrl(kind: string, format: "pdf" | "xlsx", params?: ListParams): Promise<string> {

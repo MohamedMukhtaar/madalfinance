@@ -17,6 +17,7 @@ export function FileUpload({
   accept = "application/pdf,image/png,image/jpeg,image/jpg",
   multiple = false,
   label = "Drag & drop a file here, or click to browse",
+  hint = "Images or PDF up to 10MB",
   className,
   onUpload,
 }: {
@@ -25,6 +26,7 @@ export function FileUpload({
   accept?: string;
   multiple?: boolean;
   label?: string;
+  hint?: string;
   className?: string;
   onUpload?: (file: File, onProgress: (n: number) => void) => Promise<{
     name: string;
@@ -118,7 +120,7 @@ export function FileUpload({
         </div>
         <div>
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</p>
-          <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Images or PDF up to 10MB</p>
+          <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">{hint}</p>
         </div>
       </div>
       <input

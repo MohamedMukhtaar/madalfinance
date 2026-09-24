@@ -234,7 +234,7 @@ export function Topbar({
           onLogout={handleLogout}
           trigger={
             <button className="flex items-center gap-2.5 rounded-xl p-1.5 pr-2 transition hover:bg-muted">
-              <Avatar name={user?.fullName ?? "User"} color={user?.avatarColor} />
+              <Avatar name={user?.fullName ?? "User"} color={user?.avatarColor} src={user?.avatarUrl} />
               <span className="hidden text-left md:block">
                 <span className="block max-w-[9rem] truncate text-sm font-semibold text-ink">
                   {user?.fullName}

@@ -43,6 +43,19 @@ const env = {
       .filter(Boolean),
   },
 
+  /**
+   * Device verification at sign-in (WebAuthn). RP ID must be the site's domain
+   * (e.g. finance.madal.so); origins are the exact URLs the frontend is served from.
+   */
+  webauthn: {
+    rpName: process.env.WEBAUTHN_RP_NAME || 'Madal Finance',
+    rpId: process.env.WEBAUTHN_RP_ID || '',
+    origins: (process.env.WEBAUTHN_ORIGINS || '')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+  },
+
   smtp: {
     host: process.env.SMTP_HOST || '',
     port: parseNum(process.env.SMTP_PORT, 587),

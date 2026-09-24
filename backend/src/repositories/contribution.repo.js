@@ -90,7 +90,7 @@ export const listDues = (conn, { batchId, status, memberId, offset, perPage, ord
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   return run(
     conn,
-    `SELECT d.*, d.paid_at AS paid_date, m.position, m.credit_balance, m.full_name AS member_name,
+    `SELECT d.*, d.paid_at AS paid_date, m.position, m.credit_balance, m.full_name AS member_name, m.avatar_path,
             (SELECT COUNT(*) FROM member_due_attachments a WHERE a.due_id = d.due_id) AS attachment_count
        FROM member_dues d
        JOIN members m ON m.member_id = d.member_id
