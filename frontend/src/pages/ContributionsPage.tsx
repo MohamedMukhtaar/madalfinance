@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
@@ -65,6 +65,20 @@ export default function ContributionsPage() {
   const [repayAmount, setRepayAmount] = useState<number>(0);
   const [repayNotes, setRepayNotes] = useState("");
   const [repayAccId, setRepayAccId] = useState<string>("");
+
+  // Newest month that has dues; the page opens there when the current month has none yet.
+  const latestBatch = useMemo(
+    () => batches.reduce<DueBatch | undefined>((best, b) => (!best || b.year * 12 + b.month > best.year * 12 + best.month ? b : best), undefined),
+    [batches]
+  );
+  const jumpedToLatest = useRef(false);
+  useEffect(() => {
+    if (jumpedToLatest.current || !latestBatch) return;
+    jumpedToLatest.current = true;
+    if (!batches.some((b) => b.month === month.month && b.year === month.year)) {
+      setMonth({ month: latestBatch.month, year: latestBatch.year });
+    }
+  }, [batches, latestBatch, month, setMonth]);
 
   const activeBatchMeta = useMemo(
     () => batches.find((b) => b.month === month.month && b.year === month.year),
@@ -331,9 +345,20 @@ export default function ContributionsPage() {
           title="No contributions for this month"
           description={`Charge members to generate dues for ${formatMonthLabel(month)}.`}
           action={
-            <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
-              Charge Members
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              {latestBatch && (
+                <Button
+                  variant="secondary"
+                  onClick={() => setMonth({ month: latestBatch.month, year: latestBatch.year })}
+                  leftIcon={<History className="h-4 w-4" />}
+                >
+                  View {formatMonthLabel({ month: latestBatch.month, year: latestBatch.year })}
+                </Button>
+              )}
+              <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
+                Charge Members
+              </Button>
+            </div>
           }
         />
       ) : (

@@ -134,11 +134,16 @@ export const deviceService = {
       userID: new TextEncoder().encode(`user-${user.user_id}`),
       attestationType: 'none',
       excludeCredentials: existing.map((d) => ({ id: d.credential_id, transports: splitTransports(d.transports) })),
+      // A device-bound (non-discoverable) key makes Chrome on Windows use Windows Hello — the
+      // laptop's own PIN/fingerprint — instead of offering to create a Google Password Manager
+      // passkey with a separate PIN. Phones still use their own fingerprint / PIN.
       authenticatorSelection: {
         authenticatorAttachment: 'platform',
         userVerification: 'required',
-        residentKey: 'preferred',
+        residentKey: 'discouraged',
+        requireResidentKey: false,
       },
+      preferredAuthenticatorType: 'localDevice',
       timeout: 120000,
     });
     return {
