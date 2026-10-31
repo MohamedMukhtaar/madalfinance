@@ -1,3 +1,4 @@
+import { requireDeleteReason } from '../helpers/deleteReason.js';
 import dayjs from 'dayjs';
 import salaryRepo from '../repositories/salary.repo.js';
 import employeeRepo from '../repositories/employee.repo.js';
@@ -125,9 +126,72 @@ export const salaryService = {
       if (Number(charge.paid_amount) > 0) {
         throw ApiError.badRequest('Cannot delete a charge that already has payments');
       }
-      await salaryRepo.deleteCharge(conn, id);
+      const hasPayments = (await salaryRepo.countPaymentsForCharge(conn, id)) > 0;
+      if (hasPayments) {
+        // Deleted (cancelled) payments still point at it — keep the row for history, mark it cancelled.
+        await salaryRepo.cancelCharge(conn, id);
+      } else {
+        await salaryRepo.deleteCharge(conn, id);
+      }
       await auditService.log({ module: 'Salary', action: 'DELETE', userId, recordId: id, ip });
-      return { salary_charge_id: id, deleted: true };
+      return { salary_charge_id: id, deleted: !hasPayments, cancelled: hasPayments };
+    });
+  },
+
+  /** Edit a salary charge's amounts/date. Net pay can't drop below what was already paid. */
+  async updateCharge(id, data, userId, ip) {
+    return withTransaction(async (conn) => {
+      const charge = await salaryRepo.findChargeById(conn, id);
+      if (!charge) throw ApiError.notFound('Salary charge not found');
+      if (charge.status === 'Cancelled') throw ApiError.conflict('This salary charge is cancelled');
+      const basic = data.basic_salary !== undefined ? Number(data.basic_salary) : Number(charge.basic_salary);
+      const allowance = data.allowance !== undefined ? Number(data.allowance) : Number(charge.allowance);
+      const deduction = data.deduction !== undefined ? Number(data.deduction) : Number(charge.deduction);
+      const net = basic + allowance - deduction;
+      if (net <= 0) throw ApiError.badRequest('Net salary must be greater than zero');
+      const paid = Number(charge.paid_amount);
+      if (net < paid - 0.001) throw ApiError.badRequest(`Net salary cannot be less than what was already paid (${paid.toFixed(2)})`);
+      await salaryRepo.updateCharge(conn, id, {
+        basic_salary: basic,
+        allowance,
+        deduction,
+        charge_date: data.charge_date,
+        notes: data.notes,
+      });
+      await salaryRepo.applyChargePayment(conn, id, paid, chargeStatus(paid, net));
+      await auditService.log({ module: 'Salary', action: 'UPDATE', userId, recordId: id, ip });
+      return salaryRepo.findChargeById(conn, id);
+    });
+  },
+
+  /** Delete a salary payment: money returns to its account and the charge is owed again. */
+  async removePayment(id, reason, userId, ip) {
+    const deleteReason = requireDeleteReason(reason);
+    return withTransaction(async (conn) => {
+      const payment = await salaryRepo.findPaymentById(conn, id);
+      if (!payment || payment.status === 'Cancelled') throw ApiError.notFound('Salary payment not found');
+      const amount = Number(payment.amount);
+      const accId = Number(payment.account_id ?? payment.acc_id);
+      await salaryRepo.cancelPayment(conn, id);
+      await transactionRepo.create(conn, {
+        transaction_date: dayjs().format('YYYY-MM-DD'),
+        transaction_type: 'Income',
+        reference_type: 'Salary',
+        reference_id: id,
+        description: `Reversal of salary payment ${payment.payment_number ?? `#${id}`}`,
+        income: amount,
+        expense: 0,
+        acc_id: accId,
+        created_by: userId,
+      });
+      await accountService.credit(conn, accId, amount);
+      const charge = await salaryRepo.findChargeById(conn, payment.salary_charge_id);
+      if (charge) {
+        const paid = Math.max(0, Number(charge.paid_amount) - amount);
+        await salaryRepo.applyChargePayment(conn, charge.salary_charge_id, paid, chargeStatus(paid, charge.net_salary));
+      }
+      await auditService.log({ module: 'Salary', action: 'DELETE_PAYMENT', userId, recordId: id, ip, details: deleteReason });
+      return { salary_payment_id: id, deleted: true };
     });
   },
 

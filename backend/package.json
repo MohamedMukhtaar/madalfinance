@@ -15,6 +15,7 @@
     "db:init": "node src/database/run.js init",
     "db:reset-data": "node scripts/reset-data.js",
     "db:examples": "node scripts/seed-examples.js",
+    "db:seed-avatars": "node scripts/seed-user-avatars.js",
     "lint": "eslint src",
     "check": "node scripts/check.js",
     "test": "node --test tests/**/*.test.js"

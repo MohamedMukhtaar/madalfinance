@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { useForm } from "react-hook-form";
-import { Laptop, Plus, Pencil, Shield, Trash2, Users, UserCheck, UserX } from "lucide-react";
+import { Eye, Laptop, Plus, Pencil, Shield, Trash2, Users, RefreshCw } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
@@ -16,6 +17,7 @@ import {
   FileUpload,
   promptDeleteReason,
   confirmDialog,
+  ActionIconButton,
   type UploadedFile,
 } from "@/components/ui";
 import type { DropdownItem } from "@/components/ui";
@@ -44,11 +46,6 @@ const STATUS_STYLES: Record<string, string> = {
   inactive: "bg-slate-100 text-slate-600 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300",
 };
 
-const ROLE_STYLES: Record<string, string> = {
-  "Super Admin": "bg-brand-50 text-brand-700 ring-brand-200 dark:bg-brand-500/10 dark:text-brand-300",
-  Admin: "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300",
-};
-
 function roleDescription(name: string) {
   if (name === "Super Admin") return "Full access including Trash, Settings, and user management.";
   if (name === "Admin") return "Full app access except Trash and user management.";
@@ -75,6 +72,8 @@ const userColumnHelper = createColumnHelper<User>();
 const roleColumnHelper = createColumnHelper<AppRoleRecord>();
 
 export default function UsersPage() {
+  const outlet = useOutletContext<{ embedded?: boolean } | null>();
+  const embedded = Boolean(outlet?.embedded);
   const [tab, setTab] = useState<TabValue>("users");
   const { data: usersData } = useUsers();
   const { data: roles = [] } = useRoles();
@@ -83,6 +82,15 @@ export default function UsersPage() {
     { label: "Users", value: "users", icon: <Users className="h-4 w-4" />, count: usersData?.rows?.length },
     { label: "Roles", value: "roles", icon: <Shield className="h-4 w-4" />, count: roles.length },
   ];
+
+  // Inside Settings hub, roles live on /settings/roles — only show the users table.
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <UsersTab roles={roles} embedded />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -98,7 +106,7 @@ export default function UsersPage() {
   );
 }
 
-function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
+function UsersTab({ roles, embedded = false }: { roles: AppRoleRecord[]; embedded?: boolean }) {
   const { user: currentUser, setUser } = useAuth();
   const { data, isLoading, error, refetch } = useUsers();
   const createMutation = useCreateUser();
@@ -108,6 +116,7 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
   const users = data?.rows ?? [];
   const [modalOpen, setModalOpen] = useState(false);
   const [editFor, setEditFor] = useState<User | undefined>();
+  const [viewFor, setViewFor] = useState<User | undefined>();
   const [photoFiles, setPhotoFiles] = useState<UploadedFile[]>([]);
 
   const {
@@ -211,55 +220,79 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
   const columns = useMemo<ColumnDef<User>[]>(
     () => [
-      userColumnHelper.accessor("avatarUrl", {
-        header: "Image",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <Avatar name={row.original.fullName} src={row.original.avatarUrl ?? undefined} size="sm" />
-        ),
-      }),
-      userColumnHelper.accessor("username", {
-        header: "Username",
-        cell: (info) => (
-          <span className="font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{info.getValue()}</span>
-        ),
-      }),
       userColumnHelper.accessor("fullName", {
-        header: "Full name",
-        cell: (info) => <span className="font-semibold text-slate-800 dark:text-slate-100">{info.getValue()}</span>,
+        header: "User Name",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-3">
+            <Avatar name={row.original.fullName} src={row.original.avatarUrl ?? undefined} size="sm" />
+            <div className="min-w-0">
+              <p className="truncate font-semibold text-ink">{row.original.fullName}</p>
+              <p className="truncate text-xs text-ink-muted">@{row.original.username}</p>
+            </div>
+          </div>
+        ),
       }),
-      userColumnHelper.accessor("role", {
-        header: "Role",
-        cell: (info) => <Badge className={ROLE_STYLES[info.getValue()] ?? ""}>{info.getValue()}</Badge>,
+      userColumnHelper.accessor("phone", {
+        header: "Phone",
+        cell: (info) => <span className="text-sm text-ink-soft">{info.getValue() || "—"}</span>,
       }),
       userColumnHelper.accessor("email", {
         header: "Email",
-        cell: (info) => <span className="text-sm text-slate-500">{info.getValue() ?? "—"}</span>,
+        cell: (info) => <span className="text-sm text-ink-soft">{info.getValue() || "—"}</span>,
+      }),
+      userColumnHelper.accessor("role", {
+        header: "Role",
+        cell: (info) => <span className="text-sm font-medium text-ink">{info.getValue()}</span>,
       }),
       userColumnHelper.accessor("status", {
         header: "Status",
-        cell: (info) => (
-          <Badge className={STATUS_STYLES[info.getValue()]} dot>
-            {info.getValue()}
-          </Badge>
-        ),
-      }),
-      userColumnHelper.accessor("lastLogin", {
-        header: "Last login",
         cell: (info) => {
-          const val = info.getValue();
-          return val ? (
-            <span className="text-xs text-slate-500">
-              {formatDate(val)} {formatTime(val)}
-            </span>
-          ) : (
-            <span className="text-xs text-slate-400">Never</span>
+          const status = info.getValue();
+          return (
+            <Badge className={STATUS_STYLES[status]} dot>
+              {status === "active" ? "Active" : "Inactive"}
+            </Badge>
           );
         },
       }),
-      userColumnHelper.display({ id: "actions", header: "", cell: () => null }),
+      userColumnHelper.display({
+        id: "actions",
+        header: "Action",
+        enableSorting: false,
+        cell: ({ row }) => {
+          const user = row.original;
+          const isSelf = user.userId === currentUser?.userId;
+          return (
+            <div className="inline-flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <ActionIconButton title="View" aria-label="View" onClick={() => setViewFor(user)}>
+                <Eye />
+              </ActionIconButton>
+              <ActionIconButton title="Edit" aria-label="Edit" onClick={() => openEdit(user)}>
+                <Pencil />
+              </ActionIconButton>
+              {!isSelf && (
+                <ActionIconButton
+                  title="Delete"
+                  aria-label="Delete"
+                  danger
+                  onClick={async () => {
+                    const reason = await promptDeleteReason({
+                      title: `Delete ${user.username}?`,
+                      text: "This user will be moved to Trash and can be restored later.",
+                      confirmText: "Move to trash",
+                    });
+                    if (reason) deleteMutation.mutate({ id: user.userId, reason });
+                  }}
+                >
+                  <Trash2 />
+                </ActionIconButton>
+              )}
+            </div>
+          );
+        },
+      }),
     ],
-    []
+    [currentUser?.userId, deleteMutation]
   );
 
   if (error) return <ErrorState onRetry={refetch} />;
@@ -268,81 +301,101 @@ function UsersTab({ roles }: { roles: AppRoleRecord[] }) {
 
   return (
     <>
-      <div className="flex justify-end">
-        <Button onClick={openCreate} leftIcon={<Plus className="h-4 w-4" />}>
-          Add user
-        </Button>
-      </div>
+      {embedded ? (
+        <PageHeader
+          title="Users"
+          subtitle="Manage your users"
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+                onClick={() => refetch()}
+              >
+                Refresh
+              </Button>
+              <Button size="sm" onClick={openCreate} leftIcon={<Plus className="h-4 w-4" />}>
+                Add User
+              </Button>
+            </div>
+          }
+        />
+      ) : (
+        <div className="flex justify-end">
+          <Button onClick={openCreate} leftIcon={<Plus className="h-4 w-4" />}>
+            Add User
+          </Button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}
         data={users}
         loading={isLoading}
-        searchPlaceholder="Search users…"
+        searchPlaceholder="Search"
+        showColumnToggle={false}
         renderMobileCard={(row) => (
-          <div className="space-y-1">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2">
               <Avatar name={row.fullName} src={row.avatarUrl ?? undefined} size="sm" />
               <div>
-                <p className="font-mono text-xs font-bold text-brand-600">{row.username}</p>
-                <p className="font-semibold text-slate-800 dark:text-slate-100">{row.fullName}</p>
+                <p className="font-semibold text-ink">{row.fullName}</p>
+                <p className="text-xs text-ink-muted">{row.phone || row.email || `@${row.username}`}</p>
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  <span className="text-xs font-medium text-ink">{row.role}</span>
+                  <Badge className={STATUS_STYLES[row.status]} dot>
+                    {row.status === "active" ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge className={ROLE_STYLES[row.role] ?? ""}>{row.role}</Badge>
-              <Badge className={STATUS_STYLES[row.status]} dot>
-                {row.status}
-              </Badge>
-            </div>
+            <ActionIconButton title="Edit" aria-label="Edit" onClick={() => openEdit(row)}>
+              <Pencil />
+            </ActionIconButton>
           </div>
         )}
-        actions={(row) => {
-          const isSelf = row.userId === currentUser?.userId;
-          const actions: DropdownItem[] = [
-            { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => openEdit(row) },
-          ];
-
-          if (!isSelf) {
-            if (row.status === "active") {
-              actions.push({
-                label: "Deactivate",
-                icon: <UserX className="h-4 w-4" />,
-                onClick: async () => {
-                  const ok = await confirmDialog({
-                    title: `Deactivate ${row.username}?`,
-                    text: "They will no longer be able to sign in until reactivated.",
-                    confirmText: "Deactivate",
-                  });
-                  if (ok) updateMutation.mutate({ id: row.userId, data: { status: "inactive" } });
-                },
-              });
-            } else {
-              actions.push({
-                label: "Activate",
-                icon: <UserCheck className="h-4 w-4" />,
-                onClick: () => updateMutation.mutate({ id: row.userId, data: { status: "active" } }),
-              });
-            }
-
-            actions.push({ divider: true });
-            actions.push({
-              label: "Delete",
-              icon: <Trash2 className="h-4 w-4" />,
-              danger: true,
-              onClick: async () => {
-                const reason = await promptDeleteReason({
-                  title: `Delete ${row.username}?`,
-                  text: "This user will be moved to Trash and can be restored later.",
-                  confirmText: "Move to trash",
-                });
-                if (reason) deleteMutation.mutate({ id: row.userId, reason });
-              },
-            });
-          }
-
-          return actions;
-        }}
       />
+
+      <Modal
+        open={!!viewFor}
+        onClose={() => setViewFor(undefined)}
+        title={viewFor?.fullName ?? "User"}
+        subtitle={viewFor ? `@${viewFor.username}` : undefined}
+        size="sm"
+        footer={
+          <Button variant="secondary" onClick={() => setViewFor(undefined)}>
+            Close
+          </Button>
+        }
+      >
+        {viewFor && (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center gap-3">
+              <Avatar name={viewFor.fullName} src={viewFor.avatarUrl ?? undefined} size="lg" />
+              <div>
+                <p className="font-semibold text-ink">{viewFor.fullName}</p>
+                <Badge className={STATUS_STYLES[viewFor.status]} dot>
+                  {viewFor.status === "active" ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+            </div>
+            <p>
+              <span className="text-ink-muted">Role:</span> {viewFor.role}
+            </p>
+            <p>
+              <span className="text-ink-muted">Phone:</span> {viewFor.phone || "—"}
+            </p>
+            <p>
+              <span className="text-ink-muted">Email:</span> {viewFor.email || "—"}
+            </p>
+            <p>
+              <span className="text-ink-muted">Last login:</span>{" "}
+              {viewFor.lastLogin ? `${formatDate(viewFor.lastLogin)} ${formatTime(viewFor.lastLogin)}` : "Never"}
+            </p>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={modalOpen}

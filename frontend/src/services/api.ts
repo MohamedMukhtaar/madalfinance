@@ -46,14 +46,68 @@ export function isApiError(err: unknown): err is AxiosError<ApiEnvelope> {
   return axios.isAxiosError(err) && Boolean(err.response?.data);
 }
 
-/** Extracts a human-readable message from any error. */
-export function getErrorMessage(err: unknown, fallback = "Something went wrong"): string {
-  if (isApiError(err)) {
-    const envelope = err.response?.data;
-    if (envelope?.message) return envelope.message;
-    if (envelope?.errors?.length) return envelope.errors.map((e) => e.message).join(", ");
+const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+const STATUS_MESSAGES: Record<number, string> = {
+  400: "Please check your input and try again.",
+  401: "Please sign in again to continue.",
+  403: "You do not have permission to do that.",
+  404: "The requested item was not found.",
+  408: "The request timed out. Please try again.",
+  409: "This conflicts with an existing record.",
+  413: "The file is too large. Please upload a smaller file.",
+  422: "Please fix the highlighted fields and try again.",
+  429: "Too many attempts. Please wait a moment and try again.",
+  500: GENERIC_ERROR,
+  502: "Service temporarily unavailable. Please try again.",
+  503: "Service temporarily unavailable. Please try again.",
+  504: "The request timed out. Please try again.",
+};
+
+/** True when a message looks like a stack/runtime leak, not user copy. */
+function isTechnicalMessage(msg: string): boolean {
+  if (!msg.trim()) return true;
+  if (msg.length > 220) return true;
+  return /is not a function|cannot read propert|cannot set propert|undefined is not|null is not an object|ECONNREFUSED|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up|unexpected token|SyntaxError|TypeError|ReferenceError|RangeError|at Object\.|at Module\.|at async |node:internal|postgres|EPERM|ENOENT|jwt malformed|invalid signature|Network Error|Internal Server Error|Request failed with status code/i.test(
+    msg
+  );
+}
+
+function firstFieldMessage(errors?: Array<{ message?: string }>): string | null {
+  if (!errors?.length) return null;
+  const parts = errors.map((e) => e.message).filter((m): m is string => Boolean(m && !isTechnicalMessage(m)));
+  if (!parts.length) return null;
+  return parts.join(". ");
+}
+
+/** Extracts a human-readable message from any error (never shows raw system text). */
+export function getErrorMessage(err: unknown, fallback = GENERIC_ERROR): string {
+  if (axios.isAxiosError(err)) {
+    if (!err.response) {
+      if (err.code === "ECONNABORTED") return "The request timed out. Please try again.";
+      if (err.message === "Network Error" || err.code === "ERR_NETWORK") {
+        return "Unable to reach the server. Check your connection and try again.";
+      }
+      return "Unable to reach the server. Check your connection and try again.";
+    }
+
+    const status = err.response.status;
+    const envelope = err.response.data as ApiEnvelope | undefined;
+    const fromFields = firstFieldMessage(envelope?.errors);
+    if (fromFields) return fromFields;
+
+    const raw = typeof envelope?.message === "string" ? envelope.message.trim() : "";
+    if (raw && !isTechnicalMessage(raw) && raw.toLowerCase() !== "validation failed") {
+      return raw;
+    }
+
+    return STATUS_MESSAGES[status] ?? fallback;
   }
-  if (err instanceof Error && err.message) return err.message;
+
+  if (err instanceof Error && err.message && !isTechnicalMessage(err.message)) {
+    return err.message;
+  }
+
   return fallback;
 }
 

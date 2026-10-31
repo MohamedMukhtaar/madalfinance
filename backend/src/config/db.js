@@ -67,7 +67,8 @@ export const pool = new Pool({
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 10_000,
   ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
-  options: `-c search_path=${schemaIdent}`,
+  // Same timezone in Postgres, so ::DATE / ::TIME casts in statements match what users see.
+  options: `-c search_path=${schemaIdent} -c timezone=${env.timezone}`,
 });
 
 const origConnect = pool.connect.bind(pool);

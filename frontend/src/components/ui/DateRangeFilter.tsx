@@ -1,4 +1,5 @@
 import { cn } from "@/utils/cn";
+import { fieldBase } from "./FormField";
 
 export type DateFilterMode = "all" | "day" | "range";
 
@@ -14,8 +15,7 @@ export interface DateRangeFilterProps {
   className?: string;
 }
 
-const inputClassName =
-  "h-9 rounded-xl border-0 bg-white px-2.5 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700";
+const inputClassName = cn(fieldBase, "h-9 px-2.5");
 
 export function DateRangeFilter({
   mode,

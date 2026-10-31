@@ -16,6 +16,7 @@ const paymentSelect = `
          COALESCE(ep.notes, ec.description) AS description,
          e.expense_id AS expense_category_id,
          e.expense_name AS category_name,
+         ec.source AS charge_source,
          a.account_number AS account_number,
          a.account_name AS account_institution
     FROM expense_payments ep
@@ -236,7 +237,142 @@ export const createCategory = async (conn, name) => {
   ]).then((r) => r.insertId);
 };
 
+/* ---------- Charges tab: bills to pay later ---------- */
+
+const chargeSelect = `
+  SELECT ec.*, ec.expense_charge_id AS charge_id, ec.expense_id AS expense_category_id,
+         ec.charge_date AS due_date, e.expense_name AS category_name,
+         (SELECT COUNT(*) FROM expense_payments ep
+           WHERE ep.expense_charge_id = ec.expense_charge_id AND ep.deleted_at IS NULL) AS payment_count
+    FROM expense_charges ec
+    JOIN expenses e ON e.expense_id = ec.expense_id
+`;
+
+export const listCharges = (conn, { status } = {}) => {
+  const conditions = [`ec.source = 'charge'`];
+  const params = [];
+  if (status === 'open') conditions.push(`ec.status IN ('Pending', 'Partial')`);
+  else if (status) {
+    conditions.push('ec.status = ?');
+    params.push(status);
+  }
+  return run(conn, `${chargeSelect} WHERE ${conditions.join(' AND ')} ORDER BY ec.charge_date ASC, ec.expense_charge_id ASC`, params);
+};
+
+export const findCharge = (conn, chargeId) =>
+  run(conn, `${chargeSelect} WHERE ec.expense_charge_id = ?`, [chargeId]).then((rows) => rows[0]);
+
+export const createCharge = async (conn, { expense_id, description, amount, charge_date, created_by }) => {
+  const charge_number = await generateNumber(conn, 'expense_charges', 'charge_number', 'ECH-');
+  return run(
+    conn,
+    `INSERT INTO expense_charges (charge_number, expense_id, charge_date, description, amount, created_by, source)
+     VALUES (?, ?, ?, ?, ?, ?, 'charge')`,
+    [charge_number, expense_id, charge_date, description ?? null, amount, created_by]
+  ).then((r) => r.insertId);
+};
+
+export const updateCharge = (conn, chargeId, { expense_id, description, amount, charge_date, status }) =>
+  run(
+    conn,
+    `UPDATE expense_charges SET
+        expense_id  = COALESCE(?, expense_id),
+        description = COALESCE(?, description),
+        amount      = COALESCE(?, amount),
+        charge_date = COALESCE(?, charge_date),
+        status      = COALESCE(?::charge_status_enum, status)
+      WHERE expense_charge_id = ?`,
+    [expense_id ?? null, description ?? null, amount ?? null, charge_date ?? null, status ?? null, chargeId]
+  );
+
+export const setChargePaid = (conn, chargeId, paidAmount, status) =>
+  run(conn, `UPDATE expense_charges SET paid_amount = ?, status = ?::charge_status_enum WHERE expense_charge_id = ?`, [
+    paidAmount,
+    status,
+    chargeId,
+  ]);
+
+/** Amount and paid amount together, so the paid <= amount check never sees a half-updated row. */
+export const setChargeAmountPaid = (conn, chargeId, amount, paidAmount, status) =>
+  run(
+    conn,
+    `UPDATE expense_charges SET amount = ?, paid_amount = ?, status = ?::charge_status_enum WHERE expense_charge_id = ?`,
+    [amount, paidAmount, status, chargeId]
+  );
+
+export const deleteCharge = (conn, chargeId) =>
+  run(conn, `DELETE FROM expense_charges WHERE expense_charge_id = ?`, [chargeId]);
+
+/** Record a payment against an existing charge (Charges tab → Pay). */
+export const createPaymentForCharge = async (
+  conn,
+  chargeId,
+  { acc_id, payment_date, amount, payment_method, reference_number, paid_by, notes, created_by }
+) => {
+  const payment_number = await generateNumber(conn, 'expense_payments', 'payment_number', 'EPY-');
+  return run(
+    conn,
+    `INSERT INTO expense_payments
+       (payment_number, expense_charge_id, account_id, payment_date, amount, payment_method,
+        reference_number, paid_to, notes, paid_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      payment_number,
+      chargeId,
+      acc_id,
+      payment_date,
+      amount,
+      payment_method ?? 'Cash',
+      reference_number ?? null,
+      paid_by ?? null,
+      notes ?? null,
+      created_by,
+    ]
+  ).then((r) => r.insertId);
+};
+
+/** Change a payment's amount and/or account (ledger corrections are posted by the service). */
+export const updatePaymentMoney = (conn, paymentId, { amount, account_id }) =>
+  run(conn, `UPDATE expense_payments SET amount = ?, account_id = ? WHERE expense_payment_id = ?`, [
+    amount,
+    account_id,
+    paymentId,
+  ]);
+
+/* ---------- Categories ---------- */
+
+export const updateCategory = (conn, id, name) =>
+  run(conn, `UPDATE expenses SET expense_name = ? WHERE expense_id = ?`, [name, id]);
+
+export const categoryUsage = (conn, id) =>
+  run(conn, `SELECT COUNT(*) AS total FROM expense_charges WHERE expense_id = ?`, [id]).then((r) => Number(r[0].total));
+
+export const deleteCategory = (conn, id) => run(conn, `DELETE FROM expenses WHERE expense_id = ?`, [id]);
+
+export const deactivateCategory = (conn, id) =>
+  run(conn, `UPDATE expenses SET status = 'inactive' WHERE expense_id = ?`, [id]);
+
+export const categoryNameTaken = (conn, name, excludeId) =>
+  run(conn, `SELECT 1 FROM expenses WHERE LOWER(expense_name) = LOWER(?) AND expense_id <> ? AND status = 'active'`, [
+    name,
+    excludeId ?? 0,
+  ]).then((r) => r.length > 0);
+
 export default {
+  listCharges,
+  findCharge,
+  createCharge,
+  updateCharge,
+  setChargePaid,
+  setChargeAmountPaid,
+  deleteCharge,
+  createPaymentForCharge,
+  updatePaymentMoney,
+  updateCategory,
+  categoryUsage,
+  deleteCategory,
+  deactivateCategory,
+  categoryNameTaken,
   findById,
   findByIdIncludingDeleted,
   list,

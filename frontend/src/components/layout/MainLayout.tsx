@@ -19,6 +19,19 @@ export function MainLayout() {
 
   useIdleLock(lock, { enabled: !locked });
 
+  // Close the mobile drawer after navigation or when resizing to desktop.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.matchMedia("(min-width: 1024px)").matches) setMobileOpen(false);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // Block focus / clicks on the app behind the lock screen.
   useEffect(() => {
     const el = appRef.current;
@@ -29,14 +42,18 @@ export function MainLayout() {
 
   return (
     <DashboardProvider>
-      <div ref={appRef} aria-hidden={locked || undefined} className="flex min-h-screen bg-app text-ink-soft">
+      <div
+        ref={appRef}
+        aria-hidden={locked || undefined}
+        className="flex min-h-[100dvh] overflow-x-clip bg-app text-ink-soft"
+      >
         <Sidebar
           collapsed={collapsed}
           mobileOpen={mobileOpen}
           onCloseMobile={() => setMobileOpen(false)}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col bg-app">
+        <div className="flex min-w-0 flex-1 flex-col overflow-x-clip bg-app">
           <ConfirmHost />
           <Topbar
             onOpenMobile={() => setMobileOpen(true)}
@@ -44,12 +61,13 @@ export function MainLayout() {
             onToggleCollapse={() => setCollapsed((c) => !c)}
           />
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <main className="flex-1 px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-6 lg:px-8">
             <motion.div
               key={location.pathname}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
+              className="mx-auto w-full max-w-[1600px]"
             >
               <Outlet />
             </motion.div>

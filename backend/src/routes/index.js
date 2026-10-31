@@ -13,12 +13,14 @@ import incomeRoutes from './income.routes.js';
 import transactionRoutes from './transaction.routes.js';
 import reportRoutes from './report.routes.js';
 import settingsRoutes from './settings.routes.js';
+import organizationRoutes from './organization.routes.js';
 import filesRoutes from './files.routes.js';
 import publicRoutes from './public.routes.js';
 import trashRoutes from './trash.routes.js';
 import accountRoutes from './account.routes.js';
 import employeeRoutes from './employee.routes.js';
 import salaryRoutes from './salary.routes.js';
+import taskRoutes from './task.routes.js';
 
 const router = Router();
 
@@ -43,7 +45,9 @@ router.use('/reports', reportRoutes);
 router.use('/accounts', accountRoutes);
 router.use('/employees', employeeRoutes);
 router.use('/salary', salaryRoutes);
+router.use('/tasks', taskRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/organizations', organizationRoutes);
 router.use('/trash', trashRoutes);
 router.use('/files', filesRoutes);
 

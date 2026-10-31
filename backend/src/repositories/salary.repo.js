@@ -241,7 +241,29 @@ export const createPayment = async (conn, data) => {
   ).then((r) => r.insertId);
 };
 
+export const updateCharge = (conn, id, { basic_salary, allowance, deduction, charge_date, notes }) =>
+  run(
+    conn,
+    `UPDATE salary_charges SET
+        basic_salary = COALESCE(?, basic_salary),
+        allowance    = COALESCE(?, allowance),
+        deduction    = COALESCE(?, deduction),
+        charge_date  = COALESCE(?, charge_date),
+        notes        = COALESCE(?, notes)
+      WHERE salary_charge_id = ?`,
+    [basic_salary ?? null, allowance ?? null, deduction ?? null, charge_date ?? null, notes ?? null, id]
+  );
+
+export const cancelPayment = (conn, id) =>
+  run(conn, `UPDATE salary_payments SET status = 'Cancelled' WHERE salary_payment_id = ?`, [id]);
+
+export const countPaymentsForCharge = (conn, id) =>
+  run(conn, `SELECT COUNT(*) AS total FROM salary_payments WHERE salary_charge_id = ?`, [id]).then((r) => Number(r[0].total));
+
 export default {
+  countPaymentsForCharge,
+  updateCharge,
+  cancelPayment,
   listCharges,
   countCharges,
   findChargeById,

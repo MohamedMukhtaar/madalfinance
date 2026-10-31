@@ -1,13 +1,17 @@
 import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Paperclip, Receipt, TrendingDown, UploadCloud } from "lucide-react";
+import { Paperclip, Pencil, Receipt, Trash2, TrendingDown, UploadCloud } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, FileUpload, ErrorState, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { DonutChart } from "@/components/charts/Charts";
 import { ChartCard } from "@/components/charts/Charts";
-import { useExpenses } from "@/hooks/queries";
+import { useExpenses, useInvalidateExpenses } from "@/hooks/queries";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
+import { ExpenseFormModal } from "@/features/expenses/ExpenseFormModal";
 import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
@@ -34,6 +38,17 @@ export default function ExpensesPage() {
   const { month, setMonth } = useSelectedMonth();
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [receiptFor, setReceiptFor] = useState<Expense | undefined>();
+  const [editing, setEditing] = useState<Expense | undefined>();
+  const [recordOpen, setRecordOpen] = useState(false);
+  const invalidate = useInvalidateExpenses();
+  const deleteMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => financeService.deleteExpense(id, reason),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Expense deleted and the money returned to its account");
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "Failed to delete expense")),
+  });
   const [receipts, setReceipts] = useState<Record<number, UploadedFile[]>>({});
   const [dateMode, setDateMode] = useState<DateFilterMode>("all");
   const [day, setDay] = useState("");
@@ -147,7 +162,14 @@ export default function ExpensesPage() {
       <PageHeader
         title="Expense Payments"
         subtitle="View-only log of paid expenses. Add charges in Expense Charges, then Pay."
-        actions={<MonthNavigator value={month} onChange={setMonth} />}
+        actions={
+          <>
+            <MonthNavigator value={month} onChange={setMonth} />
+            <Button leftIcon={<Receipt className="h-4 w-4" />} onClick={() => setRecordOpen(true)}>
+              Record expense
+            </Button>
+          </>
+        }
       />
 
       <StatCardsGrid>
@@ -183,12 +205,29 @@ export default function ExpensesPage() {
               </div>
             }
             actions={(row) => [
+              { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => setEditing(row) },
               {
                 label: "Upload Receipt Image",
                 icon: <UploadCloud className="h-4 w-4" />,
                 onClick: () => {
                   setReceipts((r) => ({ ...r, [row.expenseId]: [] }));
                   setReceiptFor(row);
+                },
+              },
+              { divider: true },
+              {
+                label: "Delete",
+                icon: <Trash2 className="h-4 w-4" />,
+                danger: true,
+                onClick: async () => {
+                  const reason = await promptDeleteReason({
+                    title: `Delete ${row.paymentNumber ?? "this expense"}?`,
+                    text: `${formatCurrency(row.amount, currency)} goes back to its account. ${
+                      row.chargeSource === "charge" ? "The bill reappears on the Charges tab. " : ""
+                    }You can restore it from Trash.`,
+                    confirmText: "Move to trash",
+                  });
+                  if (reason) deleteMutation.mutate({ id: row.expenseId, reason });
                 },
               },
             ]}
@@ -205,6 +244,9 @@ export default function ExpensesPage() {
           />
         </ChartCard>
       )}
+
+      <ExpenseFormModal open={recordOpen} onClose={() => setRecordOpen(false)} />
+      <ExpenseFormModal open={!!editing} onClose={() => setEditing(undefined)} expense={editing} />
 
       <Modal
         open={!!receiptFor}

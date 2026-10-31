@@ -12,11 +12,14 @@ import { cn } from "@/utils/cn";
 const STORAGE_KEY = "madal_show_amounts";
 export const AMOUNT_MASK = "....";
 
+/** Amounts visible by default; "0" in storage means user hid them. */
 function readStored(): boolean {
   try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v === null) return true;
+    return v !== "0";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -69,7 +72,7 @@ export function AmountVisibilityToggle({ className }: { className?: string }) {
       type="button"
       onClick={toggle}
       className={cn(
-        "inline-flex h-9 items-center gap-1.5 rounded-xl bg-white px-3 text-sm font-semibold text-slate-600 ring-1 ring-inset ring-slate-200 transition hover:bg-slate-50 hover:text-slate-900 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700 dark:hover:bg-slate-800 dark:hover:text-white",
+        "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-none border border-line bg-panel px-3 text-sm font-semibold text-ink transition hover:bg-muted",
         className
       )}
       aria-pressed={!visible}

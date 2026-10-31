@@ -4,6 +4,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+/*
+ * Business timezone. Every timestamp the API returns, and every time printed on PDFs and
+ * Excel files, is shown in this zone — otherwise a server running on UTC shows all times
+ * 3 hours early for Mogadishu. Node picks up process.env.TZ at runtime.
+ */
+const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Africa/Mogadishu';
+process.env.TZ = APP_TIMEZONE;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const parseBool = (v) => v === 'true' || v === '1';
@@ -16,6 +24,7 @@ const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProduction: process.env.NODE_ENV === 'production',
   port: parseNum(process.env.PORT, 4000),
+  timezone: APP_TIMEZONE,
 
   db: {
     host: process.env.DB_HOST || '127.0.0.1',

@@ -64,10 +64,39 @@ export const incomeService = {
       const income = await incomeRepo.findById(conn, id);
       if (!income) throw ApiError.notFound('Income record not found');
 
-      if (data.amount !== undefined && Number(data.amount) !== Number(income.amount)) {
-        throw ApiError.badRequest(
-          'Amount cannot be changed after recording; delete this record and create a new one'
-        );
+      const oldAmount = Number(income.amount);
+      const newAmount = data.amount !== undefined ? Number(data.amount) : oldAmount;
+      if (!newAmount || newAmount <= 0) throw ApiError.badRequest('Amount must be greater than zero');
+      const oldAcc = Number(income.acc_id || income.account_id);
+      const newAcc = data.acc_id ? Number(data.acc_id) : oldAcc;
+
+      // The ledger is append-only: book a reversal of the old entry and a fresh one.
+      if (newAmount !== oldAmount || newAcc !== oldAcc) {
+        await transactionRepo.create(conn, {
+          transaction_date: dayjs().format('YYYY-MM-DD'),
+          transaction_type: 'Expense',
+          reference_type: 'Other Income',
+          reference_id: id,
+          description: `Correction: reverse other income #${id} (${income.description || income.category_name || ''})`,
+          income: 0,
+          expense: oldAmount,
+          acc_id: oldAcc,
+          created_by: userId,
+        });
+        await accountService.debit(conn, oldAcc, oldAmount);
+        await transactionRepo.create(conn, {
+          transaction_date: data.income_date ?? income.income_date,
+          transaction_type: 'Income',
+          reference_type: 'Other Income',
+          reference_id: id,
+          description: `Correction: other income #${id} (${data.description ?? income.description ?? ''})`,
+          income: newAmount,
+          expense: 0,
+          acc_id: newAcc,
+          created_by: userId,
+        });
+        await accountService.credit(conn, newAcc, newAmount);
+        await incomeRepo.updateMoney(conn, id, { amount: newAmount, account_id: newAcc });
       }
 
       await incomeRepo.update(conn, id, { ...data, amount: undefined });

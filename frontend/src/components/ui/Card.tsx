@@ -10,7 +10,7 @@ export interface CardProps extends HTMLAttributes<HTMLDivElement> {
 
 export function Card({ className, hover, animated = true, children, ...props }: CardProps) {
   const cls = cn(
-    "rounded-2xl bg-card ring-1 ring-line shadow-card",
+    "rounded-none bg-card ring-1 ring-line shadow-card",
     hover && "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover",
     className
   );

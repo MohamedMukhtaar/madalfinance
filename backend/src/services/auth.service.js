@@ -7,6 +7,7 @@ import auditService from './audit.service.js';
 import deviceService, { readTicket } from './device.service.js';
 import ApiError from '../utils/ApiError.js';
 import { signAccessToken, generateRefreshToken, hashRefreshToken } from '../utils/jwt.js';
+import { presentUser } from './permission.service.js';
 
 const { jwt } = config;
 
@@ -82,7 +83,13 @@ export const authService = {
       await auditService.log({ module: 'Auth', action: 'LOGIN', userId: user.user_id, recordId: user.user_id, ip, device });
     }
 
-    return { user, accessToken, refreshToken, expiresAt, credential_id: result.credentialId };
+    return {
+      user: await presentUser(user),
+      accessToken,
+      refreshToken,
+      expiresAt,
+      credential_id: result.credentialId,
+    };
   },
 
   async refresh(refreshToken, ip, device) {
@@ -106,7 +113,12 @@ export const authService = {
     });
 
     return {
-      user: { user_id: stored.user_id, username: stored.username, full_name: stored.full_name, role: stored.role },
+      user: await presentUser({
+        user_id: stored.user_id,
+        username: stored.username,
+        full_name: stored.full_name,
+        role: stored.role,
+      }),
       accessToken,
       refreshToken: newRefresh,
       expiresAt,
@@ -162,7 +174,7 @@ export const authService = {
   async getProfile(userId) {
     const user = await userRepo.findById(null, userId);
     if (!user) throw ApiError.notFound('User not found');
-    return user;
+    return presentUser(user);
   },
 };
 

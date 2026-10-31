@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import { cn } from "@/utils/cn";
+import { fieldBase } from "./FormField";
 
 export function SearchInput({
   value,
@@ -16,18 +17,19 @@ export function SearchInput({
 }) {
   return (
     <div className={cn("relative", className)}>
-      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoFocus={autoFocus}
-        className="h-9 w-full rounded-xl border-0 bg-muted pl-9 pr-8 text-sm text-ink ring-1 ring-inset ring-transparent transition placeholder:text-ink-muted focus:bg-card focus:outline-none focus:ring-2 focus:ring-accent"
+        className={cn(fieldBase, "h-9 pl-9 pr-8")}
       />
       {value && (
         <button
+          type="button"
           onClick={() => onChange("")}
-          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
           aria-label="Clear search"
         >
           <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">

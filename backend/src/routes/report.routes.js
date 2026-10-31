@@ -4,11 +4,11 @@ import { authenticate } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { reportQueryValidator } from '../validators/settings.validator.js';
-import { APP_ACCESS } from '../utils/constants.js';
+import { P } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('reports')));
 router.use(validate(reportQueryValidator));
 
 router.get('/income-statement', reportController.incomeStatement);

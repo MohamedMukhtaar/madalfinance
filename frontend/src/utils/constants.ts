@@ -12,9 +12,8 @@ import {
   Settings,
   Wallet,
   Landmark,
-  ClipboardList,
   Briefcase,
-  Shield,
+  ClipboardList,
 } from "lucide-react";
 
 export interface NavChild {
@@ -22,6 +21,7 @@ export interface NavChild {
   path: string;
   icon?: LucideIcon;
   badgeKey?: string;
+  permissions?: string[];
 }
 
 export interface NavItem {
@@ -30,38 +30,60 @@ export interface NavItem {
   icon: LucideIcon;
   children?: NavChild[];
   badgeKey?: string;
+  /** @deprecated Prefer permissions */
   superAdminOnly?: boolean;
+  permissions?: string[];
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
+  { label: "Dashboard", path: "/", icon: LayoutDashboard, permissions: ["view dashboard"] },
   {
     label: "Members",
     icon: UsersRound,
+    permissions: ["view members", "view contributions"],
     children: [
-      { label: "Members", path: "/members", icon: UsersRound },
-      { label: "Contributions", path: "/contributions", icon: Receipt },
+      { label: "Members", path: "/members", icon: UsersRound, permissions: ["view members"] },
+      { label: "Contributions", path: "/contributions", icon: Receipt, permissions: ["view contributions"] },
     ],
   },
   {
     label: "Customers",
     icon: Users,
     badgeKey: "customers",
+    permissions: ["view customers", "view invoices"],
     children: [
-      { label: "Customers", path: "/customers", icon: Users, badgeKey: "customers" },
-      { label: "Invoices", path: "/invoices", icon: FileText, badgeKey: "invoices" },
+      { label: "Customers", path: "/customers", icon: Users, badgeKey: "customers", permissions: ["view customers"] },
+      { label: "Invoices", path: "/invoices", icon: FileText, badgeKey: "invoices", permissions: ["view invoices"] },
     ],
   },
-  { label: "Projects", path: "/projects", icon: FolderKanban, badgeKey: "projects" },
-  { label: "Payments", path: "/payments", icon: CreditCard },
-  { label: "Accounts", path: "/accounts", icon: Landmark },
-  { label: "Employees", path: "/employees", icon: Briefcase },
-  { label: "Expenses", path: "/expenses", icon: Wallet },
-  { label: "Transactions", path: "/transactions", icon: ArrowLeftRight },
-  { label: "Reports", path: "/reports", icon: BarChart3 },
-  { label: "Users & Roles", path: "/users", icon: Shield, superAdminOnly: true },
-  { label: "Settings", path: "/settings", icon: Settings },
-  { label: "Logs", path: "/logs", icon: ClipboardList, superAdminOnly: true },
+  { label: "Projects", path: "/projects", icon: FolderKanban, badgeKey: "projects", permissions: ["view projects"] },
+  { label: "Payments", path: "/payments", icon: CreditCard, permissions: ["view payments"] },
+  { label: "Accounts", path: "/accounts", icon: Landmark, permissions: ["view accounts"] },
+  { label: "Employees", path: "/employees", icon: Briefcase, permissions: ["view employees", "view salary"] },
+  {
+    label: "Tasks",
+    path: "/tasks",
+    icon: ClipboardList,
+    permissions: ["view tasks", "create tasks", "edit tasks", "delete tasks"],
+  },
+  { label: "Expenses", path: "/expenses", icon: Wallet, permissions: ["view expenses"] },
+  { label: "Transactions", path: "/transactions", icon: ArrowLeftRight, permissions: ["view transactions"] },
+  { label: "Reports", path: "/reports", icon: BarChart3, permissions: ["view reports"] },
+  {
+    label: "Settings",
+    path: "/settings",
+    icon: Settings,
+    permissions: [
+      "view organizations",
+      "edit organizations",
+      "manage settings",
+      "view roles",
+      "view users",
+      "view logs",
+      "view trash items",
+      "view dashboard",
+    ],
+  },
 ];
 
 export const PAYMENT_METHODS = [

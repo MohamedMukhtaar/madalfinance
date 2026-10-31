@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.js';
-import { authLimiter, deviceLimiter, refreshLimiter } from '../middleware/rateLimiters.js';
+import { authLimiter, deviceLimiter, refreshLimiter, uploadLimiter } from '../middleware/rateLimiters.js';
 import { validate } from '../middleware/validate.js';
+import { singleUpload } from '../middleware/upload.js';
 import {
   loginValidator,
   deviceOptionsValidator,
@@ -25,6 +26,14 @@ router.post('/logout', authenticate, authController.logout);
 router.post('/unlock', authLimiter, authenticate, validate(unlockValidator), authController.unlock);
 router.get('/me', authenticate, authController.me);
 router.put('/me/profile', authenticate, validate(updateProfileValidator), authController.updateProfile);
+router.post(
+  '/me/avatar',
+  authenticate,
+  uploadLimiter,
+  singleUpload('users'),
+  authController.uploadMyAvatar
+);
+router.delete('/me/avatar', authenticate, authController.removeMyAvatar);
 router.put('/me/password', authenticate, validate(changePasswordValidator), authController.changePassword);
 router.put('/me/username', authenticate, validate(changeUsernameValidator), authController.changeUsername);
 

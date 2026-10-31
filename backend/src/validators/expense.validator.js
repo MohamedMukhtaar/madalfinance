@@ -27,6 +27,34 @@ export const updateExpenseValidator = [
     .withMessage('Invalid payment method'),
   body('reference_number').optional().trim().isLength({ max: 50 }),
   body('notes').optional().trim().isLength({ max: 500 }),
+  body('acc_id').optional().isInt({ min: 1 }).withMessage('Invalid account'),
+];
+
+export const createChargeValidator = [
+  body('expense_category_id').isInt({ min: 1 }).withMessage('Valid expense category is required'),
+  body('description').trim().notEmpty().withMessage('Description is required').isLength({ max: 255 }),
+  body('amount').isFloat({ min: 0.01 }).withMessage('Valid amount is required'),
+  body('due_date').optional().isISO8601().withMessage('Invalid due date'),
+];
+
+export const updateChargeValidator = [
+  body('expense_category_id').optional().isInt({ min: 1 }).withMessage('Invalid expense category'),
+  body('description').optional().trim().notEmpty().isLength({ max: 255 }),
+  body('amount').optional().isFloat({ min: 0.01 }).withMessage('Invalid amount'),
+  body('due_date').optional().isISO8601().withMessage('Invalid due date'),
+];
+
+export const payChargeValidator = [
+  body('amount').optional().isFloat({ min: 0.01 }).withMessage('Invalid amount'),
+  body('acc_id').optional().isInt({ min: 1 }).withMessage('Invalid account'),
+  body('expense_date').optional().isISO8601().withMessage('Invalid payment date'),
+  body('payment_method')
+    .optional()
+    .isIn(['Cash', 'Bank', 'EVC Plus', 'eDahab', 'Premier Wallet', 'Other'])
+    .withMessage('Invalid payment method'),
+  body('reference_number').optional().trim().isLength({ max: 50 }),
+  body('paid_by').optional({ nullable: true }).trim().isLength({ max: 100 }),
+  body('notes').optional().trim().isLength({ max: 500 }),
 ];
 
 export const createCategoryValidator = [

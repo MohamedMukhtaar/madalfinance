@@ -5,6 +5,8 @@ import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import rentalService from '../services/rental.service.js';
 import contributionService from '../services/contribution.service.js';
+import contributionRepo from '../repositories/contribution.repo.js';
+import { query } from '../config/db.js';
 import invoiceRepo from '../repositories/invoice.repo.js';
 import refreshTokenRepo from '../repositories/refreshToken.repo.js';
 import dayjs from 'dayjs';
@@ -29,22 +31,33 @@ async function runRentalBilling() {
   return result;
 }
 
-/** Create this month's member due batch if one does not exist yet. */
+/** Create this month's regular contribution charge if it does not exist yet. */
 async function runMonthlyDues() {
   const now = dayjs();
   const month = now.month() + 1;
   const year = now.year();
-  try {
-    const batch = await contributionService.generateBatch({ month, year }, null, null);
-    logger.info(`Monthly dues generated: batch #${batch.batch_id} (${month}/${year})`);
-    return { batch_id: batch.batch_id };
-  } catch (err) {
-    if (err.statusCode === 409) {
-      logger.info('Monthly dues: batch already exists, skipping');
-      return { skipped: true };
-    }
-    throw err;
+  const reason = 'Monthly contribution';
+  if (await contributionRepo.findBatchByMonth(null, month, year, reason)) {
+    logger.info('Monthly dues: charge already exists, skipping');
+    return { skipped: true };
   }
+  // Charges need an owner; attribute the automatic one to the first active Super Admin.
+  const [owner] = await query(
+    `SELECT u.user_id FROM users u JOIN roles r ON r.role_id = u.role_id
+      WHERE r.role_name = 'Super Admin' AND u.status = 'active' AND u.deleted_at IS NULL
+      ORDER BY u.user_id ASC LIMIT 1`
+  );
+  if (!owner) {
+    logger.warn('Monthly dues: no active Super Admin to own the charge, skipping');
+    return { skipped: true };
+  }
+  const batch = await contributionService.generateBatch(
+    { month, year, reason, charge_date: now.format('YYYY-MM-DD') },
+    owner.user_id,
+    null
+  );
+  logger.info(`Monthly dues generated: batch #${batch.batch_id} (${month}/${year})`);
+  return { batch_id: batch.batch_id };
 }
 
 /** Housekeeping: purge old generated report files + expired refresh tokens. */

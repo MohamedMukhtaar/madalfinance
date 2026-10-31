@@ -4,8 +4,7 @@
 
 /*
   Semantic theme tokens.
-  Light = white/light gray system. Dark = navy-black system.
-  Active menu uses --color-active (Madal dark blue #101848).
+  Brand tokens are set from Organization Settings (live CSS variables).
 */
 :root {
   --color-app: #f8fafc;
@@ -16,8 +15,15 @@
   --color-ink: #0f172a;
   --color-ink-soft: #475569;
   --color-ink-muted: #64748b;
-  --color-active: #101848;
-  --color-accent: #74bcf8;
+  --color-active: var(--brand-primary);
+  --color-accent: var(--brand-secondary);
+
+  --brand-primary: #101848;
+  --brand-secondary: #74bcf8;
+  --brand-sidebar: #101848;
+  --brand-sidebar-ink: #c7cedb;
+  --brand-sidebar-bg: #1a255c;
+  --brand-sidebar-text: #ffffff;
 }
 
 html.dark {
@@ -29,8 +35,6 @@ html.dark {
   --color-ink: #f8fafc;
   --color-ink-soft: #cbd5e1;
   --color-ink-muted: #94a3b8;
-  --color-active: #101848;
-  --color-accent: #74bcf8;
 }
 
 @layer base {
@@ -38,12 +42,29 @@ html.dark {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     scroll-behavior: smooth;
+    overflow-x: clip;
   }
 
   body {
     background-color: var(--color-app);
     color: var(--color-ink-soft);
     font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: clip;
+    min-height: 100dvh;
+  }
+
+  /* Avoid iOS zoom on focused form fields */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  @media (min-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: inherit;
+    }
   }
 
   h1,
@@ -56,20 +77,24 @@ html.dark {
   }
 
   ::selection {
-    background-color: rgba(16, 24, 72, 0.18);
-    color: #101848;
+    background-color: color-mix(in srgb, var(--brand-primary) 22%, transparent);
+    color: var(--brand-primary);
   }
 
   html.dark ::selection {
-    background-color: rgba(116, 188, 248, 0.45);
+    background-color: color-mix(in srgb, var(--brand-secondary) 45%, transparent);
     color: #ffffff;
   }
 
-  /* Readable selection on navy marketing panel */
   .bg-navy ::selection,
   .bg-navy-gradient ::selection {
-    background-color: rgba(116, 188, 248, 0.45);
+    background-color: color-mix(in srgb, var(--brand-secondary) 45%, transparent);
     color: #ffffff;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--brand-primary);
   }
 }
 
@@ -106,11 +131,11 @@ html.dark {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  /* Hover/highlight: navy fill + white text (wins over tone/ink utilities). */
+  /* Hover/highlight: brand primary fill + white text. */
   .stat-hover:hover,
   .stat-hover:focus-visible {
-    background-color: #101848 !important;
-    --tw-ring-color: #101848;
+    background-color: var(--brand-primary) !important;
+    --tw-ring-color: var(--brand-primary);
     color: #ffffff !important;
   }
   .stat-hover:hover *,

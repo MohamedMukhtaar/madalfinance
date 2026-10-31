@@ -15,7 +15,10 @@ export const validate = (validations) => [
       message: e.msg,
       value: e.value,
     }));
-    return next(ApiError.unprocessable('Validation failed', messages));
+    const summary =
+      messages.map((m) => m.message).filter(Boolean).join('. ') ||
+      'Please fix the highlighted fields and try again.';
+    return next(ApiError.unprocessable(summary, messages));
   },
 ];
 

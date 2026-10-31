@@ -4,8 +4,10 @@ import { Eye, EyeOff, Info, Lock, LogOut, Unlock } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
+import { fieldBase } from "@/components/ui/FormField";
 import { useAuth } from "@/context/AuthContext";
 import { getErrorMessage } from "@/services/api";
+import { cn } from "@/utils/cn";
 
 /** Full-screen overlay shown after the idle timeout; requires the password to continue. */
 export function LockScreen() {
@@ -50,13 +52,13 @@ export function LockScreen() {
       role="dialog"
       aria-modal="true"
       aria-label="Session locked"
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-app/80 px-4 backdrop-blur-xl"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-app/80 px-3 py-6 backdrop-blur-xl sm:px-4"
     >
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
-        className="w-full max-w-sm rounded-3xl bg-card p-8 text-center shadow-card ring-1 ring-line"
+        className="w-full max-w-sm rounded-none bg-card p-5 text-center shadow-card ring-1 ring-line sm:rounded-3xl sm:p-8"
       >
         <div className="mb-6 flex justify-center">
           <Logo />
@@ -86,7 +88,7 @@ export function LockScreen() {
               placeholder="Enter your password"
               autoComplete="current-password"
               aria-label="Password"
-              className="h-10 w-full rounded-xl border-0 bg-card pl-10 pr-11 text-sm text-ink shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-muted transition focus:outline-none focus:ring-2 focus:ring-navy"
+              className={cn(fieldBase, "h-10 pl-10 pr-11")}
             />
             <button
               type="button"

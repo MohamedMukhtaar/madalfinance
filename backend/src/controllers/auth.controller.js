@@ -1,6 +1,7 @@
 import authService from '../services/auth.service.js';
 import userService from '../services/user.service.js';
 import ApiResponse from '../utils/ApiResponse.js';
+import ApiError from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
 const clientInfo = (req) => ({ ip: req.ip, device: req.headers['user-agent'] || null });
@@ -50,6 +51,17 @@ export const updateProfile = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, { user }, 'Profile updated');
 });
 
+export const uploadMyAvatar = asyncHandler(async (req, res) => {
+  if (!req.file) throw ApiError.badRequest('No image uploaded');
+  const user = await userService.uploadAvatar(req.user.id, req.file, req.user.id, req.ip);
+  return ApiResponse.success(res, user, 'Profile photo uploaded');
+});
+
+export const removeMyAvatar = asyncHandler(async (req, res) => {
+  const user = await userService.removeAvatar(req.user.id, req.user.id, req.ip);
+  return ApiResponse.success(res, user, 'Profile photo removed');
+});
+
 export const changePassword = asyncHandler(async (req, res) => {
   await authService.changePassword(
     req.user.id,
@@ -70,4 +82,17 @@ export const unlock = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, null, 'Session unlocked');
 });
 
-export default { login, deviceOptions, deviceVerify, refresh, logout, me, updateProfile, changePassword, changeUsername, unlock };
+export default {
+  login,
+  deviceOptions,
+  deviceVerify,
+  refresh,
+  logout,
+  me,
+  updateProfile,
+  uploadMyAvatar,
+  removeMyAvatar,
+  changePassword,
+  changeUsername,
+  unlock,
+};

@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { canAccessTrash } from "@/utils/roles";
+import { userHasAnyPermission } from "@/utils/roles";
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -13,13 +13,29 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-export function SuperAdminRoute({ children }: { children: ReactNode }) {
+/** Gate a route by one or more Spatie-style permission names (OR). */
+export function PermissionRoute({
+  children,
+  permissions,
+}: {
+  children: ReactNode;
+  permissions: string[];
+}) {
   const { user } = useAuth();
   const location = useLocation();
-  if (!canAccessTrash(user?.role)) {
+  if (!userHasAnyPermission(user, permissions)) {
     return <Navigate to="/" state={{ from: location }} replace />;
   }
   return <>{children}</>;
+}
+
+/** @deprecated Prefer PermissionRoute with explicit permissions. */
+export function SuperAdminRoute({ children }: { children: ReactNode }) {
+  return (
+    <PermissionRoute permissions={["view users", "view roles", "view logs", "view trash items"]}>
+      {children}
+    </PermissionRoute>
+  );
 }
 
 export function PublicOnlyRoute({ children }: { children: ReactNode }) {

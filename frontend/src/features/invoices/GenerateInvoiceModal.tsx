@@ -144,10 +144,7 @@ export function GenerateInvoiceModal({
           <Input label="Qty" type="number" step="0.01" {...register("quantity", { min: 1 })} />
           <Input label="Unit Price" type="number" step="0.01" {...register("unitPrice", { min: 0 })} />
           <Input label="Tax %" type="number" step="0.1" {...register("taxRate", { min: 0 })} />
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Due Date</label>
-            <input type="date" className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700" {...register("dueDate", { required: true })} />
-          </div>
+          <Input label="Due Date" type="date" required {...register("dueDate", { required: true })} />
         </div>
 
         <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">

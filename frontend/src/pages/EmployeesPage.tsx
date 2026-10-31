@@ -8,7 +8,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge, Button, Card, Modal, StatCard, confirmDialog } from "@/components/ui";
 import { HrTabs } from "@/features/hr/HrTabs";
-import { Input, Select, Textarea, fieldBase } from "@/components/ui/FormField";
+import { Input, Select, Textarea, FormSection, fieldBase } from "@/components/ui/FormField";
 import {
   useCreateEmployee,
   useCreateEmployeeOrg,
@@ -41,7 +41,6 @@ const ORG_TABS: { value: EmployeeOrgKind; label: string; singular: string }[] = 
 const EMPTY_FILTERS = {
   departmentId: "",
   jobTitleId: "",
-  branchId: "",
   status: "",
   gender: "",
 };
@@ -56,8 +55,6 @@ interface EmployeeForm {
   email: string;
   jobTitleId: string;
   departmentId: string;
-  branchId: string;
-  shiftId: string;
   hireDate: string;
   basicSalary: number;
   status: "active" | "inactive";
@@ -148,8 +145,6 @@ function StaffPanel() {
   const employees = data?.rows ?? [];
   const { data: departments = [] } = useEmployeeOrg("departments");
   const { data: titles = [] } = useEmployeeOrg("titles");
-  const { data: branches = [] } = useEmployeeOrg("branches");
-  const { data: shifts = [] } = useEmployeeOrg("shifts");
   const { currency } = useSettings();
   const createMutation = useCreateEmployee();
   const updateMutation = useUpdateEmployee();
@@ -163,7 +158,6 @@ function StaffPanel() {
       employees.filter((e) => {
         if (filters.departmentId && String(e.departmentId ?? "") !== filters.departmentId) return false;
         if (filters.jobTitleId && String(e.jobTitleId ?? "") !== filters.jobTitleId) return false;
-        if (filters.branchId && String(e.branchId ?? "") !== filters.branchId) return false;
         if (filters.status && e.status !== filters.status) return false;
         if (filters.gender && (e.gender ?? "") !== filters.gender) return false;
         return true;
@@ -224,14 +218,6 @@ function StaffPanel() {
       columnHelper.accessor("jobTitle", {
         header: "Title",
         cell: (info) => <span className="text-slate-600 dark:text-slate-300">{info.getValue() || "—"}</span>,
-      }),
-      columnHelper.accessor("branch", {
-        header: "Branch",
-        cell: (info) => <span className="text-slate-500">{info.getValue() || "—"}</span>,
-      }),
-      columnHelper.accessor("shift", {
-        header: "Shift",
-        cell: (info) => <span className="text-slate-500">{info.getValue() || "—"}</span>,
       }),
       columnHelper.accessor("basicSalary", {
         header: "Salary",
@@ -336,20 +322,6 @@ function StaffPanel() {
           <div className="relative min-w-[12rem] flex-1">
             <select
               className={filterSelect}
-              value={filters.branchId}
-              aria-label="Branch"
-              onChange={(e) => setFilters((f) => ({ ...f, branchId: e.target.value }))}
-            >
-              {lookupOptions(branches, "branches", "All Branches").map((opt) => (
-                <option key={opt.value || "all"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="relative min-w-[12rem] flex-1">
-            <select
-              className={filterSelect}
               value={filters.jobTitleId}
               aria-label="Title"
               onChange={(e) => setFilters((f) => ({ ...f, jobTitleId: e.target.value }))}
@@ -414,8 +386,6 @@ function StaffPanel() {
         employee={editing}
         departments={departments}
         titles={titles}
-        branches={branches}
-        shifts={shifts}
         onClose={() => setModalOpen(false)}
         onCreate={async (data) => {
           await createMutation.mutateAsync(data);
@@ -556,8 +526,6 @@ function EmployeeFormModal({
   employee,
   departments,
   titles,
-  branches,
-  shifts,
   onClose,
   onCreate,
   onUpdate,
@@ -566,8 +534,6 @@ function EmployeeFormModal({
   employee?: Employee;
   departments: EmployeeOrgRecord[];
   titles: EmployeeOrgRecord[];
-  branches: EmployeeOrgRecord[];
-  shifts: EmployeeOrgRecord[];
   onClose: () => void;
   onCreate: (data: CreatePayload) => Promise<void>;
   onUpdate: (id: number, patch: UpdatePayload) => Promise<void>;
@@ -592,8 +558,6 @@ function EmployeeFormModal({
             email: employee.email ?? "",
             jobTitleId: employee.jobTitleId ? String(employee.jobTitleId) : "",
             departmentId: employee.departmentId ? String(employee.departmentId) : "",
-            branchId: employee.branchId ? String(employee.branchId) : "",
-            shiftId: employee.shiftId ? String(employee.shiftId) : "",
             hireDate: String(employee.hireDate).slice(0, 10),
             basicSalary: Number(employee.basicSalary),
             status: employee.status,
@@ -607,8 +571,6 @@ function EmployeeFormModal({
             email: "",
             jobTitleId: "",
             departmentId: "",
-            branchId: "",
-            shiftId: "",
             hireDate: todayISO(),
             basicSalary: 0,
             status: "active",
@@ -617,98 +579,140 @@ function EmployeeFormModal({
     );
   }, [open, employee, reset]);
 
-  const options = (rows: EmployeeOrgRecord[], kind: EmployeeOrgKind, placeholder: string) => {
-    const current =
-      kind === "departments"
-        ? employee?.departmentId
-        : kind === "titles"
-          ? employee?.jobTitleId
-          : kind === "branches"
-            ? employee?.branchId
-            : employee?.shiftId;
+  const options = (rows: EmployeeOrgRecord[], kind: "departments" | "titles", placeholder: string) => {
+    const current = kind === "departments" ? employee?.departmentId : employee?.jobTitleId;
     const visible = rows.filter((row) => row.status !== "inactive" || orgId(row, kind) === Number(current));
-    return [{ value: "", label: placeholder }, ...visible.map((row) => ({ value: String(orgId(row, kind)), label: orgName(row, kind) }))];
+    return [
+      { value: "", label: placeholder },
+      ...visible.map((row) => ({ value: String(orgId(row, kind)), label: orgName(row, kind) })),
+    ];
   };
+
+  const onSubmit = handleSubmit(async (d) => {
+    const payload: CreatePayload = {
+      firstName: d.firstName.trim(),
+      lastName: d.lastName.trim() || undefined,
+      gender: d.gender || undefined,
+      phone: d.phone.trim() || undefined,
+      email: d.email.trim() || undefined,
+      jobTitleId: d.jobTitleId ? Number(d.jobTitleId) : null,
+      departmentId: d.departmentId ? Number(d.departmentId) : null,
+      // Keep existing assignment when editing; omit for new staff (hidden for now).
+      branchId: isEdit ? (employee?.branchId ?? null) : null,
+      shiftId: isEdit ? (employee?.shiftId ?? null) : null,
+      hireDate: d.hireDate,
+      basicSalary: Number(d.basicSalary),
+      notes: d.notes.trim() || undefined,
+    };
+    if (isEdit && employee) {
+      await onUpdate(employee.employeeId, { ...payload, status: d.status });
+    } else {
+      await onCreate(payload);
+    }
+  });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit employee" : "Add employee"}
-      subtitle={isEdit ? "Update staff details and basic salary." : "Register a staff member for payroll."}
+      size="lg"
+      title={isEdit ? "Edit Employee" : "Add Employee"}
+      subtitle={isEdit ? "Update employee information" : "Create new Employee"}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>
+          <Button variant="secondary" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            loading={isSubmitting}
-            onClick={handleSubmit(async (d) => {
-              const payload: CreatePayload = {
-                firstName: d.firstName.trim(),
-                lastName: d.lastName.trim() || undefined,
-                gender: d.gender || undefined,
-                phone: d.phone.trim() || undefined,
-                email: d.email.trim() || undefined,
-                jobTitleId: d.jobTitleId ? Number(d.jobTitleId) : null,
-                departmentId: d.departmentId ? Number(d.departmentId) : null,
-                branchId: d.branchId ? Number(d.branchId) : null,
-                shiftId: d.shiftId ? Number(d.shiftId) : null,
-                hireDate: d.hireDate,
-                basicSalary: Number(d.basicSalary),
-                notes: d.notes.trim() || undefined,
-              };
-              if (isEdit && employee) {
-                await onUpdate(employee.employeeId, { ...payload, status: d.status });
-              } else {
-                await onCreate(payload);
-              }
-            })}
-          >
-            {isEdit ? "Save changes" : "Create employee"}
+          <Button type="button" loading={isSubmitting} onClick={() => void onSubmit()}>
+            {isEdit ? "Save Employee" : "Add Employee"}
           </Button>
         </>
       }
     >
-      <form className="grid gap-4 sm:grid-cols-2">
-        <Input label="First name" required error={errors.firstName?.message} {...register("firstName", { required: "Required" })} />
-        <Input label="Last name" {...register("lastName")} />
-        <Select
-          label="Gender"
-          options={[
-            { value: "", label: "—" },
-            { value: "Male", label: "Male" },
-            { value: "Female", label: "Female" },
-          ]}
-          {...register("gender")}
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-5">
+        <FormSection
+          title="Employee Information"
+          subtitle="Basic profile and payroll details"
+          icon={<Users />}
         />
-        <Input label="Phone" error={errors.phone?.message} {...register("phone", phoneRules())} />
-        <Input label="Email" type="email" error={errors.email?.message} {...register("email", emailRules())} />
-        <Select label="Department" options={options(departments, "departments", "Select department")} {...register("departmentId")} />
-        <Select label="Title" options={options(titles, "titles", "Select title")} {...register("jobTitleId")} />
-        <Select label="Branch" options={options(branches, "branches", "Select branch")} {...register("branchId")} />
-        <Select label="Shift" options={options(shifts, "shifts", "Select shift")} {...register("shiftId")} />
-        <Input label="Hire date" type="date" required {...register("hireDate", { required: "Required" })} />
-        <Input
-          label="Basic salary"
-          type="number"
-          step="0.01"
-          min={0}
-          required
-          {...register("basicSalary", { valueAsNumber: true, required: true, min: 0 })}
-        />
-        {isEdit && (
-          <Select
-            label="Status"
-            options={[
-              { value: "active", label: "Active" },
-              { value: "inactive", label: "Inactive" },
-            ]}
-            {...register("status")}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label="First Name"
+            required
+            placeholder="Enter first name"
+            error={errors.firstName?.message}
+            {...register("firstName", { required: "First name is required" })}
           />
-        )}
-        <div className="sm:col-span-2">
-          <Textarea label="Notes" rows={3} {...register("notes")} />
+          <Input label="Last Name" placeholder="Enter last name" {...register("lastName")} />
+          <Input
+            label="Email"
+            type="email"
+            placeholder="employee@company.com"
+            error={errors.email?.message}
+            {...register("email", emailRules())}
+          />
+          <Input
+            label="Contact Number"
+            placeholder="+252 61 000 0000"
+            error={errors.phone?.message}
+            {...register("phone", phoneRules())}
+          />
+          <Select
+            label="Gender"
+            options={[
+              { value: "", label: "Select" },
+              { value: "Male", label: "Male" },
+              { value: "Female", label: "Female" },
+            ]}
+            {...register("gender")}
+          />
+          <Input
+            label="Joining Date"
+            type="date"
+            required
+            error={errors.hireDate?.message}
+            {...register("hireDate", { required: "Joining date is required" })}
+          />
+          <Select
+            label="Department"
+            options={options(departments, "departments", "Select")}
+            {...register("departmentId")}
+          />
+          <Select
+            label="Designation"
+            options={options(titles, "titles", "Select")}
+            {...register("jobTitleId")}
+          />
+          <Input
+            label="Basic Salary"
+            type="number"
+            step="0.01"
+            min={0}
+            required
+            placeholder="0.00"
+            error={errors.basicSalary?.message}
+            {...register("basicSalary", {
+              valueAsNumber: true,
+              required: "Salary is required",
+              min: { value: 0, message: "Must be 0 or more" },
+            })}
+          />
+          {isEdit ? (
+            <Select
+              label="Status"
+              options={[
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+              {...register("status")}
+            />
+          ) : (
+            <div className="hidden sm:block" />
+          )}
+          <div className="sm:col-span-2">
+            <Textarea label="About" rows={3} placeholder="Maximum 60 words" {...register("notes")} />
+          </div>
         </div>
       </form>
     </Modal>

@@ -65,4 +65,14 @@ export const statement = asyncHandler(async (req, res) => {
   );
 });
 
-export default { list, getById, getDefault, create, update, setDefault, transfer, listTransfers, statement };
+export const remove = asyncHandler(async (req, res) => {
+  const result = await accountService.remove(Number(req.params.id), req.user.id, req.ip);
+  return ApiResponse.success(res, result, 'Account deleted');
+});
+
+export const removeTransfer = asyncHandler(async (req, res) => {
+  const result = await accountService.removeTransfer(Number(req.params.id), req.body?.reason, req.user.id, req.ip);
+  return ApiResponse.success(res, result, 'Transfer reversed');
+});
+
+export default { list, getById, getDefault, create, update, setDefault, transfer, listTransfers, statement, remove, removeTransfer };

@@ -141,6 +141,17 @@ export const userService = {
     return userRepo.findById(null, id);
   },
 
+  async removeAvatar(id, actorId, ip) {
+    const user = await userRepo.findById(null, id);
+    if (!user) throw ApiError.notFound('User not found');
+    if (user.avatar_path) {
+      deleteStoredFile('users', user.avatar_path);
+    }
+    await userRepo.clearAvatar(null, id);
+    await auditService.log({ module: 'User', action: 'REMOVE_AVATAR', userId: actorId, recordId: id, ip });
+    return userRepo.findById(null, id);
+  },
+
   async deactivate(id, reason, actorId, ip) {
     return this.remove(id, reason, actorId, ip);
   },

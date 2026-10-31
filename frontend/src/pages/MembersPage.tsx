@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Plus, UsersRound, Pencil, Trash2 } from "lucide-react";
+import { Plus, Users, UsersRound, Pencil, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Avatar, Badge, StatCard, Modal, Button, promptDeleteReason, FileUpload, type UploadedFile } from "@/components/ui";
-import { Input, Select } from "@/components/ui/FormField";
+import { Input, Select, FormSection } from "@/components/ui/FormField";
 import {
   useMembers,
   useDues,
@@ -336,8 +336,10 @@ function MemberFormModal({
         </>
       }
     >
-      <form className="grid gap-4 sm:grid-cols-2">
-        <Input label="Full name" error={errors.fullName?.message} {...register("fullName", { required: "Required" })} />
+      <form className="space-y-5">
+        <FormSection title="Member Information" subtitle="Profile and monthly dues" icon={<Users />} />
+        <div className="grid gap-4 sm:grid-cols-2">
+        <Input label="Full name" required error={errors.fullName?.message} {...register("fullName", { required: "Required" })} />
         <Select
           label="Title"
           options={[
@@ -381,6 +383,7 @@ function MemberFormModal({
             value={photoFiles}
             onChange={setPhotoFiles}
           />
+        </div>
         </div>
       </form>
     </Modal>

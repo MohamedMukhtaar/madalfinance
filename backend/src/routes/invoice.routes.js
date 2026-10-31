@@ -6,13 +6,13 @@ import { validate } from '../middleware/validate.js';
 import { singleUpload } from '../middleware/upload.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { createInvoiceValidator, updateInvoiceValidator, setInvoiceStatusValidator } from '../validators/invoice.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('invoices')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('invoices');
 
 router.get('/', invoiceController.list);
 router.get('/:id', invoiceController.getById);

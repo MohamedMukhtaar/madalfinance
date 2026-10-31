@@ -1,13 +1,18 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/Modal";
 import { Input, Select, Textarea } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
-import { useCreateExpense, useExpenseCategories, useAccounts, useDefaultAccount } from "@/hooks/queries";
+import { useExpenseCategories, useAccounts, useDefaultAccount, useInvalidateExpenses } from "@/hooks/queries";
 import { useAuth } from "@/context/AuthContext";
+import { financeService, type ExpenseChargeRecord } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
 import { PAYMENT_METHODS } from "@/utils/constants";
-import { formatAccountOptionLabel, todayISO } from "@/utils/format";
+import { formatAccountOptionLabel, formatCurrency, todayISO } from "@/utils/format";
 import { useSettings } from "@/context/SettingsContext";
+import type { Expense } from "@/types";
 
 interface ExpenseForm {
   categoryId: string;
@@ -17,30 +22,28 @@ interface ExpenseForm {
   method: string;
   reference: string;
   date: string;
-  paidBy: string;
   notes: string;
 }
 
+/**
+ * Record an expense straight away, pay a bill from the Charges tab (`charge`), or edit a
+ * recorded payment (`expense`). Amount/account edits are booked as ledger corrections.
+ */
 export function ExpenseFormModal({
   open,
   onClose,
-  defaults,
+  charge,
+  expense,
   onSuccess,
 }: {
   open: boolean;
   onClose: () => void;
-  defaults?: {
-    categoryId?: number;
-    description?: string;
-    amount?: number;
-    date?: string;
-    method?: string;
-    reference?: string;
-    notes?: string;
-  };
+  charge?: ExpenseChargeRecord;
+  expense?: Expense;
   onSuccess?: () => void;
 }) {
-  const mutation = useCreateExpense();
+  const mode: "create" | "pay" | "edit" = expense ? "edit" : charge ? "pay" : "create";
+  const invalidate = useInvalidateExpenses();
   const { data: expenseCategories = [] } = useExpenseCategories();
   const { data: accounts = [] } = useAccounts();
   const { data: defaultAccount } = useDefaultAccount();
@@ -56,64 +59,95 @@ export function ExpenseFormModal({
   } = useForm<ExpenseForm>();
 
   useEffect(() => {
-    if (open) {
-      const defAcc = defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    if (!open) return;
+    const defAcc = defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    if (expense) {
       reset({
-        categoryId: defaults?.categoryId
-          ? String(defaults.categoryId)
-          : expenseCategories[0]
-            ? String(expenseCategories[0].id)
-            : "",
-        description: defaults?.description ?? "",
-        amount: defaults?.amount ?? 0,
-        accId: defAcc ? String(defAcc) : "",
-        method: defaults?.method ?? "Cash",
-        reference: defaults?.reference ?? "",
-        date: defaults?.date ?? todayISO(),
-        paidBy: paidByName,
-        notes: defaults?.notes ?? "",
+        categoryId: String(expense.expenseCategoryId ?? expense.categoryId ?? ""),
+        description: expense.description ?? "",
+        amount: Number(expense.amount),
+        accId: expense.accId ? String(expense.accId) : defAcc ? String(defAcc) : "",
+        method: expense.paymentMethod ?? "Cash",
+        reference: expense.referenceNumber ?? "",
+        date: String(expense.expenseDate ?? "").slice(0, 10) || todayISO(),
+        notes: expense.notes ?? "",
       });
+      return;
     }
-  }, [open, reset, expenseCategories, paidByName, defaults, defaultAccount, accounts]);
+    reset({
+      categoryId: charge ? String(charge.expenseCategoryId) : expenseCategories[0] ? String(expenseCategories[0].id) : "",
+      description: charge?.description ?? "",
+      amount: charge ? charge.balance : 0,
+      accId: defAcc ? String(defAcc) : "",
+      method: "Cash",
+      reference: "",
+      date: todayISO(),
+      notes: "",
+    });
+  }, [open, reset, expenseCategories, defaultAccount, accounts, charge, expense]);
 
-  const onSubmit = (data: ExpenseForm) => {
-    mutation.mutate(
-      {
+  const mutation = useMutation({
+    mutationFn: (data: ExpenseForm) => {
+      const common = {
+        amount: Number(data.amount),
+        accId: data.accId ? Number(data.accId) : undefined,
+        paymentMethod: data.method,
+        referenceNumber: data.reference || undefined,
+        expenseDate: data.date,
+        paidBy: paidByName,
+        notes: data.notes || undefined,
+      };
+      if (mode === "edit" && expense) {
+        return financeService.updateExpense(expense.expenseId, {
+          ...common,
+          expenseCategoryId: Number(data.categoryId),
+          description: data.description,
+        });
+      }
+      if (mode === "pay" && charge) return financeService.payExpenseCharge(charge.expenseChargeId, common);
+      return financeService.createExpense({
+        ...common,
         expenseCategoryId: Number(data.categoryId),
         description: data.description,
-        amount: Number(data.amount),
-        paymentMethod: data.method as typeof PAYMENT_METHODS[number],
         referenceNumber: data.reference || "Manual entry",
-        expenseDate: data.date,
-        paidBy: paidByName || data.paidBy,
-        notes: data.notes,
-        accId: data.accId ? Number(data.accId) : undefined,
-        status: "Verified",
-      },
-      { onSuccess: () => {
-          onSuccess?.();
-          onClose();
-        } }
-    );
-  };
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success(mode === "edit" ? "Expense updated" : mode === "pay" ? "Charge paid" : "Expense recorded");
+      onSuccess?.();
+      onClose();
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "Failed to save expense")),
+  });
+
+  const title = mode === "edit" ? "Edit Expense" : mode === "pay" ? "Pay Expense Charge" : "Record Expense Payment";
+  const subtitle =
+    mode === "edit"
+      ? "Changing the amount or account posts a correction to the ledger."
+      : mode === "pay" && charge
+        ? `${charge.categoryName} · ${formatCurrency(charge.balance, currency)} still to pay`
+        : "Money is deducted from the selected account.";
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       size="lg"
-      title={defaults ? "Pay Expense" : "Record Expense Payment"}
-      subtitle="Money is deducted from the selected account."
+      title={title}
+      subtitle={subtitle}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button loading={mutation.isPending} onClick={handleSubmit(onSubmit)}>
-            Record expense
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={mutation.isPending} onClick={handleSubmit((d) => mutation.mutate(d))}>
+            {mode === "edit" ? "Save changes" : mode === "pay" ? "Pay" : "Record expense"}
           </Button>
         </>
       }
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Select
             label="Pay from account"
@@ -131,36 +165,43 @@ export function ExpenseFormModal({
           <Select
             label="Category"
             required
-            options={[{ value: "", label: "Select a category…" }, ...expenseCategories.map((c) => ({ value: String(c.id), label: c.name }))]}
+            disabled={mode === "pay"}
+            options={[
+              { value: "", label: "Select a category…" },
+              ...expenseCategories.map((c) => ({ value: String(c.id), label: c.name })),
+            ]}
             {...register("categoryId", { required: "Category is required" })}
           />
           <Input
-            label="Amount"
+            label={mode === "pay" ? "Amount to pay" : "Amount"}
             required
             type="number"
             step="0.01"
             placeholder="0.00"
             error={errors.amount?.message}
+            hint={mode === "pay" && charge ? `Up to ${formatCurrency(charge.balance, currency)} — pay less for a part payment` : undefined}
             {...register("amount", {
               required: "Amount is required",
+              valueAsNumber: true,
               min: { value: 0.01, message: "Amount must be positive" },
+              ...(mode === "pay" && charge
+                ? { max: { value: charge.balance, message: `No more than ${formatCurrency(charge.balance, currency)}` } }
+                : {}),
             })}
           />
         </div>
         <Input
           label="Description"
-          required
+          required={mode !== "pay"}
+          disabled={mode === "pay"}
           placeholder="e.g. Office internet bill"
           error={errors.description?.message}
-          {...register("description", { required: "Description is required" })}
+          {...register("description", mode === "pay" ? {} : { required: "Description is required" })}
         />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Select label="Method" options={PAYMENT_METHODS.map((m) => ({ value: m, label: m }))} {...register("method")} />
           <Input label="Reference" placeholder="REF-0001" {...register("reference")} />
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">Date</label>
-            <input type="date" className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700" {...register("date")} />
-          </div>
+          <Input label="Date" type="date" {...register("date")} />
           <Input
             label="Paid By"
             readOnly

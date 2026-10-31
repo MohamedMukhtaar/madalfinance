@@ -1,8 +1,19 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { History, Paperclip, Receipt, UsersRound, Wallet, AlertTriangle, BadgeDollarSign } from "lucide-react";
+import toast from "react-hot-toast";
+import {
+  History,
+  Paperclip,
+  Pencil,
+  Receipt,
+  Trash2,
+  UsersRound,
+  Wallet,
+  AlertTriangle,
+  BadgeDollarSign,
+} from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -11,43 +22,67 @@ import {
   Badge,
   StatCard,
   StatCardsGrid,
-  MonthNavigator,
   Modal,
   Input,
-  Select,
   EmptyState,
   ErrorState,
   FileUpload,
+  Select,
+  confirmDialog,
   type UploadedFile,
 } from "@/components/ui";
-import { useAccounts, useChargeMembers, useDefaultAccount, useDueBatch, useDues, useGrantMemberCredit, useReceiveDue, useRepayMemberLoan } from "@/hooks/queries";
-import { useSelectedMonth } from "@/hooks/useSelectedMonth";
+import {
+  useAccounts,
+  useChargeMembers,
+  useDefaultAccount,
+  useGrantMemberCredit,
+  useMembers,
+  useReceiveDue,
+  useRepayMemberLoan,
+} from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
 import { DUE_STATUS_STYLES } from "@/utils/constants";
-import { formatCurrency, monthName, todayISO, formatAccountOptionLabel } from "@/utils/format";
-import { formatMonthLabel } from "@/utils/monthFilter";
+import { formatCurrency, formatDate, monthName, todayISO, formatAccountOptionLabel } from "@/utils/format";
 import { dateTimeColumns } from "@/utils/tableHelpers";
 import { cn } from "@/utils/cn";
-import type { DueBatch, MemberDue } from "@/types";
+import type { MemberDue } from "@/types";
 
 const columnHelper = createColumnHelper<MemberDue>();
 
 interface ChargeForm {
-  month: string;
-  year: string;
+  reason: string;
+  /** Single control: "YYYY-MM" → month name + year (e.g. 2026-10 → October 2026). */
+  period: string;
   defaultAmount: number;
 }
 
+/** "YYYY-MM" filter value; "" means every month. */
+const periodKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
+const periodLabel = (year: number, month: number) => `${monthName(month)} ${year}`;
+
 export default function ContributionsPage() {
-  const { data, isLoading, error, refetch } = useDues();
-  const batches = data?.rows ?? [];
+  const qc = useQueryClient();
+  const [period, setPeriod] = useState("");
+  const [year, monthNum] = period ? period.split("-").map(Number) : [undefined, undefined];
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["dues", "list", period],
+    queryFn: () =>
+      financeService.memberDues({ perPage: 1000, sort: "charge_date:desc", ...(period ? { year, month: monthNum } : {}) }),
+  });
+  const dues = data?.rows ?? [];
+  const { data: periods = [] } = useQuery({
+    queryKey: ["dues", "periods"],
+    queryFn: () => financeService.contributionPeriods(),
+  });
+
   const chargeMutation = useChargeMembers();
   const receiveMutation = useReceiveDue();
   const grantCreditMutation = useGrantMemberCredit();
   const repayLoanMutation = useRepayMemberLoan();
   const { currency, settings } = useSettings();
-  const { month, setMonth } = useSelectedMonth();
   const { data: accounts = [] } = useAccounts();
   const { data: defaultAccount } = useDefaultAccount();
 
@@ -65,44 +100,64 @@ export default function ContributionsPage() {
   const [repayAmount, setRepayAmount] = useState<number>(0);
   const [repayNotes, setRepayNotes] = useState("");
   const [repayAccId, setRepayAccId] = useState<string>("");
+  const [editDueFor, setEditDueFor] = useState<MemberDue | undefined>();
+  const [editDueAmount, setEditDueAmount] = useState<number>(0);
+  const [editChargeFor, setEditChargeFor] = useState<MemberDue | undefined>();
+  const [editChargeReason, setEditChargeReason] = useState("");
+  const [editChargeDate, setEditChargeDate] = useState("");
 
-  // Newest month that has dues; the page opens there when the current month has none yet.
-  const latestBatch = useMemo(
-    () => batches.reduce<DueBatch | undefined>((best, b) => (!best || b.year * 12 + b.month > best.year * 12 + best.month ? b : best), undefined),
-    [batches]
-  );
-  const jumpedToLatest = useRef(false);
-  useEffect(() => {
-    if (jumpedToLatest.current || !latestBatch) return;
-    jumpedToLatest.current = true;
-    if (!batches.some((b) => b.month === month.month && b.year === month.year)) {
-      setMonth({ month: latestBatch.month, year: latestBatch.year });
-    }
-  }, [batches, latestBatch, month, setMonth]);
+  const refreshDues = () => {
+    qc.invalidateQueries({ queryKey: ["dues"] });
+    qc.invalidateQueries({ queryKey: ["dashboard"] });
+  };
+  const onFail = (fallback: string) => (err: unknown) => toast.error(getErrorMessage(err, fallback));
 
-  const activeBatchMeta = useMemo(
-    () => batches.find((b) => b.month === month.month && b.year === month.year),
-    [batches, month]
-  );
+  const updateDueMutation = useMutation({
+    mutationFn: ({ dueId, amount }: { dueId: number; amount: number }) => financeService.updateMemberDue(dueId, amount),
+    onSuccess: () => {
+      refreshDues();
+      toast.success("Due updated");
+      setEditDueFor(undefined);
+    },
+    onError: onFail("Failed to update due"),
+  });
+  const deleteDueMutation = useMutation({
+    mutationFn: (dueId: number) => financeService.deleteMemberDue(dueId),
+    onSuccess: () => {
+      refreshDues();
+      toast.success("Due deleted");
+    },
+    onError: onFail("Failed to delete due"),
+  });
+  const updateChargeMutation = useMutation({
+    mutationFn: ({ batchId, reason, chargeDate }: { batchId: number; reason: string; chargeDate: string }) =>
+      financeService.updateContributionCharge(batchId, { reason, chargeDate }),
+    onSuccess: () => {
+      refreshDues();
+      toast.success("Charge updated");
+      setEditChargeFor(undefined);
+    },
+    onError: onFail("Failed to update charge"),
+  });
+  const deleteChargeMutation = useMutation({
+    mutationFn: (batchId: number) => financeService.deleteContributionCharge(batchId),
+    onSuccess: () => {
+      refreshDues();
+      toast.success("Charge deleted");
+    },
+    onError: onFail("Failed to delete charge"),
+  });
 
-  const { data: batchDetail, isLoading: duesLoading } = useDueBatch(activeBatchMeta?.batchId);
-  const activeBatch = useMemo((): DueBatch | undefined => {
-    if (!activeBatchMeta) return undefined;
-    const dues = batchDetail?.dues ?? activeBatchMeta.dues ?? [];
-    const base = batchDetail?.batch ?? activeBatchMeta;
-    return { ...base, dues };
-  }, [activeBatchMeta, batchDetail]);
-
-  const batchStats = useMemo(() => {
-    const dues = activeBatch?.dues ?? [];
-    return {
+  const batchStats = useMemo(
+    () => ({
       expected: dues.reduce((s, d) => s + Number(d.amount ?? 0), 0),
       collected: dues.reduce((s, d) => s + Number(d.paidAmount ?? 0), 0),
       pending: dues.filter((d) => d.status === "Pending").reduce((s, d) => s + Number(d.balance ?? 0), 0),
       partial: dues.filter((d) => d.status === "Partial").reduce((s, d) => s + Number(d.balance ?? 0), 0),
       overdue: 0,
-    };
-  }, [activeBatch]);
+    }),
+    [dues]
+  );
 
   const { data: historyDuesData } = useQuery({
     queryKey: ["dues", "member-history", historyFor?.memberId],
@@ -113,6 +168,20 @@ export default function ContributionsPage() {
 
   const columns = useMemo<ColumnDef<MemberDue, any>[]>(
     () => [
+      columnHelper.accessor("chargeDate", {
+        header: "Charged on",
+        cell: (info) => (
+          <span className="whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">
+            {info.getValue() ? formatDate(info.getValue() as string) : "—"}
+          </span>
+        ),
+      }),
+      columnHelper.accessor("reason", {
+        header: "Reason",
+        cell: (info) => (
+          <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{info.getValue() || "—"}</span>
+        ),
+      }),
       columnHelper.accessor("memberName", {
         header: "Member",
         cell: (info) => (
@@ -243,6 +312,7 @@ export default function ContributionsPage() {
     setRepayAccId(defAcc ? String(defAcc) : "");
   };
 
+  /** DreamPOS pattern: 3 primary icons + overflow menu for the rest. */
   const dueActions = (due: MemberDue) => {
     const paid = due.balance <= 0;
     const loanOwed = Number(due.creditBalance ?? 0);
@@ -253,11 +323,34 @@ export default function ContributionsPage() {
         disabled: paid,
         onClick: () => openReceive(due),
       },
+      {
+        label: "Edit amount",
+        icon: <Pencil className="h-4 w-4" />,
+        onClick: () => {
+          setEditDueFor(due);
+          setEditDueAmount(due.amount);
+        },
+      },
+      {
+        label: "Delete due",
+        icon: <Trash2 className="h-4 w-4" />,
+        danger: true,
+        disabled: due.paidAmount > 0,
+        onClick: async () => {
+          const ok = await confirmDialog({
+            title: `Delete ${due.memberName}'s due?`,
+            text: `${due.reason ?? "Charge"} · ${formatCurrency(due.amount, currency)}. Only unpaid dues can be deleted.`,
+            confirmText: "Yes Delete",
+          });
+          if (ok) deleteDueMutation.mutate(due.dueId);
+        },
+      },
       ...(loanOwed > 0
         ? [
             {
               label: "Repay loan",
               icon: <BadgeDollarSign className="h-4 w-4" />,
+              overflow: true,
               onClick: () => openRepay(due),
             },
           ]
@@ -265,12 +358,38 @@ export default function ContributionsPage() {
       {
         label: "Grant loan",
         icon: <BadgeDollarSign className="h-4 w-4" />,
+        overflow: true,
         onClick: () => openCredit(due),
       },
       {
         label: "History",
         icon: <History className="h-4 w-4" />,
+        overflow: true,
         onClick: () => setHistoryFor(due),
+      },
+      {
+        label: "Edit charge",
+        icon: <Pencil className="h-4 w-4" />,
+        overflow: true,
+        onClick: () => {
+          setEditChargeFor(due);
+          setEditChargeReason(due.reason ?? "");
+          setEditChargeDate(String(due.chargeDate ?? "").slice(0, 10));
+        },
+      },
+      {
+        label: "Delete whole charge",
+        icon: <Trash2 className="h-4 w-4" />,
+        danger: true,
+        overflow: true,
+        onClick: async () => {
+          const ok = await confirmDialog({
+            title: `Delete "${due.reason ?? "this charge"}" for every member?`,
+            text: "Removes all dues of this charge. Not possible once anyone has paid towards it.",
+            confirmText: "Yes Delete",
+          });
+          if (ok) deleteChargeMutation.mutate(due.batchId);
+        },
       },
     ];
   };
@@ -294,10 +413,22 @@ export default function ContributionsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Member Contributions"
-        subtitle="Monthly dues from Madal ICT co-founders."
+        subtitle="Charges and dues from Madal ICT co-founders."
         actions={
           <>
-            <MonthNavigator value={month} onChange={setMonth} />
+            <select
+              aria-label="Filter by month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="h-10 rounded-md border border-line bg-panel px-3 text-sm font-medium text-ink transition focus:outline-none focus:border-[var(--brand-primary)] focus:ring-1 focus:ring-[var(--brand-primary)]"
+            >
+              <option value="">All months</option>
+              {periods.map((p) => (
+                <option key={periodKey(p.year, p.month)} value={periodKey(p.year, p.month)}>
+                  {periodLabel(p.year, p.month)}
+                </option>
+              ))}
+            </select>
             <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
               Charge Members
             </Button>
@@ -308,23 +439,23 @@ export default function ContributionsPage() {
       <StatCardsGrid>
         <StatCard
           index={0}
-          loading={isLoading || duesLoading}
+          loading={isLoading}
           label="Expected"
-          value={formatCurrency(batchStats.expected || Number(activeBatchMeta?.expectedAmount ?? 0), currency)}
+          value={formatCurrency(batchStats.expected, currency)}
           icon={<Receipt className="h-4 w-4" />}
           iconClassName="bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400"
         />
         <StatCard
           index={1}
-          loading={isLoading || duesLoading}
+          loading={isLoading}
           label="Collected"
-          value={formatCurrency(batchStats.collected || Number(activeBatchMeta?.collectedAmount ?? 0), currency)}
+          value={formatCurrency(batchStats.collected, currency)}
           icon={<Wallet className="h-4 w-4" />}
           iconClassName="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
         />
         <StatCard
           index={2}
-          loading={isLoading || duesLoading}
+          loading={isLoading}
           label="Pending"
           value={formatCurrency(batchStats.pending + batchStats.partial, currency)}
           icon={<UsersRound className="h-4 w-4" />}
@@ -332,7 +463,7 @@ export default function ContributionsPage() {
         />
         <StatCard
           index={3}
-          loading={isLoading || duesLoading}
+          loading={isLoading}
           label="Overdue"
           value={formatCurrency(batchStats.overdue, currency)}
           icon={<AlertTriangle className="h-4 w-4" />}
@@ -340,39 +471,31 @@ export default function ContributionsPage() {
         />
       </StatCardsGrid>
 
-      {!activeBatchMeta ? (
+      {!isLoading && dues.length === 0 ? (
         <EmptyState
-          title="No contributions for this month"
-          description={`Charge members to generate dues for ${formatMonthLabel(month)}.`}
+          title={period ? `No charges in ${periodLabel(year!, monthNum!)}` : "No contribution charges yet"}
+          description="Charge members for monthly dues or any other reason, at any time."
           action={
-            <div className="flex flex-wrap justify-center gap-2">
-              {latestBatch && (
-                <Button
-                  variant="secondary"
-                  onClick={() => setMonth({ month: latestBatch.month, year: latestBatch.year })}
-                  leftIcon={<History className="h-4 w-4" />}
-                >
-                  View {formatMonthLabel({ month: latestBatch.month, year: latestBatch.year })}
-                </Button>
-              )}
-              <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
-                Charge Members
-              </Button>
-            </div>
+            <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
+              Charge Members
+            </Button>
           }
         />
       ) : (
       <DataTable
         columns={columns}
-        data={activeBatch?.dues ?? []}
-        loading={isLoading || duesLoading}
-        searchPlaceholder="Search members…"
-        emptyTitle="No members in batch"
-        emptyDescription="This batch has no member dues."
+        data={dues}
+        loading={isLoading}
+        searchPlaceholder="Search members or reasons…"
+        emptyTitle="No dues"
+        emptyDescription="No member dues match this filter."
         actions={(due) => dueActions(due)}
         renderMobileCard={(due) => (
           <div className="space-y-1">
             <p className="font-semibold text-slate-800 dark:text-slate-100">{due.memberName}</p>
+            <p className="text-xs text-slate-500">
+              {due.reason ?? "Charge"} · {due.chargeDate ? formatDate(due.chargeDate) : ""}
+            </p>
             <div className="flex flex-wrap gap-3 text-sm">
               <span className="font-mono text-slate-600 dark:text-slate-300">
                 Due {formatCurrency(due.amount, currency)}
@@ -394,10 +517,12 @@ export default function ContributionsPage() {
         onClose={() => setChargeOpen(false)}
         defaultAmount={settings?.defaultMemberDue ?? 10}
         onSubmit={(data) =>
-          chargeMutation.mutate(
-            { month: Number(data.month), year: Number(data.year), defaultAmount: data.defaultAmount },
-            { onSuccess: () => setChargeOpen(false) }
-          )
+          chargeMutation.mutate(data, {
+            onSuccess: () => {
+              setChargeOpen(false);
+              qc.invalidateQueries({ queryKey: ["dues"] });
+            },
+          })
         }
         loading={chargeMutation.isPending}
       />
@@ -408,7 +533,7 @@ export default function ContributionsPage() {
         title="Receive Contribution"
         subtitle={
           receiveFor
-            ? `${receiveFor.memberName} · ${monthName(activeBatch?.month ?? 0)} ${activeBatch?.year ?? ""}`
+            ? `${receiveFor.memberName} · ${receiveFor.reason ?? "Charge"}${receiveFor.chargeDate ? ` · ${formatDate(receiveFor.chargeDate)}` : ""}`
             : undefined
         }
         footer={
@@ -625,6 +750,75 @@ export default function ContributionsPage() {
       </Modal>
 
       <Modal
+        open={!!editDueFor}
+        onClose={() => setEditDueFor(undefined)}
+        title="Edit due amount"
+        subtitle={editDueFor ? `${editDueFor.memberName} · ${editDueFor.reason ?? "Charge"}` : undefined}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditDueFor(undefined)}>
+              Cancel
+            </Button>
+            <Button
+              loading={updateDueMutation.isPending}
+              disabled={!editDueFor || editDueAmount <= 0 || editDueAmount < (editDueFor?.paidAmount ?? 0)}
+              onClick={() => editDueFor && updateDueMutation.mutate({ dueId: editDueFor.dueId, amount: editDueAmount })}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-2">
+          <Input
+            label="Amount"
+            type="number"
+            step="0.01"
+            value={editDueAmount}
+            onChange={(e) => setEditDueAmount(Number(e.target.value))}
+          />
+          {editDueFor && editDueFor.paidAmount > 0 && (
+            <p className="text-xs text-slate-500">
+              Already paid {formatCurrency(editDueFor.paidAmount, currency)}, so the amount can't go below that.
+            </p>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!editChargeFor}
+        onClose={() => setEditChargeFor(undefined)}
+        title="Edit charge"
+        subtitle="Changes the reason and date for every member in this charge."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditChargeFor(undefined)}>
+              Cancel
+            </Button>
+            <Button
+              loading={updateChargeMutation.isPending}
+              disabled={!editChargeReason.trim() || !editChargeDate}
+              onClick={() =>
+                editChargeFor &&
+                updateChargeMutation.mutate({
+                  batchId: editChargeFor.batchId,
+                  reason: editChargeReason.trim(),
+                  chargeDate: editChargeDate,
+                })
+              }
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input label="Reason" required value={editChargeReason} onChange={(e) => setEditChargeReason(e.target.value)} />
+          <Input label="Charge date" type="date" required value={editChargeDate} onChange={(e) => setEditChargeDate(e.target.value)} />
+        </div>
+      </Modal>
+
+      <Modal
         open={!!historyFor}
         onClose={() => setHistoryFor(undefined)}
         title="Contribution History"
@@ -632,7 +826,6 @@ export default function ContributionsPage() {
       >
         <div className="space-y-2">
           {historyDues.map((due) => {
-            const batch = batches.find((b) => b.batchId === due.batchId);
             return (
               <div
                 key={due.dueId}
@@ -640,7 +833,10 @@ export default function ContributionsPage() {
               >
                 <div>
                   <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    {batch ? `${monthName(batch.month)} ${batch.year}` : `Batch #${due.batchId}`}
+                    {due.reason ?? "Charge"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {due.chargeDate ? formatDate(due.chargeDate) : `${monthName(due.month ?? 1)} ${due.year ?? ""}`}
                   </p>
                   <p className="text-xs text-slate-400">Due {formatCurrency(due.amount, currency)}</p>
                 </div>
@@ -660,6 +856,11 @@ export default function ContributionsPage() {
   );
 }
 
+function currentPeriodValue() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function ChargeMembersModal({
   open,
   onClose,
@@ -670,71 +871,144 @@ function ChargeMembersModal({
   open: boolean;
   onClose: () => void;
   defaultAmount: number;
-  onSubmit: (data: { month: string; year: string; defaultAmount: number }) => void;
+  onSubmit: (data: {
+    reason: string;
+    chargeDate: string;
+    defaultAmount: number;
+    month: number;
+    year: number;
+    memberIds?: number[];
+  }) => void;
   loading: boolean;
 }) {
-  const now = new Date();
-  const { register, handleSubmit, watch } = useForm<ChargeForm>({
+  const { data: members = [] } = useMembers({ enabled: open });
+  const activeMembers = members.filter((m) => m.status === "active");
+  const [excluded, setExcluded] = useState<Set<number>>(new Set());
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<ChargeForm>({
     defaultValues: {
-      month: String(now.getMonth() + 1),
-      year: String(now.getFullYear()),
+      reason: "Monthly contribution",
+      period: currentPeriodValue(),
       defaultAmount,
     },
   });
 
+  useEffect(() => {
+    if (!open) return;
+    setExcluded(new Set());
+    reset({
+      reason: "Monthly contribution",
+      period: currentPeriodValue(),
+      defaultAmount,
+    });
+  }, [open, defaultAmount, reset]);
+
   const amount = Number(watch("defaultAmount") ?? 0);
+  const periodValue = watch("period") || currentPeriodValue();
+  const [periodYear, periodMonth] = periodValue.split("-").map(Number);
+  const chosen = activeMembers.filter((m) => !excluded.has(m.memberId));
+  const toggle = (id: number) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const submit = handleSubmit((values) => {
+    const [year, month] = values.period.split("-").map(Number);
+    onSubmit({
+      reason: values.reason.trim(),
+      // Charge date = today when in the selected month, else 1st of that month.
+      chargeDate: values.period === currentPeriodValue() ? todayISO() : `${values.period}-01`,
+      defaultAmount: values.defaultAmount,
+      month,
+      year,
+      memberIds: excluded.size ? chosen.map((m) => m.memberId) : undefined,
+    });
+  });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="Charge Members"
-      subtitle="Generate contribution dues for a month and year."
+      subtitle="Same month needs a different reason — duplicates are blocked."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button loading={loading} onClick={handleSubmit(onSubmit)}>
-            Generate {formatCurrency(amount)}
+          <Button loading={loading} disabled={chosen.length === 0} onClick={() => void submit()}>
+            Charge {chosen.length} × {formatCurrency(amount)}
           </Button>
         </>
       }
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={(e) => void submit(e)} className="space-y-4">
+        <Input
+          label="Reason"
+          required
+          placeholder="e.g. Monthly contribution, Office rent share, Internet levy"
+          error={errors.reason?.message}
+          {...register("reason", {
+            required: "Give a reason for this charge",
+            validate: (v) => !!v.trim() || "Give a reason",
+          })}
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Select
+          <Input
             label="Month"
-            options={Array.from({ length: 12 }, (_, i) => ({
-              value: String(i + 1),
-              label: monthName(i + 1),
-            }))}
-            {...register("month")}
+            type="month"
+            required
+            hint={
+              periodYear && periodMonth
+                ? `Charging for ${periodLabel(periodYear, periodMonth)}`
+                : "Select month and year"
+            }
+            error={errors.period?.message}
+            {...register("period", { required: "Select a month" })}
           />
-          <Select
-            label="Year"
-            options={[now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1].map((y) => ({
-              value: String(y),
-              label: String(y),
-            }))}
-            {...register("year")}
+          <Input
+            label="Amount per member"
+            type="number"
+            step="0.01"
+            required
+            error={errors.defaultAmount?.message}
+            {...register("defaultAmount", {
+              valueAsNumber: true,
+              min: { value: 0.01, message: "Enter an amount" },
+            })}
           />
         </div>
-        <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/50">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Default Amount</span>
-            <span className="text-xs text-slate-400">Per member</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <input
-              type="number"
-              step="0.01"
-              className="h-10 w-full rounded-xl border-0 bg-white px-3.5 text-sm font-mono font-semibold text-slate-900 shadow-sm ring-1 ring-inset ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-white dark:ring-slate-700"
-              {...register("defaultAmount", { valueAsNumber: true })}
-            />
-            <span className="shrink-0 rounded-xl bg-brand-50 px-3 py-2 text-sm font-bold text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">
-              {formatCurrency(amount)}
-            </span>
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-ink">
+            Members ({chosen.length} of {activeMembers.length})
+          </p>
+          <div className="max-h-48 space-y-1 overflow-y-auto border border-line p-2">
+            {activeMembers.map((m) => (
+              <label
+                key={m.memberId}
+                className="flex cursor-pointer items-center gap-2.5 px-2 py-1.5 hover:bg-muted/70"
+              >
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-[var(--brand-primary)]"
+                  checked={!excluded.has(m.memberId)}
+                  onChange={() => toggle(m.memberId)}
+                />
+                <Avatar name={m.memberName} src={m.avatarUrl ?? undefined} size="xs" />
+                <span className="text-sm text-ink">{m.memberName}</span>
+              </label>
+            ))}
+            {activeMembers.length === 0 && (
+              <p className="px-2 py-1 text-xs text-ink-muted">No active members.</p>
+            )}
           </div>
         </div>
       </form>

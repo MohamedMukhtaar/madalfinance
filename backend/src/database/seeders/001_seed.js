@@ -1,24 +1,70 @@
 import bcrypt from 'bcryptjs';
 import { pool } from '../../config/db.js';
+import {
+  ALL_PERMISSIONS,
+  ALL_PERMISSION_NAMES,
+  adminPermissionNames,
+} from '../../utils/permissions.js';
+import { ROLES } from '../../utils/constants.js';
 
 /**
  * Idempotent seed data:
- *  - roles, project types, expense catalog
- *  - system settings
+ *  - roles, permissions (Spatie-style), role_has_permissions
+ *  - project types, expense catalog, system settings, organization
  *  - admin users + member profiles
  */
 export const seed = async () => {
   const conn = await pool.getConnection();
   try {
     await conn.query(
-      `INSERT INTO roles (role_name) VALUES ('Super Admin'), ('Admin')
-       ON CONFLICT (role_name) DO NOTHING`
+      `INSERT INTO roles (role_name, description, is_system) VALUES
+         ('Super Admin', 'Full system access', TRUE),
+         ('Admin', 'Finance access without user/role administration', TRUE)
+       ON CONFLICT (role_name) DO UPDATE
+         SET description = EXCLUDED.description,
+             is_system = EXCLUDED.is_system,
+             updated_at = now()`
     );
+
     const roleMap = {};
-    const [roles] = await conn.query(`SELECT role_id, role_name FROM roles`);
+    const [roles] = await conn.query(`SELECT role_id, role_name FROM roles WHERE deleted_at IS NULL`);
     roles.forEach((r) => {
       roleMap[r.role_name] = r.role_id;
     });
+
+    for (const p of ALL_PERMISSIONS) {
+      await conn.query(
+        `INSERT INTO permissions (permission_name, guard_name, module, action)
+         VALUES (?, 'web', ?, ?)
+         ON CONFLICT (permission_name, guard_name)
+         DO UPDATE SET module = EXCLUDED.module, action = EXCLUDED.action, updated_at = now()`,
+        [p.name, p.module, p.action]
+      );
+    }
+
+    const superId = roleMap[ROLES.SUPER_ADMIN];
+    const adminId = roleMap[ROLES.ADMIN];
+    if (superId) {
+      await conn.query(`DELETE FROM role_has_permissions WHERE role_id = ?`, [superId]);
+      await conn.query(
+        `INSERT INTO role_has_permissions (permission_id, role_id)
+         SELECT permission_id, ? FROM permissions
+         ON CONFLICT DO NOTHING`,
+        [superId]
+      );
+    }
+    if (adminId) {
+      const adminPerms = adminPermissionNames();
+      await conn.query(`DELETE FROM role_has_permissions WHERE role_id = ?`, [adminId]);
+      await conn.query(
+        `INSERT INTO role_has_permissions (permission_id, role_id)
+         SELECT permission_id, ?
+           FROM permissions
+          WHERE permission_name = ANY(?::text[])
+         ON CONFLICT DO NOTHING`,
+        [adminId, adminPerms]
+      );
+    }
 
     await conn.query(
       `INSERT INTO project_types (type_name) VALUES ('One Time'), ('Rental')
@@ -52,18 +98,25 @@ export const seed = async () => {
        ON CONFLICT (setting_id) DO NOTHING`
     );
 
+    await conn.query(
+      `INSERT INTO organizations (organization_id, name, email, phone, address)
+       SELECT 1, company_name, company_email, company_phone, company_address
+         FROM settings WHERE setting_id = 1
+       ON CONFLICT (organization_id) DO NOTHING`
+    );
+
     const usersSeed = [
       {
         username: 'admin',
         fullName: 'Madal Administrator',
-        role: 'Super Admin',
+        role: ROLES.SUPER_ADMIN,
         phone: '+252 61 234 5678',
         email: 'admin@madalsolutions.com',
       },
       {
         username: 'finance',
         fullName: 'Safiya Abukar',
-        role: 'Admin',
+        role: ROLES.ADMIN,
         phone: '+252 61 555 0123',
         email: 'finance@madalsolutions.com',
       },
@@ -104,7 +157,11 @@ export const seed = async () => {
       );
     }
 
-    return { roles: Object.keys(roleMap).length, users: usersSeed.length };
+    return {
+      roles: Object.keys(roleMap).length,
+      permissions: ALL_PERMISSION_NAMES.length,
+      users: usersSeed.length,
+    };
   } finally {
     conn.release();
   }

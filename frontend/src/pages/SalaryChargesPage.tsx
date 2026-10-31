@@ -105,26 +105,28 @@ export default function SalaryChargesPage() {
         title="Salary charges"
         subtitle="Generate monthly payroll charges, then record payments against them."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
             <MonthNavigator value={month} onChange={setMonth} />
-            <Button
-              variant="secondary"
-              leftIcon={<Wand2 className="h-4 w-4" />}
-              loading={generateMutation.isPending}
-              onClick={async () => {
-                const ok = await confirmDialog({
-                  title: "Generate salary charges?",
-                  text: "Creates a charge for each active employee with a basic salary who is not already billed this month.",
-                  confirmText: "Generate",
-                });
-                if (ok) generateMutation.mutate({ year: month.year, month: month.month });
-              }}
-            >
-              Generate month
-            </Button>
-            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setAddOpen(true)}>
-              Add charge
-            </Button>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+              <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setAddOpen(true)}>
+                Add charge
+              </Button>
+              <Button
+                variant="secondary"
+                leftIcon={<Wand2 className="h-4 w-4" />}
+                loading={generateMutation.isPending}
+                onClick={async () => {
+                  const ok = await confirmDialog({
+                    title: "Generate salary charges?",
+                    text: "Creates a charge for each active employee with a basic salary who is not already billed this month.",
+                    confirmText: "Generate",
+                  });
+                  if (ok) generateMutation.mutate({ year: month.year, month: month.month });
+                }}
+              >
+                Generate month
+              </Button>
+            </div>
           </div>
         }
       />

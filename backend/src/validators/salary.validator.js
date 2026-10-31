@@ -1,6 +1,14 @@
 import { body } from 'express-validator';
 import { PAYMENT_METHODS } from '../utils/constants.js';
 
+export const updateSalaryChargeValidator = [
+  body('basic_salary').optional().isFloat({ min: 0 }).withMessage('Invalid basic salary'),
+  body('allowance').optional().isFloat({ min: 0 }).withMessage('Invalid allowance'),
+  body('deduction').optional().isFloat({ min: 0 }).withMessage('Invalid deduction'),
+  body('charge_date').optional().isISO8601().withMessage('Invalid charge date'),
+  body('notes').optional().trim().isLength({ max: 500 }),
+];
+
 export const createSalaryChargeValidator = [
   body('employee_id').isInt({ min: 1 }).withMessage('Employee is required'),
   body('year').optional().isInt({ min: 2000, max: 2100 }),

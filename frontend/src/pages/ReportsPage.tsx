@@ -1,25 +1,13 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
-  Banknote,
-  Briefcase,
-  Building2,
-  Calendar,
-  CircleDot,
   Download,
   Eye,
   FileDown,
   FileSpreadsheet,
-  Hash,
-  Mail,
-  MapPin,
-  Phone,
-  StickyNote,
   Table2,
-  User,
   Users,
   BarChart3,
-  type LucideIcon,
 } from "lucide-react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -27,27 +15,6 @@ import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton, EmptyState, Tabs, DateRangeFilter, Modal, type DateFilterMode } from "@/components/ui";
 import { DataTable } from "@/components/tables/DataTable";
-
-type ReportChartsModule = typeof import("@/features/reports/ReportCharts");
-
-function useLazyReportCharts(enabled: boolean) {
-  const [mod, setMod] = useState<ReportChartsModule | null>(null);
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
-    void import("@/features/reports/ReportCharts").then((m) => {
-      if (live) setMod(m);
-    });
-    return () => {
-      live = false;
-    };
-  }, [enabled]);
-  return mod;
-}
-
-function ChartPlaceholder() {
-  return <Skeleton className="h-72 w-full rounded-xl" />;
-}
 import { Progress } from "@/components/ui/Progress";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -80,163 +47,44 @@ import { DUE_STATUS_STYLES, CUSTOMER_STATUS_STYLES } from "@/utils/constants";
 import { cn } from "@/utils/cn";
 import type { Employee, LedgerTransaction } from "@/types";
 import { StatementTable } from "@/features/reports/StatementTable";
+import { EmployeeReportCards } from "@/features/reports/EmployeeReportCards";
+import {
+  VIEWS,
+  VIEW_HINTS,
+  STATEMENT_KINDS,
+  selectClass,
+  CHART_PALETTE,
+  dueBatchLabel,
+  resolveView,
+  monthLabel,
+  asRows,
+  type ViewId,
+  type StatementKind,
+} from "@/features/reports/reportMeta";
 import toast from "react-hot-toast";
 
-const VIEWS = [
-  { id: "customers", label: "Collections", path: "/reports/customers" },
-  { id: "statements", label: "Statements", path: "/reports/statements" },
-  { id: "employees", label: "HR", path: "/reports/employees" },
-  { id: "accounts", label: "Cash books", path: "/reports/accounts" },
-  { id: "expenses", label: "Spending", path: "/reports/expenses" },
-  { id: "members", label: "Member dues", path: "/reports/members" },
-  { id: "income-statement", label: "Profit & loss", path: "/reports/income-statement" },
-  { id: "cash-flow", label: "Cash in / out", path: "/reports/cash-flow" },
-] as const;
+type ReportChartsModule = typeof import("@/features/reports/ReportCharts");
 
-const VIEW_HINTS: Record<(typeof VIEWS)[number]["id"], string> = {
-  customers: "Who still owes setup fees, rent, or other invoices — and what has already been collected.",
-  statements: "A running ledger for one customer, member, project, or expense.",
-  employees: "Staff profile plus salary charges and payments.",
-  accounts: "Cash and bank movement per account.",
-  expenses: "Where money went, grouped by category.",
-  members: "Member contributions, loans, and dues.",
-  "income-statement": "Revenue minus expenses for the selected period.",
-  "cash-flow": "Money that actually entered or left the ledger — not billed-but-unpaid invoices.",
-};
-
-type ViewId = (typeof VIEWS)[number]["id"];
-
-type StatementKind = "customer" | "member" | "project" | "expense";
-
-const STATEMENT_KINDS: Array<{ id: StatementKind; label: string }> = [
-  { id: "customer", label: "Customer" },
-  { id: "member", label: "Member" },
-  { id: "project", label: "Project" },
-  { id: "expense", label: "Expense" },
-];
-
-const selectClass =
-  "min-w-[14rem] rounded-xl border-0 bg-white px-3 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700";
-
-function dueBatchLabel(batch: { batchId: number; month?: number; year?: number }) {
-  const month = Number(batch.month);
-  const year = Number(batch.year);
-  if (month >= 1 && month <= 12 && year > 1900) {
-    return new Date(year, month - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  }
-  return `Batch #${batch.batchId}`;
+function useLazyReportCharts(enabled: boolean) {
+  const [mod, setMod] = useState<ReportChartsModule | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void import("@/features/reports/ReportCharts").then((m) => {
+      if (live) setMod(m);
+    });
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return mod;
 }
 
-function ProfileCard({
-  title,
-  icon: Icon,
-  fields,
-}: {
-  title: string;
-  icon: LucideIcon;
-  fields: Array<{ label: string; value: ReactNode; icon: LucideIcon }>;
-}) {
-  return (
-    <div className="stat-hover group flex h-full min-h-[16rem] flex-col rounded-2xl bg-card p-4 ring-1 ring-line transition-colors duration-200">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-ink">{title}</p>
-        <span className="stat-hover-icon inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" />
-        </span>
-      </div>
-      <div className="grid flex-1 grid-cols-2 content-start gap-4">
-        {fields.map((field) => {
-          const FieldIcon = field.icon;
-          return (
-            <div key={field.label} className="min-w-0">
-              <div className="mb-1 flex items-center gap-1.5">
-                <FieldIcon className="h-3.5 w-3.5 shrink-0 text-slate-400 transition-colors group-hover:!text-white/70" />
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 transition-colors group-hover:!text-white/70">
-                  {field.label}
-                </p>
-              </div>
-              <p className="truncate text-sm font-semibold text-ink transition-colors group-hover:!text-white">
-                {field.value ?? "—"}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function EmployeeReportCards({ employee, currency }: { employee: Employee; currency: string }) {
-  return (
-    <div className="grid auto-rows-fr grid-cols-1 gap-3 lg:grid-cols-3">
-      <ProfileCard
-        title="Profile"
-        icon={User}
-        fields={[
-          { label: "Name", icon: User, value: employee.fullName },
-          { label: "Code", icon: Hash, value: employee.employeeCode },
-          { label: "Phone", icon: Phone, value: employee.phone || "—" },
-          { label: "Email", icon: Mail, value: employee.email || "—" },
-        ]}
-      />
-      <ProfileCard
-        title="Job"
-        icon={Briefcase}
-        fields={[
-          { label: "Job title", icon: Briefcase, value: employee.jobTitle || "—" },
-          { label: "Department", icon: Building2, value: employee.department || "—" },
-          { label: "Branch", icon: MapPin, value: employee.branch || "—" },
-          { label: "Shift", icon: Calendar, value: employee.shift || "—" },
-        ]}
-      />
-      <ProfileCard
-        title="Salary"
-        icon={Banknote}
-        fields={[
-          { label: "Basic salary", icon: Banknote, value: formatCurrency(Number(employee.basicSalary), currency) },
-          { label: "Hire date", icon: Calendar, value: formatDate(employee.hireDate) },
-          { label: "Status", icon: CircleDot, value: employee.status },
-          { label: "Notes", icon: StickyNote, value: employee.notes || "—" },
-        ]}
-      />
-    </div>
-  );
+function ChartPlaceholder() {
+  return <Skeleton className="h-72 w-full rounded-xl" />;
 }
 
 const employeeColumnHelper = createColumnHelper<Employee>();
-
-const CHART_PALETTE = ["#74bcf8", "#101848", "#4aa6ef", "#10b981", "#f59e0b", "#1a255c", "#f43f5e", "#14b8a6"];
-
-function resolveView(param?: string): ViewId {
-  if (param === "salary") return "employees";
-  if (
-    param === "customers" ||
-    param === "statements" ||
-    param === "employees" ||
-    param === "accounts" ||
-    param === "expenses" ||
-    param === "members" ||
-    param === "income-statement" ||
-    param === "cash-flow"
-  ) {
-    return param;
-  }
-  return "customers";
-}
-
-function monthLabel(ym: string) {
-  if (!ym || !ym.includes("-")) return ym;
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "short" });
-}
-
-function asRows<T>(data: unknown): T[] {
-  if (Array.isArray(data)) return data as T[];
-  if (data && typeof data === "object" && Array.isArray((data as { rows?: unknown[] }).rows)) {
-    return (data as { rows: T[] }).rows;
-  }
-  return [];
-}
 
 export default function ReportsPage() {
   const { view: viewParam } = useParams();

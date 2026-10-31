@@ -42,6 +42,16 @@ export const removeCharge = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, result, 'Salary charge deleted');
 });
 
+export const updateCharge = asyncHandler(async (req, res) => {
+  const charge = await salaryService.updateCharge(Number(req.params.id), req.body, req.user.id, req.ip);
+  return ApiResponse.success(res, charge, 'Salary charge updated');
+});
+
+export const removePayment = asyncHandler(async (req, res) => {
+  const result = await salaryService.removePayment(Number(req.params.id), req.body?.reason, req.user.id, req.ip);
+  return ApiResponse.success(res, result, 'Salary payment deleted');
+});
+
 export const payCharge = asyncHandler(async (req, res) => {
   const payment = await salaryService.pay(Number(req.params.id), req.body, req.user.id, req.ip);
   return ApiResponse.success(res, payment, 'Salary payment recorded', 201);
@@ -71,5 +81,7 @@ export default {
   generateCharges,
   removeCharge,
   payCharge,
+  updateCharge,
+  removePayment,
   listPayments,
 };

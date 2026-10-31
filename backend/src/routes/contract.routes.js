@@ -6,13 +6,13 @@ import { validate } from '../middleware/validate.js';
 import { singleUpload } from '../middleware/upload.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { createContractValidator, updateContractValidator } from '../validators/contract.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('projects')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('projects');
 
 router.get('/', contractController.list);
 router.get('/:id', contractController.getById);

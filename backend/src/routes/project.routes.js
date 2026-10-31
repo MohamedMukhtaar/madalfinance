@@ -8,13 +8,13 @@ import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { singleUpload } from '../helpers/fileHelper.js';
 import { createProjectValidator, updateProjectValidator } from '../validators/project.validator.js';
 import { createTemplateValidator, updateTemplateValidator } from '../validators/projectTemplate.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('projects')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('projects');
 
 router.get('/templates', templateController.list);
 router.get('/templates/:id', templateController.getById);

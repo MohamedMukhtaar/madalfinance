@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { cn } from "@/utils/cn";
 
 const COLS_CLASS = {
-  4: "grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4",
-  5: "grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5",
+  4: "grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 xl:grid-cols-4",
+  5: "grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-5",
 } as const;
 
 export function StatCardsGrid({

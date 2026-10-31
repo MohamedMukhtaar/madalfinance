@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import {
   Building2,
   Phone,
@@ -44,6 +45,8 @@ const DEFAULT_FORM: AppSettings = {
 const compactInput = "h-9 text-sm";
 
 export default function SettingsPage() {
+  const outlet = useOutletContext<{ embedded?: boolean } | null>();
+  const embedded = Boolean(outlet?.embedded);
   const { settings, isLoading, updateSettings } = useSettings();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
@@ -116,7 +119,7 @@ export default function SettingsPage() {
   if (isLoading || !settings) {
     return (
       <div className="space-y-4">
-        <PageHeader title="Settings" subtitle="Company profile and preferences" />
+        {!embedded && <PageHeader title="Settings" subtitle="Company profile and preferences" />}
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <Skeleton className="h-48 rounded-2xl" />
           <Skeleton className="h-48 rounded-2xl" />
@@ -129,20 +132,32 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Settings"
-        subtitle="Company profile, billing rules and preferences."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={reset} disabled={!dirty} leftIcon={<RotateCcw className="h-3.5 w-3.5" />}>
-              Discard
-            </Button>
-            <Button size="sm" onClick={save} disabled={!dirty || saving} loading={saving} leftIcon={<Save className="h-3.5 w-3.5" />}>
-              Save
-            </Button>
-          </div>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Settings"
+          subtitle="Company profile, billing rules and preferences."
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={reset} disabled={!dirty} leftIcon={<RotateCcw className="h-3.5 w-3.5" />}>
+                Discard
+              </Button>
+              <Button size="sm" onClick={save} disabled={!dirty || saving} loading={saving} leftIcon={<Save className="h-3.5 w-3.5" />}>
+                Save
+              </Button>
+            </div>
+          }
+        />
+      )}
+      {embedded && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" size="sm" onClick={reset} disabled={!dirty} leftIcon={<RotateCcw className="h-3.5 w-3.5" />}>
+            Discard
+          </Button>
+          <Button size="sm" onClick={save} disabled={!dirty || saving} loading={saving} leftIcon={<Save className="h-3.5 w-3.5" />}>
+            Save
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card animated={false}>

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { Modal } from "@/components/ui/Modal";
-import { Input, Select, Textarea } from "@/components/ui/FormField";
+import { Input, Select, Textarea, FormSection } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
 import { useCreateCustomer, useUpdateCustomer } from "@/hooks/queries";
 import { emailRules, phoneRules } from "@/utils/validation";
 import type { Customer } from "@/types";
+import { Users } from "lucide-react";
 
 interface CustomerForm {
   customerName: string;
@@ -101,7 +102,12 @@ export function CustomerFormModal({
         </>
       }
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+        <FormSection
+          title="Customer Information"
+          subtitle="Contact and company details"
+          icon={<Users />}
+        />
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Input
             label="Customer Name"

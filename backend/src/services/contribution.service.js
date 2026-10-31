@@ -40,14 +40,27 @@ export const contributionService = {
     return contributionRepo.activeMembers(null);
   },
 
+  /**
+   * Charge members. Can be raised at any time and for any reason — several charges in the
+   * same month are allowed. `member_ids` limits it to some members (default: all active).
+   */
   async generateBatch(data, userId, ip) {
     return withTransaction(async (conn) => {
-      const month = Number(data.month);
-      const year = Number(data.year);
+      const reason = String(data.reason || '').trim();
+      if (!reason) throw ApiError.badRequest('Give a reason for this charge');
+
+      const chargeDate = data.charge_date ? dayjs(data.charge_date) : dayjs();
+      if (!chargeDate.isValid()) throw ApiError.badRequest('Invalid charge date');
+      const month = data.month ? Number(data.month) : chargeDate.month() + 1;
+      const year = data.year ? Number(data.year) : chargeDate.year();
       if (month < 1 || month > 12) throw ApiError.badRequest('Invalid month');
 
-      const existing = await contributionRepo.findBatchByMonth(conn, month, year);
-      if (existing) throw ApiError.conflict('A due batch already exists for this month');
+      const duplicate = await contributionRepo.findBatchByMonthReason(conn, month, year, reason);
+      if (duplicate) {
+        throw ApiError.conflict(
+          `A charge with reason "${reason}" already exists for ${dayjs(`${year}-${String(month).padStart(2, '0')}-01`).format('MMMM YYYY')}. Use a different reason.`
+        );
+      }
 
       let defaultAmount = Number(data.default_amount);
       if (!defaultAmount) {
@@ -56,12 +69,18 @@ export const contributionService = {
       }
       if (defaultAmount <= 0) throw ApiError.badRequest('Provide a due amount');
 
-      const members = await contributionRepo.activeMembers(conn);
-      if (!members.length) throw ApiError.badRequest('No active members to bill');
+      let members = await contributionRepo.activeMembers(conn);
+      if (Array.isArray(data.member_ids) && data.member_ids.length) {
+        const wanted = new Set(data.member_ids.map(Number));
+        members = members.filter((m) => wanted.has(Number(m.member_id)));
+      }
+      if (!members.length) throw ApiError.badRequest('No active members to charge');
 
       const batchId = await contributionRepo.createBatch(conn, {
         month,
         year,
+        reason,
+        charge_date: chargeDate.format('YYYY-MM-DD'),
         default_amount: defaultAmount,
         generated_date: new Date(),
         generated_by: userId,
@@ -75,9 +94,99 @@ export const contributionService = {
         });
       }
 
-      await auditService.log({ module: 'Contribution', action: 'GENERATE', userId, recordId: batchId, ip });
+      await auditService.log({ module: 'Contribution', action: 'GENERATE', userId, recordId: batchId, ip, details: reason });
       return contributionRepo.findBatch(conn, batchId);
     });
+  },
+
+  /** Change a charge's reason or date. */
+  async updateBatch(batchId, data, userId, ip) {
+    const batch = await contributionRepo.findBatch(null, batchId);
+    if (!batch) throw ApiError.notFound('Charge not found');
+    const patch = {};
+    if (data.reason !== undefined) {
+      const reason = String(data.reason).trim();
+      if (!reason) throw ApiError.badRequest('Reason cannot be empty');
+      patch.reason = reason;
+    }
+    if (data.charge_date) {
+      const d = dayjs(data.charge_date);
+      if (!d.isValid()) throw ApiError.badRequest('Invalid charge date');
+      Object.assign(patch, { charge_date: d.format('YYYY-MM-DD'), month: d.month() + 1, year: d.year() });
+    }
+
+    const nextMonth = patch.month ?? Number(batch.month);
+    const nextYear = patch.year ?? Number(batch.year);
+    const nextReason = patch.reason ?? String(batch.reason || '');
+    const clash = await contributionRepo.findBatchByMonthReason(
+      null,
+      nextMonth,
+      nextYear,
+      nextReason,
+      batchId
+    );
+    if (clash) {
+      throw ApiError.conflict(
+        `A charge with reason "${nextReason}" already exists for ${dayjs(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01`).format('MMMM YYYY')}.`
+      );
+    }
+
+    await contributionRepo.updateBatch(null, batchId, patch);
+    await auditService.log({ module: 'Contribution', action: 'UPDATE', userId, recordId: batchId, ip });
+    return contributionRepo.findBatch(null, batchId);
+  },
+
+  /** Delete a whole charge — only while nobody has paid towards it. */
+  async deleteBatch(batchId, userId, ip) {
+    return withTransaction(async (conn) => {
+      const batch = await contributionRepo.findBatch(conn, batchId);
+      if (!batch) throw ApiError.notFound('Charge not found');
+      if ((await contributionRepo.countPaymentsInBatch(conn, batchId)) > 0) {
+        throw ApiError.conflict('Payments were already received for this charge; delete those dues individually or keep it');
+      }
+      await contributionRepo.deleteBatch(conn, batchId);
+      await auditService.log({ module: 'Contribution', action: 'DELETE', userId, recordId: batchId, ip });
+      return { batch_id: batchId, deleted: true };
+    });
+  },
+
+  /** Change one member's due amount (not below what they already paid). */
+  async updateDue(dueId, amount, userId, ip) {
+    return withTransaction(async (conn) => {
+      const due = await contributionRepo.dueById(conn, dueId);
+      if (!due) throw ApiError.notFound('Member due not found');
+      const next = Number(amount);
+      if (!next || next <= 0) throw ApiError.badRequest('Amount must be greater than zero');
+      const paid = Number(due.paid_amount);
+      if (next < paid - 0.001) {
+        throw ApiError.badRequest(`Amount cannot be less than what was already paid (${paid.toFixed(2)})`);
+      }
+      const status = paid <= 0 ? 'Pending' : paid >= next - 0.001 ? 'Paid' : 'Partial';
+      await contributionRepo.updateDueAmount(conn, dueId, next, status);
+      await auditService.log({ module: 'Contribution', action: 'UPDATE_DUE', userId, recordId: dueId, ip });
+      return contributionRepo.dueById(conn, dueId);
+    });
+  },
+
+  /** Remove one member's due — only when nothing was paid on it. Empty charges are removed too. */
+  async deleteDue(dueId, userId, ip) {
+    return withTransaction(async (conn) => {
+      const due = await contributionRepo.dueById(conn, dueId);
+      if (!due) throw ApiError.notFound('Member due not found');
+      if (Number(due.paid_amount) > 0 || (await contributionRepo.countPaymentsForDue(conn, dueId)) > 0) {
+        throw ApiError.conflict('This due already has payments and cannot be deleted');
+      }
+      await contributionRepo.deleteDue(conn, dueId);
+      if ((await contributionRepo.countDuesInBatch(conn, due.batch_id)) === 0) {
+        await contributionRepo.deleteBatch(conn, due.batch_id);
+      }
+      await auditService.log({ module: 'Contribution', action: 'DELETE_DUE', userId, recordId: dueId, ip });
+      return { due_id: dueId, deleted: true };
+    });
+  },
+
+  async chargePeriods() {
+    return contributionRepo.chargePeriods(null);
   },
 
   async receiveDue(dueId, amount, paidDate, accId, userId, ip) {
@@ -125,7 +234,7 @@ export const contributionService = {
         transaction_type: 'Income',
         reference_type: 'Member Due',
         reference_id: dueId,
-        description: `Member contribution ${period} — ${due.member_name || `member ${due.member_id}`}`,
+        description: `${due.reason || 'Member contribution'} (${period}) — ${due.member_name || `member ${due.member_id}`}`,
         income: payAmount,
         expense: 0,
         acc_id: resolvedAccId,

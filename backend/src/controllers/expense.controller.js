@@ -63,6 +63,51 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
   return ApiResponse.success(res, null, 'Receipt deleted');
 });
 
+export const listCharges = asyncHandler(async (req, res) => {
+  const rows = await expenseService.listCharges(req.query.status || 'open');
+  return ApiResponse.success(res, rows, 'Expense charges fetched');
+});
+
+export const createCharge = asyncHandler(async (req, res) => {
+  const charge = await expenseService.createCharge(req.body, req.user.id, req.ip);
+  return ApiResponse.success(res, charge, 'Expense charge added', 201);
+});
+
+export const updateCharge = asyncHandler(async (req, res) => {
+  const charge = await expenseService.updateCharge(Number(req.params.id), req.body, req.user.id, req.ip);
+  return ApiResponse.success(res, charge, 'Expense charge updated');
+});
+
+export const deleteCharge = asyncHandler(async (req, res) => {
+  const result = await expenseService.deleteCharge(Number(req.params.id), req.user.id, req.ip);
+  return ApiResponse.success(res, result, 'Expense charge deleted');
+});
+
+export const payCharge = asyncHandler(async (req, res) => {
+  const payment = await expenseService.payCharge(Number(req.params.id), req.body, req.user.id, req.ip);
+  return ApiResponse.success(res, payment, 'Expense charge paid', 201);
+});
+
+export const updateCategory = asyncHandler(async (req, res) => {
+  const category = await expenseService.updateCategory(Number(req.params.id), req.body.name, req.user.id, req.ip);
+  return ApiResponse.success(res, category, 'Category updated');
+});
+
+export const deleteCategory = asyncHandler(async (req, res) => {
+  const result = await expenseService.deleteCategory(Number(req.params.id), req.user.id, req.ip);
+  const message = result.hidden
+    ? `Category is used by ${result.used_by} expense record(s), so it was hidden instead of deleted`
+    : 'Category deleted';
+  return ApiResponse.success(res, result, message);
+});
+
 export default {
+  listCharges,
+  createCharge,
+  updateCharge,
+  deleteCharge,
+  payCharge,
+  updateCategory,
+  deleteCategory,
   list, getById, create, update, remove, categories, createCategory, addAttachment, deleteAttachment,
 };

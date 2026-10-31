@@ -95,6 +95,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persistUser(next, persistent);
   }, []);
 
+  // Refresh profile + permissions after reload so RBAC stays in sync with the DB.
+  useEffect(() => {
+    const token = localStorage.getItem(ACCESS_TOKEN_KEY) ?? sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    if (!token) return;
+    let cancelled = false;
+    financeService
+      .me()
+      .then((fresh) => {
+        if (cancelled || !fresh) return;
+        setUserState(fresh);
+        const persistent = Boolean(localStorage.getItem(ACCESS_TOKEN_KEY));
+        persistUser(fresh, persistent);
+      })
+      .catch(() => {
+        /* keep cached user; next API call will force re-auth if needed */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const onExpired = () => {
       setUserState(null);

@@ -1,10 +1,59 @@
 export interface AppRoleRecord {
   roleId: number;
   roleName: string;
+  description?: string | null;
+  isSystem?: boolean;
   userCount?: number;
+  permissions?: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type UserRole = string;
+
+export interface PermissionAction {
+  action: string;
+  name: string;
+}
+
+export interface PermissionModule {
+  module: string;
+  label: string;
+  actions: PermissionAction[];
+}
+
+export interface PermissionCatalog {
+  catalog: PermissionModule[];
+  permissions: Array<{ name: string; module: string; action: string }>;
+}
+
+export interface Organization {
+  organizationId: number;
+  name: string;
+  foundedDate?: string | null;
+  logoUrl?: string | null;
+  logoDarkUrl?: string | null;
+  iconUrl?: string | null;
+  signatureUrl?: string | null;
+  websiteUrl?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  facebookUrl?: string | null;
+  tiktokUrl?: string | null;
+  instagramUrl?: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  sidebarBg: string;
+  sidebarText: string;
+  sidebarActiveBg: string;
+  sidebarActiveText: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 export interface AuditLog {
   logId: number;
@@ -37,6 +86,8 @@ export interface User {
   avatarUrl?: string | null;
   /** Derived client-side from username (not sent by the API). */
   avatarColor?: string;
+  /** Spatie-style permission names from the role (+ direct grants). */
+  permissions?: string[];
 }
 
 export interface Member {
@@ -58,6 +109,38 @@ export interface Member {
 }
 
 export type ChargeStatus = "Pending" | "Partial" | "Paid" | "Cancelled";
+
+export type TaskPriority = "Low" | "Medium" | "High";
+export type TaskStatus = "Todo" | "In Progress" | "Done" | "Cancelled";
+export type TaskAssigneeType = "employee" | "member";
+
+export interface PerformanceTask {
+  taskId: number;
+  title: string;
+  description?: string | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  dueDate?: string | null;
+  assigneeType: TaskAssigneeType;
+  employeeId?: number | null;
+  memberId?: number | null;
+  assigneeName?: string | null;
+  employeeCode?: string | null;
+  memberCode?: string | null;
+  createdBy: number;
+  createdByName?: string | null;
+  completedAt?: string | null;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TaskStats {
+  todo: number;
+  inProgress: number;
+  done: number;
+  overdue: number;
+}
 
 export interface Employee {
   employeeId: number;
@@ -466,6 +549,11 @@ export interface MemberDue {
   position?: string | null;
   attachmentCount?: number;
   creditBalance?: number;
+  reason?: string | null;
+  chargeDate?: string | null;
+  chargedAt?: string | null;
+  month?: number;
+  year?: number;
 }
 
 export interface DueBatch {
@@ -474,6 +562,8 @@ export interface DueBatch {
   year: number;
   defaultAmount: number;
   generatedDate: string;
+  reason?: string | null;
+  chargeDate?: string | null;
   generatedByName?: string;
   totalDues?: number;
   expectedAmount?: number;
@@ -528,6 +618,11 @@ export interface AccountMovement {
 export interface Expense {
   expenseId: number;
   categoryId: number;
+  /** Category id as sent by the API. */
+  expenseCategoryId?: number;
+  paymentNumber?: string;
+  expenseChargeId?: number;
+  chargeSource?: "direct" | "charge";
   categoryName: string;
   description: string;
   amount: number;

@@ -6,14 +6,14 @@ import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { createEmployeeValidator, updateEmployeeValidator } from '../validators/employee.validator.js';
 import { createLookupValidator, lookupKindParam, updateLookupValidator } from '../validators/hrLookup.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 import { lookupKinds } from '../repositories/hrLookup.repo.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('employees')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('employees');
 const kindPath = `:kind(${lookupKinds.join('|')})`;
 
 router.get('/', employeeController.list);

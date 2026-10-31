@@ -88,7 +88,8 @@ export const create = async (conn, data) => {
 const TX_SELECT = `
   t.*,
   t.debit AS income,
-  t.credit AS expense,
+  -- a member loan is money going out of the account
+  t.credit + t.loan AS expense,
   t.account_id AS acc_id,
   u.full_name AS created_by_name
 `;

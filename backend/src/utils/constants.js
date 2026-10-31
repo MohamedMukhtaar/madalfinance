@@ -3,20 +3,28 @@ export const ROLES = Object.freeze({
   ADMIN: 'Admin',
 });
 
-/** Roles that can use the finance application (read + write). */
+/**
+ * Spatie-style helpers. Super Admin always bypasses in authorize().
+ * Prefer permission names so custom roles work once assigned from the UI.
+ */
+export const P = Object.freeze({
+  view: (module) => `view ${module}`,
+  create: (module) => `create ${module}`,
+  edit: (module) => `edit ${module}`,
+  delete: (module) => `delete ${module}`,
+  manage: (module) => `manage ${module}`,
+  restore: (module) => `restore ${module}`,
+});
+
+/** Any of create/edit/delete for a module. */
+export const manageModule = (module) => [P.create(module), P.edit(module), P.delete(module)];
+
+/** @deprecated Prefer P.view / manageModule — kept for gradual migration. */
 export const APP_ACCESS = [ROLES.SUPER_ADMIN, ROLES.ADMIN];
-
-/** Roles that can manage records (create/update/delete). */
 export const MANAGE_ROLES = APP_ACCESS;
-
-/** Trash is Super Admin only. */
-export const TRASH_ACCESS = [ROLES.SUPER_ADMIN];
-
-/** Settings write (logo, company profile). Super Admin only. */
-export const SETTINGS_WRITE = [ROLES.SUPER_ADMIN];
-
-/** User & role management. Super Admin only. */
-export const USER_MANAGEMENT = [ROLES.SUPER_ADMIN];
+export const TRASH_ACCESS = [ROLES.SUPER_ADMIN, P.view('trash items'), P.restore('trash items')];
+export const SETTINGS_WRITE = [ROLES.SUPER_ADMIN, P.manage('settings'), P.edit('organizations')];
+export const USER_MANAGEMENT = [ROLES.SUPER_ADMIN, P.view('users'), P.create('users'), P.edit('users'), P.delete('users')];
 
 /** Module names used by the audit log. */
 export const MODULES = Object.freeze({
@@ -31,6 +39,7 @@ export const MODULES = Object.freeze({
   CONTRIBUTION: 'contribution',
   EXPENSE: 'expense',
   SALARY: 'salary',
+  TASK: 'task',
   INCOME: 'other income',
   TRANSACTION: 'transaction',
   REPORT: 'report',

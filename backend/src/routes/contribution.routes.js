@@ -5,18 +5,23 @@ import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { singleUpload } from '../middleware/upload.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
-import { generateBatchValidator, receiveDueValidator, grantCreditValidator, repayLoanValidator, applyCreditValidator } from '../validators/contribution.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { generateBatchValidator, updateBatchValidator, updateDueValidator, receiveDueValidator, grantCreditValidator, repayLoanValidator, applyCreditValidator } from '../validators/contribution.validator.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('contributions')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('contributions');
 
 router.get('/batches', contributionController.listBatches);
 router.get('/batches/:id', contributionController.getBatch);
 router.get('/dues', contributionController.listDues);
+router.get('/periods', contributionController.periods);
+router.put('/batches/:id', authorize(...MANAGE), validate(updateBatchValidator), contributionController.updateBatch);
+router.delete('/batches/:id', authorize(...MANAGE), contributionController.deleteBatch);
+router.put('/dues/:id', authorize(...MANAGE), validate(updateDueValidator), contributionController.updateDue);
+router.delete('/dues/:id', authorize(...MANAGE), contributionController.deleteDue);
 router.get('/members', contributionController.members);
 router.post('/batches', authorize(...MANAGE), validate(generateBatchValidator), contributionController.generateBatch);
 router.post('/dues/:id/receive', authorize(...MANAGE), validate(receiveDueValidator), contributionController.receiveDue);

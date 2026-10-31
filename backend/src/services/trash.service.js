@@ -6,6 +6,7 @@ import contractRepo from '../repositories/contract.repo.js';
 import invoiceRepo from '../repositories/invoice.repo.js';
 import paymentRepo from '../repositories/payment.repo.js';
 import expenseRepo from '../repositories/expense.repo.js';
+import expenseService from './expense.service.js';
 import incomeRepo from '../repositories/income.repo.js';
 import memberRepo from '../repositories/member.repo.js';
 import userRepo from '../repositories/user.repo.js';
@@ -59,21 +60,7 @@ const RESTORE_MAP = {
     },
   },
   expense: {
-    restore: async (conn, id, userId) => {
-      const expense = await expenseRepo.findByIdIncludingDeleted(conn, id);
-      if (!expense) throw ApiError.notFound('Expense not found');
-      await expenseRepo.restore(conn, id);
-      await transactionRepo.create(conn, {
-        transaction_date: dayjs().format('YYYY-MM-DD'),
-        transaction_type: 'Expense',
-        reference_type: 'Expense',
-        reference_id: id,
-        description: `Restored expense ${expense.expense_id} (${expense.description || ''})`,
-        income: 0,
-        expense: Number(expense.amount),
-        created_by: userId,
-      });
-    },
+    restore: (conn, id, userId) => expenseService.restoreFromTrash(conn, id, userId),
   },
   income: {
     restore: async (conn, id, userId) => {

@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Bell, Check, LogOut, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun, UserPen, X } from "lucide-react";
+import { Bell, Check, Menu, Moon, PanelLeftClose, PanelLeftOpen, Search, Sun, X } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Avatar } from "@/components/ui/Avatar";
 import { useTheme } from "@/context/ThemeContext";
@@ -78,10 +78,10 @@ export function Topbar({
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 shrink-0 flex-col border-b border-line bg-panel sm:h-16">
+    <header className="sticky top-0 z-20 flex shrink-0 flex-col border-b border-line bg-panel pt-[env(safe-area-inset-top)]">
       {mobileSearchOpen && (
         <form
-          className="flex items-center gap-2 border-b border-line px-4 py-2 sm:hidden"
+          className="flex items-center gap-2 border-b border-line px-3 py-2 sm:hidden"
           onSubmit={(event) => {
             submitSearch(event);
             setMobileSearchOpen(false);
@@ -92,24 +92,24 @@ export function Topbar({
             placeholder="Search customers, invoices…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-10 flex-1 rounded-xl border-0 bg-muted px-3 text-sm text-ink ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-accent"
+            className="h-10 min-w-0 flex-1 rounded-none border-0 bg-muted px-3 text-ink ring-1 ring-inset ring-line focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]"
           />
           <button
             type="button"
             onClick={() => setMobileSearchOpen(false)}
-            className="rounded-xl p-2 text-ink-muted hover:bg-muted"
+            className="rounded-none p-2 text-ink-muted hover:bg-muted"
             aria-label="Close search"
           >
             <X className="h-5 w-5" />
           </button>
         </form>
       )}
-      <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
+      <div className="flex h-14 items-center justify-between gap-2 px-3 sm:h-16 sm:gap-3 sm:px-6">
       {/* Mobile menu + collapse + search */}
-      <div className="flex flex-1 items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-3">
         <button
           onClick={onOpenMobile}
-          className="rounded-xl p-2 text-ink-muted transition hover:bg-muted lg:hidden"
+          className="rounded-none p-2 text-ink-muted transition hover:bg-muted lg:hidden"
           aria-label="Open menu"
         >
           <Menu className="h-5 w-5" />
@@ -117,7 +117,7 @@ export function Topbar({
         <button
           type="button"
           onClick={() => setMobileSearchOpen(true)}
-          className="rounded-xl p-2 text-ink-muted transition hover:bg-muted sm:hidden"
+          className="rounded-none p-2 text-ink-muted transition hover:bg-muted sm:hidden"
           aria-label="Search"
         >
           <Search className="h-5 w-5" />
@@ -125,13 +125,13 @@ export function Topbar({
         {onToggleCollapse && (
           <button
             onClick={onToggleCollapse}
-            className="hidden rounded-xl p-2 text-ink-muted transition hover:bg-muted hover:text-ink lg:flex"
+            className="hidden rounded-none p-2 text-ink-muted transition hover:bg-muted hover:text-ink lg:flex"
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
           </button>
         )}
-        <form className="relative hidden w-full max-w-md sm:block" onSubmit={submitSearch}>
+        <form className="relative hidden w-full max-w-md md:block" onSubmit={submitSearch}>
           <svg viewBox="0 0 20 20" fill="currentColor" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted">
             <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
           </svg>
@@ -139,17 +139,17 @@ export function Topbar({
             placeholder="Search customers, invoices, projects…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-10 w-full rounded-xl border-0 bg-muted pl-10 pr-4 text-sm text-ink ring-1 ring-inset ring-transparent transition placeholder:text-ink-muted focus:bg-card focus:outline-none focus:ring-2 focus:ring-accent"
+            className="h-10 w-full rounded-none border-0 bg-muted pl-10 pr-4 text-sm text-ink ring-1 ring-inset ring-transparent transition placeholder:text-ink-muted focus:bg-card focus:outline-none focus:ring-2 focus:ring-[var(--brand-primary)]"
           />
         </form>
       </div>
 
       {/* Right actions */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="relative rounded-xl p-2 text-ink-muted transition hover:bg-muted hover:text-ink"
+          className="relative rounded-none p-2 text-ink-muted transition hover:bg-muted hover:text-ink"
           aria-label="Toggle dark mode"
         >
           <motion.span
@@ -165,10 +165,10 @@ export function Topbar({
 
         {/* Notifications */}
         <Dropdown
-          width="w-80 sm:w-96"
+          width="w-[min(22rem,calc(100vw-1.5rem))] sm:w-96"
           trigger={
             <button
-              className="relative rounded-xl p-2 text-ink-muted transition hover:bg-muted hover:text-ink"
+              className="relative rounded-none p-2 text-ink-muted transition hover:bg-muted hover:text-ink"
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
@@ -233,14 +233,18 @@ export function Topbar({
           user={user}
           onLogout={handleLogout}
           trigger={
-            <button className="flex items-center gap-2.5 rounded-xl p-1.5 pr-2 transition hover:bg-muted">
-              <Avatar name={user?.fullName ?? "User"} color={user?.avatarColor} src={user?.avatarUrl} />
-              <span className="hidden text-left md:block">
-                <span className="block max-w-[9rem] truncate text-sm font-semibold text-ink">
-                  {user?.fullName}
-                </span>
-                <span className="block text-[11px] text-ink-muted">{user?.role}</span>
-              </span>
+            <button
+              type="button"
+              className="rounded-none p-0.5 transition hover:opacity-90"
+              aria-label="Account menu"
+            >
+              <Avatar
+                name={user?.fullName ?? "User"}
+                color={user?.avatarColor}
+                src={user?.avatarUrl}
+                shape="rounded"
+                size="md"
+              />
             </button>
           }
         />

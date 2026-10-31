@@ -5,24 +5,33 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useAmountVisibility } from "@/context/AmountVisibilityContext";
 import { cn } from "@/utils/cn";
 
-const TONES: Record<string, { label: string; box: string }> = {
-  emerald: { label: "text-emerald-600", box: "bg-emerald-600" },
-  teal: { label: "text-teal-600", box: "bg-teal-600" },
-  sky: { label: "text-sky-600", box: "bg-sky-500" },
-  cyan: { label: "text-cyan-600", box: "bg-cyan-600" },
-  orange: { label: "text-orange-600", box: "bg-orange-500" },
-  amber: { label: "text-amber-600", box: "bg-amber-500" },
-  rose: { label: "text-rose-600", box: "bg-rose-500" },
-  red: { label: "text-red-600", box: "bg-red-500" },
-  pink: { label: "text-pink-600", box: "bg-pink-500" },
-  violet: { label: "text-violet-600", box: "bg-violet-600" },
-  indigo: { label: "text-indigo-600", box: "bg-indigo-600" },
-  lime: { label: "text-lime-600", box: "bg-lime-500" },
-  brand: { label: "text-primary", box: "bg-primary" },
-  primary: { label: "text-primary", box: "bg-primary" },
-  navy: { label: "text-primary", box: "bg-primary" },
-  secondary: { label: "text-sky-600", box: "bg-sky-500" },
-  slate: { label: "text-slate-600", box: "bg-slate-600" },
+/** DreamPOS-style soft icon tones (tinted chip, not solid fill). */
+const TONES: Record<string, { icon: string }> = {
+  emerald: { icon: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400" },
+  teal: { icon: "bg-teal-50 text-teal-600 dark:bg-teal-500/15 dark:text-teal-400" },
+  sky: { icon: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400" },
+  cyan: { icon: "bg-cyan-50 text-cyan-600 dark:bg-cyan-500/15 dark:text-cyan-400" },
+  orange: { icon: "bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400" },
+  amber: { icon: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400" },
+  rose: { icon: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400" },
+  red: { icon: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400" },
+  pink: { icon: "bg-pink-50 text-pink-600 dark:bg-pink-500/15 dark:text-pink-400" },
+  violet: { icon: "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400" },
+  indigo: { icon: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400" },
+  lime: { icon: "bg-lime-50 text-lime-600 dark:bg-lime-500/15 dark:text-lime-400" },
+  brand: {
+    icon: "bg-[color-mix(in_srgb,var(--brand-primary)_12%,white)] text-[var(--brand-primary)] dark:bg-[color-mix(in_srgb,var(--brand-primary)_28%,transparent)]",
+  },
+  primary: {
+    icon: "bg-[color-mix(in_srgb,var(--brand-primary)_12%,white)] text-[var(--brand-primary)] dark:bg-[color-mix(in_srgb,var(--brand-primary)_28%,transparent)]",
+  },
+  navy: {
+    icon: "bg-[color-mix(in_srgb,var(--brand-primary)_12%,white)] text-[var(--brand-primary)] dark:bg-[color-mix(in_srgb,var(--brand-primary)_28%,transparent)]",
+  },
+  secondary: {
+    icon: "bg-[color-mix(in_srgb,var(--brand-secondary)_18%,white)] text-[var(--brand-secondary)] dark:bg-[color-mix(in_srgb,var(--brand-secondary)_28%,transparent)]",
+  },
+  slate: { icon: "bg-slate-100 text-slate-600 dark:bg-slate-500/15 dark:text-slate-300" },
 };
 
 function toneFromClass(iconClassName?: string) {
@@ -36,7 +45,6 @@ export interface StatCardProps {
   value: string;
   icon: ReactNode;
   iconClassName?: string;
-  hint?: string;
   trend?: { value: string; positive: boolean };
   loading?: boolean;
   index?: number;
@@ -49,7 +57,6 @@ export function StatCard({
   value,
   icon,
   iconClassName,
-  hint,
   trend,
   loading,
   index = 0,
@@ -61,57 +68,51 @@ export function StatCard({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.04, ease: "easeOut" }}
+      transition={{ duration: 0.28, delay: index * 0.03, ease: "easeOut" }}
       className="h-full"
     >
       <div
         className={cn(
-          "stat-hover flex h-full items-center justify-between rounded-2xl bg-card shadow-sm ring-1 ring-line transition-all duration-200",
-          compact ? "gap-2 px-3 py-2.5" : "gap-3 px-3.5 py-3"
+          "stat-hover flex h-full items-start justify-between bg-card shadow-sm ring-1 ring-line transition-all duration-200",
+          compact ? "gap-3 p-3.5" : "gap-3.5 p-4"
         )}
       >
-        <div className="min-w-0">
-          <p className={cn("font-semibold", tone.label, compact ? "text-[11px] leading-tight" : "text-xs")}>
-            {label}
-          </p>
+        <div className="min-w-0 flex-1">
           {loading ? (
-            <Skeleton className={cn(compact ? "mt-1 h-5 w-14" : "mt-1 h-6 w-20")} />
+            <Skeleton className={cn(compact ? "h-6 w-16" : "h-7 w-20")} />
           ) : (
             <p
               className={cn(
                 "truncate font-bold tracking-tight text-ink",
-                compact ? "mt-0.5 text-base" : "mt-0.5 text-lg"
+                compact ? "text-lg" : "text-xl"
               )}
             >
               {mask(value)}
             </p>
           )}
-          {(hint || trend) && !loading && (
-            <p className="mt-0.5 truncate text-[11px] text-slate-400">
-              {hint}
-              {trend && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-0.5 font-semibold",
-                    hint ? "ml-1.5" : "",
-                    trend.positive ? "text-emerald-600" : "text-rose-600"
-                  )}
-                >
-                  {trend.positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  {mask(trend.value)}
-                </span>
+          <p className={cn("mt-1 font-medium text-ink-muted", compact ? "text-xs" : "text-sm")}>
+            {label}
+          </p>
+          {trend && !loading && (
+            <span
+              className={cn(
+                "mt-1 inline-flex items-center gap-0.5 text-[11px] font-semibold",
+                trend.positive ? "text-emerald-600" : "text-rose-600"
               )}
-            </p>
+            >
+              {trend.positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+              {mask(trend.value)}
+            </span>
           )}
           {children}
         </div>
         <div
           className={cn(
-            "stat-hover-icon flex shrink-0 items-center justify-center rounded-xl text-white",
-            compact ? "h-8 w-8 [&_svg]:h-4 [&_svg]:w-4" : "h-10 w-10 [&_svg]:h-[18px] [&_svg]:w-[18px]",
-            tone.box
+            "stat-hover-icon flex shrink-0 items-center justify-center",
+            compact ? "h-9 w-9 [&_svg]:h-4 [&_svg]:w-4" : "h-10 w-10 [&_svg]:h-[18px] [&_svg]:w-[18px]",
+            tone.icon
           )}
         >
           {icon}

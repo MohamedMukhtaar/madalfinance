@@ -8,11 +8,27 @@ export const findBatch = (conn, batchId) =>
     [batchId]
   ).then((rows) => rows[0]);
 
-export const findBatchByMonth = (conn, month, year) =>
-  run(conn, `SELECT *, generated_at AS generated_date FROM member_due_batches WHERE month = ? AND year = ?`, [
-    month,
-    year,
-  ]).then((rows) => rows[0]);
+export const findBatchByMonth = (conn, month, year, reason = null) =>
+  run(
+    conn,
+    `SELECT *, generated_at AS generated_date FROM member_due_batches
+      WHERE month = ? AND year = ?
+        AND (?::text IS NULL OR lower(trim(reason)) = lower(trim(?::text)))
+      ORDER BY batch_id ASC LIMIT 1`,
+    [month, year, reason, reason]
+  ).then((rows) => rows[0]);
+
+/** Same calendar month + same reason (case-insensitive) already exists. */
+export const findBatchByMonthReason = (conn, month, year, reason, excludeBatchId = null) =>
+  run(
+    conn,
+    `SELECT *, generated_at AS generated_date FROM member_due_batches
+      WHERE month = ? AND year = ?
+        AND lower(trim(reason)) = lower(trim(?))
+        AND (?::int IS NULL OR batch_id <> ?)
+      ORDER BY batch_id ASC LIMIT 1`,
+    [month, year, reason, excludeBatchId, excludeBatchId]
+  ).then((rows) => rows[0]);
 
 export const listBatches = (conn, { offset, perPage, order }) =>
   run(
@@ -31,13 +47,47 @@ export const listBatches = (conn, { offset, perPage, order }) =>
 export const countBatches = (conn) =>
   run(conn, `SELECT COUNT(*) AS total FROM member_due_batches`).then((r) => r[0].total);
 
-export const createBatch = (conn, { month, year, default_amount, generated_date, generated_by }) =>
+export const createBatch = (conn, { month, year, default_amount, generated_date, generated_by, reason, charge_date }) =>
   run(
     conn,
-    `INSERT INTO member_due_batches (month, year, default_amount, generated_at, generated_by)
-     VALUES (?, ?, ?, ?, ?)`,
-    [month, year, default_amount, generated_date ?? new Date(), generated_by]
+    `INSERT INTO member_due_batches (month, year, default_amount, generated_at, generated_by, reason, charge_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [month, year, default_amount, generated_date ?? new Date(), generated_by, reason, charge_date]
   ).then((r) => r.insertId);
+
+export const updateBatch = (conn, batchId, { reason, charge_date, month, year }) =>
+  run(
+    conn,
+    `UPDATE member_due_batches
+        SET reason = COALESCE(?, reason),
+            charge_date = COALESCE(?, charge_date),
+            month = COALESCE(?, month),
+            year = COALESCE(?, year)
+      WHERE batch_id = ?`,
+    [reason ?? null, charge_date ?? null, month ?? null, year ?? null, batchId]
+  );
+
+export const deleteBatch = (conn, batchId) => run(conn, `DELETE FROM member_due_batches WHERE batch_id = ?`, [batchId]);
+
+export const countDuesInBatch = (conn, batchId) =>
+  run(conn, `SELECT COUNT(*) AS total FROM member_dues WHERE batch_id = ?`, [batchId]).then((r) => Number(r[0].total));
+
+export const countPaymentsInBatch = (conn, batchId) =>
+  run(
+    conn,
+    `SELECT COUNT(*) AS total FROM member_due_payments p JOIN member_dues d ON d.due_id = p.due_id WHERE d.batch_id = ?`,
+    [batchId]
+  ).then((r) => Number(r[0].total));
+
+export const countPaymentsForDue = (conn, dueId) =>
+  run(conn, `SELECT COUNT(*) AS total FROM member_due_payments WHERE due_id = ?`, [dueId]).then((r) =>
+    Number(r[0].total)
+  );
+
+export const updateDueAmount = (conn, dueId, amount, status) =>
+  run(conn, `UPDATE member_dues SET amount = ?, status = ? WHERE due_id = ?`, [amount, status, dueId]);
+
+export const deleteDue = (conn, dueId) => run(conn, `DELETE FROM member_dues WHERE due_id = ?`, [dueId]);
 
 export const createDue = (conn, { batch_id, member_id, amount }) =>
   run(conn, `INSERT INTO member_dues (batch_id, member_id, amount) VALUES (?, ?, ?)`, [
@@ -49,7 +99,7 @@ export const createDue = (conn, { batch_id, member_id, amount }) =>
 export const dueById = (conn, dueId) =>
   run(
     conn,
-    `SELECT d.*, b.month, b.year, m.full_name AS member_name
+    `SELECT d.*, b.month, b.year, b.reason, b.charge_date, m.full_name AS member_name
        FROM member_dues d
        JOIN member_due_batches b ON b.batch_id = d.batch_id
        JOIN members m ON m.member_id = d.member_id
@@ -72,7 +122,7 @@ export const createDuePayment = async (conn, { due_id, amount, acc_id, paid_date
   ).then((r) => r.insertId);
 };
 
-export const listDues = (conn, { batchId, status, memberId, offset, perPage, order }) => {
+const duesWhere = ({ batchId, status, memberId, month, year }) => {
   const conditions = [];
   const params = [];
   if (batchId) {
@@ -87,38 +137,49 @@ export const listDues = (conn, { batchId, status, memberId, offset, perPage, ord
     conditions.push('d.member_id = ?');
     params.push(memberId);
   }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  if (month) {
+    conditions.push('b.month = ?');
+    params.push(month);
+  }
+  if (year) {
+    conditions.push('b.year = ?');
+    params.push(year);
+  }
+  return { where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '', params };
+};
+
+export const listDues = (conn, { batchId, status, memberId, month, year, offset, perPage, order }) => {
+  const { where, params } = duesWhere({ batchId, status, memberId, month, year });
   return run(
     conn,
     `SELECT d.*, d.paid_at AS paid_date, m.position, m.credit_balance, m.full_name AS member_name, m.avatar_path,
+            b.month, b.year, b.reason, b.charge_date, b.generated_at AS charged_at,
             (SELECT COUNT(*) FROM member_due_attachments a WHERE a.due_id = d.due_id) AS attachment_count
        FROM member_dues d
        JOIN members m ON m.member_id = d.member_id
+       JOIN member_due_batches b ON b.batch_id = d.batch_id
        ${where}
-      ORDER BY ${order}
+      ORDER BY ${order}, d.due_id DESC
       LIMIT ? OFFSET ?`,
     [...params, perPage, offset]
   );
 };
 
-export const countDues = (conn, { batchId, status, memberId }) => {
-  const conditions = [];
-  const params = [];
-  if (batchId) {
-    conditions.push('d.batch_id = ?');
-    params.push(batchId);
-  }
-  if (status) {
-    conditions.push('d.status = ?');
-    params.push(status);
-  }
-  if (memberId) {
-    conditions.push('d.member_id = ?');
-    params.push(memberId);
-  }
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  return run(conn, `SELECT COUNT(*) AS total FROM member_dues d ${where}`, params).then((r) => r[0].total);
+export const countDues = (conn, filters) => {
+  const { where, params } = duesWhere(filters);
+  return run(
+    conn,
+    `SELECT COUNT(*) AS total FROM member_dues d JOIN member_due_batches b ON b.batch_id = d.batch_id ${where}`,
+    params
+  ).then((r) => r[0].total);
 };
+
+/** Distinct year/month periods that have charges, newest first (for the month filter). */
+export const chargePeriods = (conn) =>
+  run(
+    conn,
+    `SELECT year, month, COUNT(*) AS batches FROM member_due_batches GROUP BY year, month ORDER BY year DESC, month DESC`
+  );
 
 export const applyDuePayment = (conn, dueId, paidAmount, status, paidDate) =>
   run(conn, `UPDATE member_dues SET paid_amount = ?, status = ?, paid_at = ? WHERE due_id = ?`, [
@@ -308,7 +369,16 @@ export const memberCreditLedger = (conn, memberId, { fromDate, toDate }) => {
 export default {
   findBatch,
   findBatchByMonth,
+  findBatchByMonthReason,
   listBatches,
+  updateBatch,
+  deleteBatch,
+  countDuesInBatch,
+  countPaymentsInBatch,
+  countPaymentsForDue,
+  updateDueAmount,
+  deleteDue,
+  chargePeriods,
   countBatches,
   createBatch,
   createDue,

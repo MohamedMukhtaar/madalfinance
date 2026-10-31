@@ -4,13 +4,13 @@ import { authenticate } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { createCustomerValidator, updateCustomerValidator, addContactValidator } from '../validators/customer.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('customers')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('customers');
 
 router.get('/', customerController.list);
 router.get('/:id', customerController.getById);

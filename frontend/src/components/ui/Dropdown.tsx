@@ -38,7 +38,7 @@ export function Dropdown({
       >
         <Menu.Items
           className={cn(
-            "absolute z-40 mt-2 origin-top-right overflow-hidden rounded-2xl bg-panel p-1.5 shadow-pop ring-1 ring-line focus:outline-none",
+            "absolute z-40 mt-2 origin-top-right overflow-hidden rounded-none bg-panel p-1.5 shadow-pop ring-1 ring-line focus:outline-none",
             align === "right" ? "right-0" : "left-0",
             width
           )}
@@ -53,7 +53,7 @@ export function Dropdown({
                     onClick={item.onClick}
                     disabled={item.disabled}
                     className={cn(
-                      "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition",
+                      "flex w-full items-center gap-2.5 rounded-none px-3 py-2 text-sm font-medium transition",
                       active
                         ? item.danger
                           ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"

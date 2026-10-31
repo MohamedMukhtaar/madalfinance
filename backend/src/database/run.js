@@ -152,6 +152,38 @@ const STEPS = [
     filename: '013_user_devices.sql',
     file: path.join(DATABASE_DIR, 'user_devices.sql'),
   },
+  {
+    filename: '014_contribution_charges.sql',
+    file: path.join(DATABASE_DIR, 'contribution_charges.sql'),
+  },
+  {
+    filename: '015_statement_times.sql',
+    file: path.join(DATABASE_DIR, 'statement_times.sql'),
+  },
+  {
+    filename: '016_expense_charge_source.sql',
+    file: path.join(DATABASE_DIR, 'expense_charge_source.sql'),
+  },
+  {
+    filename: '017_transfer_soft_delete.sql',
+    file: path.join(DATABASE_DIR, 'transfer_soft_delete.sql'),
+  },
+  {
+    filename: '018_permissions_rbac.sql',
+    file: path.join(DATABASE_DIR, 'permissions_rbac.sql'),
+  },
+  {
+    filename: '019_org_brand_sidebar.sql',
+    file: path.join(DATABASE_DIR, '019_org_brand_sidebar.sql'),
+  },
+  {
+    filename: '020_charge_month_reason_unique.sql',
+    file: path.join(DATABASE_DIR, '020_charge_month_reason_unique.sql'),
+  },
+  {
+    filename: '021_performance_tasks.sql',
+    file: path.join(DATABASE_DIR, '021_performance_tasks.sql'),
+  },
 ];
 
 export const migrate = async () => {

@@ -85,8 +85,23 @@ export const createTransfer = async (conn, data) => {
   ).then((r) => r.insertId);
 };
 
+export const findTransfer = (conn, id) =>
+  run(conn, `SELECT * FROM account_transfers WHERE transfer_id = ? AND deleted_at IS NULL`, [id]).then((r) => r[0]);
+
+export const softDeleteTransfer = (conn, id, { reason, deletedBy }) =>
+  run(conn, `UPDATE account_transfers SET deleted_at = NOW(), delete_reason = ?, deleted_by = ? WHERE transfer_id = ?`, [
+    reason ?? null,
+    deletedBy ?? null,
+    id,
+  ]);
+
+export const countTransactions = (conn, id) =>
+  run(conn, `SELECT COUNT(*) AS total FROM transactions WHERE account_id = ?`, [id]).then((r) => Number(r[0].total));
+
+export const remove = (conn, id) => run(conn, `DELETE FROM accounts WHERE account_id = ?`, [id]);
+
 export const listTransfers = (conn, { fromDate, toDate, accId } = {}) => {
-  const conditions = ['1=1'];
+  const conditions = ['t.deleted_at IS NULL', '1=1'];
   const params = [];
   if (fromDate) {
     conditions.push('t.transfer_date >= ?');
@@ -169,5 +184,9 @@ export default {
   adjustBalance,
   createTransfer,
   listTransfers,
+  findTransfer,
+  softDeleteTransfer,
+  countTransactions,
+  remove,
   statement,
 };

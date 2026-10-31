@@ -26,6 +26,20 @@ export const listRoles = asyncHandler(async (_req, res) => {
   return ApiResponse.success(res, roles, 'Roles fetched');
 });
 
+export const permissionCatalog = asyncHandler(async (_req, res) => {
+  return ApiResponse.success(res, roleService.catalog(), 'Permissions fetched');
+});
+
+export const assignRolePermissions = asyncHandler(async (req, res) => {
+  const role = await roleService.assignPermissions(
+    Number(req.params.roleId),
+    req.body.permissions ?? req.body.permission_names ?? [],
+    req.user.id,
+    req.ip
+  );
+  return ApiResponse.success(res, role, 'Role permissions updated');
+});
+
 export const createRole = asyncHandler(async (req, res) => {
   const role = await roleService.create(req.body, req.user.id, req.ip);
   return ApiResponse.success(res, role, 'Role created', 201);
@@ -138,6 +152,8 @@ export default {
   listUsers,
   getUser,
   listRoles,
+  permissionCatalog,
+  assignRolePermissions,
   createRole,
   updateRole,
   deleteRole,

@@ -145,6 +145,9 @@ export const saveAvatar = (conn, id, { avatar_path, avatar_name }) =>
     id,
   ]);
 
+export const clearAvatar = (conn, id) =>
+  run(conn, `UPDATE users SET avatar_path = NULL, avatar_name = NULL WHERE user_id = ?`, [id]);
+
 export const setStatus = (conn, id, status) =>
   run(conn, `UPDATE users SET status = ? WHERE user_id = ?`, [status, id]);
 
@@ -191,6 +194,7 @@ export default {
   create,
   update,
   saveAvatar,
+  clearAvatar,
   setStatus,
   countActiveByRole,
   softDelete,

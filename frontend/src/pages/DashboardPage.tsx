@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowDownRight,
@@ -21,7 +21,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard, StatCardsGrid } from "@/components/ui";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { Skeleton, SkeletonTable } from "@/components/ui/Skeleton";
+import { SkeletonTable } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/EmptyState";
 import {
   ChartCard,
@@ -31,10 +31,9 @@ import {
 } from "@/components/charts/Charts";
 import { useDashboard } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
-import {
-  DUE_STATUS_STYLES,
-  INVOICE_STATUS_STYLES,
-} from "@/utils/constants";
+import { useAuth } from "@/context/AuthContext";
+import { useAmountVisibility } from "@/context/AmountVisibilityContext";
+import { DUE_STATUS_STYLES, INVOICE_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate, formatTime, formatCompactCurrency } from "@/utils/format";
 import { cn } from "@/utils/cn";
 import { MonthNavigator } from "@/components/ui/MonthNavigator";
@@ -46,7 +45,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Transport: "#f59e0b",
   Marketing: "#ec4899",
   Office: "#10b981",
-  Software: "#101848",
+  Software: "var(--brand-primary)",
   Equipment: "#f97316",
   Salary: "#22c55e",
   Utilities: "#14b8a6",
@@ -106,7 +105,7 @@ function ActivityRow({
   amount,
   amountClass,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   iconClass: string;
   title: string;
   meta: string;
@@ -114,16 +113,28 @@ function ActivityRow({
   amountClass?: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-slate-800/40">
-      <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", iconClass)}>
+    <div className="flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-muted/70">
+      <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", iconClass)}>
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">{title}</p>
-        <p className="truncate text-[11px] text-slate-400">{meta}</p>
+        <p className="truncate text-sm font-semibold text-ink">{title}</p>
+        <p className="truncate text-[11px] text-ink-muted">{meta}</p>
       </div>
-      <p className={cn("shrink-0 text-sm font-semibold", amountClass)}>{amount}</p>
+      <p className={cn("shrink-0 text-sm font-bold", amountClass)}>{amount}</p>
     </div>
+  );
+}
+
+function SectionLink({ to, children = "View All" }: { to: string; children?: ReactNode }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex items-center gap-0.5 text-xs font-semibold text-[var(--brand-primary)] hover:underline"
+    >
+      {children}
+      <ChevronRight className="h-3.5 w-3.5" />
+    </Link>
   );
 }
 
@@ -135,6 +146,8 @@ export default function DashboardPage() {
   });
   const { data: dash, isLoading: dashLoading, error, refetch } = useDashboard(selectedMonth);
   const { currency } = useSettings();
+  const { user } = useAuth();
+  const { mask } = useAmountVisibility();
 
   const chartTxns = dash?.chartTransactions ?? [];
   const listTxns = dash?.recentTransactions ?? [];
@@ -183,101 +196,234 @@ export default function DashboardPage() {
     { month: "long", year: "numeric" }
   );
 
+  const monthIncome = dash?.stats.monthIncome ?? 0;
+  const monthExpense = dash?.stats.monthExpense ?? 0;
+  const monthProfit = monthIncome - monthExpense;
+  const firstName = user?.fullName?.split(/\s+/)[0] || "there";
+
   if (error) {
     return <ErrorState onRetry={() => refetch()} />;
   }
 
   const fmt = (n: number) => formatCurrency(n, currency);
   const compact = (n: number) => formatCompactCurrency(n, currency);
+  const s = dash?.stats;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <PageHeader
-        title="Dashboard"
-        subtitle={`${monthLabel} overview`}
+        title={`Welcome, ${firstName}`}
+        subtitle={
+          <>
+            {monthLabel} overview · Net{" "}
+            <span
+              className={cn(
+                "font-semibold",
+                monthProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+              )}
+            >
+              {dashLoading ? "…" : mask(compact(monthProfit))}
+            </span>
+          </>
+        }
         actions={<MonthNavigator value={selectedMonth} onChange={setSelectedMonth} />}
       />
 
-      <div className="space-y-2">
+      {/* Income summary */}
       <StatCardsGrid cols={5}>
-        <StatCard compact index={0} loading={dashLoading} label="Today income" value={compact(dash?.stats.todayIncome ?? 0)} hint="Received today" icon={<Zap className="h-4 w-4" />} iconClassName="emerald" />
-        <StatCard compact index={1} loading={dashLoading} label="Weekly income" value={compact(dash?.stats.weekIncome ?? 0)} hint="This week" icon={<CalendarDays className="h-4 w-4" />} iconClassName="teal" />
-        <StatCard compact index={2} loading={dashLoading} label="Month income" value={compact(dash?.stats.monthIncome ?? 0)} hint={monthLabel} icon={<TrendingUp className="h-4 w-4" />} iconClassName="emerald" />
-        <StatCard compact index={3} loading={dashLoading} label="Collected" value={compact(dash?.stats.totalCollected ?? 0)} hint="Customer payments" icon={<CreditCard className="h-4 w-4" />} iconClassName="sky" />
-        <StatCard compact index={4} loading={dashLoading} label="Cash balance" value={compact(dash?.stats.currentBalance ?? 0)} hint="All accounts" icon={<Wallet className="h-4 w-4" />} iconClassName="navy" />
+        <StatCard
+          compact
+          index={0}
+          loading={dashLoading}
+          label="Today income"
+          value={compact(s?.todayIncome ?? 0)}
+          icon={<Zap className="h-4 w-4" />}
+          iconClassName="emerald"
+        />
+        <StatCard
+          compact
+          index={1}
+          loading={dashLoading}
+          label="Weekly income"
+          value={compact(s?.weekIncome ?? 0)}
+          icon={<CalendarDays className="h-4 w-4" />}
+          iconClassName="teal"
+        />
+        <StatCard
+          compact
+          index={2}
+          loading={dashLoading}
+          label="Month income"
+          value={compact(s?.monthIncome ?? 0)}
+          icon={<TrendingUp className="h-4 w-4" />}
+          iconClassName="emerald"
+        />
+        <StatCard
+          compact
+          index={3}
+          loading={dashLoading}
+          label="Collected"
+          value={compact(s?.totalCollected ?? 0)}
+          icon={<CreditCard className="h-4 w-4" />}
+          iconClassName="sky"
+        />
+        <StatCard
+          compact
+          index={4}
+          loading={dashLoading}
+          label="Cash balance"
+          value={compact(s?.currentBalance ?? 0)}
+          icon={<Wallet className="h-4 w-4" />}
+          iconClassName="navy"
+        />
       </StatCardsGrid>
 
+      {/* Expense summary */}
       <StatCardsGrid cols={5}>
-        <StatCard compact index={5} loading={dashLoading} label="Today expense" value={compact(dash?.stats.todayExpense ?? 0)} hint="Paid today" icon={<TrendingDown className="h-4 w-4" />} iconClassName="orange" />
-        <StatCard compact index={6} loading={dashLoading} label="Weekly expense" value={compact(dash?.stats.weekExpense ?? 0)} hint="This week" icon={<CalendarDays className="h-4 w-4" />} iconClassName="amber" />
-        <StatCard compact index={7} loading={dashLoading} label="Month expense" value={compact(dash?.stats.monthExpense ?? 0)} hint={monthLabel} icon={<ArrowUpRight className="h-4 w-4" />} iconClassName="amber" />
-        <StatCard compact index={8} loading={dashLoading} label="Outstanding" value={compact(dash?.stats.totalOutstanding ?? 0)} hint="Unpaid invoices" icon={<CircleDollarSign className="h-4 w-4" />} iconClassName="rose" />
-        <StatCard compact index={9} loading={dashLoading} label="Dues balance" value={compact(dash?.stats.totalDuesBalance ?? 0)} hint="Member dues" icon={<Banknote className="h-4 w-4" />} iconClassName="red" />
+        <StatCard
+          compact
+          index={5}
+          loading={dashLoading}
+          label="Today expense"
+          value={compact(s?.todayExpense ?? 0)}
+          icon={<TrendingDown className="h-4 w-4" />}
+          iconClassName="orange"
+        />
+        <StatCard
+          compact
+          index={6}
+          loading={dashLoading}
+          label="Weekly expense"
+          value={compact(s?.weekExpense ?? 0)}
+          icon={<CalendarDays className="h-4 w-4" />}
+          iconClassName="amber"
+        />
+        <StatCard
+          compact
+          index={7}
+          loading={dashLoading}
+          label="Month expense"
+          value={compact(s?.monthExpense ?? 0)}
+          icon={<ArrowUpRight className="h-4 w-4" />}
+          iconClassName="amber"
+        />
+        <StatCard
+          compact
+          index={8}
+          loading={dashLoading}
+          label="Outstanding"
+          value={compact(s?.totalOutstanding ?? 0)}
+          icon={<CircleDollarSign className="h-4 w-4" />}
+          iconClassName="rose"
+        />
+        <StatCard
+          compact
+          index={9}
+          loading={dashLoading}
+          label="Dues balance"
+          value={compact(s?.totalDuesBalance ?? 0)}
+          icon={<Banknote className="h-4 w-4" />}
+          iconClassName="red"
+        />
       </StatCardsGrid>
 
-      <StatCardsGrid>
-        <StatCard compact index={10} loading={dashLoading} label="Total customers" value={String(dash?.stats.totalCustomers ?? 0)} hint="All customers" icon={<Users className="h-4 w-4" />} iconClassName="sky" />
-        <StatCard compact index={11} loading={dashLoading} label="Total projects" value={String(dash?.stats.totalProjects ?? 0)} hint="Active work" icon={<FolderKanban className="h-4 w-4" />} iconClassName="violet" />
-        <StatCard compact index={12} loading={dashLoading} label="Rental projects" value={String(dash?.stats.totalRentalProjects ?? 0)} hint="Recurring" icon={<KeyRound className="h-4 w-4" />} iconClassName="indigo" />
-        <StatCard compact index={13} loading={dashLoading} label="One-time projects" value={String(dash?.stats.totalOneTimeProjects ?? 0)} hint="Fixed scope" icon={<FolderKanban className="h-4 w-4" />} iconClassName="slate" />
+      {/* Counts */}
+      <StatCardsGrid cols={4}>
+        <StatCard
+          compact
+          index={10}
+          loading={dashLoading}
+          label="Total customers"
+          value={String(s?.totalCustomers ?? 0)}
+          icon={<Users className="h-4 w-4" />}
+          iconClassName="sky"
+        />
+        <StatCard
+          compact
+          index={11}
+          loading={dashLoading}
+          label="Total projects"
+          value={String(s?.totalProjects ?? 0)}
+          icon={<FolderKanban className="h-4 w-4" />}
+          iconClassName="violet"
+        />
+        <StatCard
+          compact
+          index={12}
+          loading={dashLoading}
+          label="Rental projects"
+          value={String(s?.totalRentalProjects ?? 0)}
+          icon={<KeyRound className="h-4 w-4" />}
+          iconClassName="indigo"
+        />
+        <StatCard
+          compact
+          index={13}
+          loading={dashLoading}
+          label="One-time projects"
+          value={String(s?.totalOneTimeProjects ?? 0)}
+          icon={<FolderKanban className="h-4 w-4" />}
+          iconClassName="slate"
+        />
       </StatCardsGrid>
-      </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartCard
           title="Revenue trend"
-          subtitle="6 months"
-          className="xl:col-span-2 !p-4"
-          action={
-            <Link to="/reports/income-statement" className="text-[11px] font-semibold text-brand-600 hover:underline">
-              Report
-            </Link>
-          }
+          subtitle="Last 6 months"
+          className="xl:col-span-2"
+          action={<SectionLink to="/reports/income-statement">Report</SectionLink>}
         >
-          <RevenueAreaChart data={monthly} currency={currency} height={220} loading={dashLoading} />
+          <RevenueAreaChart data={monthly} currency={currency} height={240} loading={dashLoading} />
         </ChartCard>
-        <ChartCard title="Expense split" subtitle={monthLabel} className="!p-4">
+        <ChartCard title="Expense split" subtitle={monthLabel}>
           <DonutChart
             data={expenseByCategory.slice(0, 5)}
-            centerValue={compact(expenseByCategory.reduce((s, d) => s + d.value, 0))}
+            centerValue={compact(expenseByCategory.reduce((sum, d) => sum + d.value, 0))}
             centerLabel="Total"
-            height={180}
+            height={200}
             loading={dashLoading}
           />
         </ChartCard>
       </div>
 
-      <ChartCard title="Cash flow" subtitle="In vs out" className="!p-4">
-        <CashFlowComposedChart data={monthly} currency={currency} height={200} loading={dashLoading} />
+      <ChartCard title="Cash flow" subtitle="Inflow vs outflow">
+        <CashFlowComposedChart data={monthly} currency={currency} height={210} loading={dashLoading} />
       </ChartCard>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Card animated={false}>
           <CardHeader
             title="Transactions"
             subtitle={monthLabel}
             className="px-4 pt-4"
-            action={
-              <Link to="/transactions" className="text-[11px] font-semibold text-brand-600 hover:underline">
-                All <ChevronRight className="inline h-3 w-3" />
-              </Link>
-            }
+            action={<SectionLink to="/transactions" />}
           />
-          <CardBody className="space-y-0.5 p-3 pt-2">
+          <CardBody className="space-y-0.5 p-3 pt-1">
             {dashLoading ? (
               <SkeletonTable rows={4} cols={3} />
             ) : latestTxns.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">No transactions this month.</p>
+              <p className="py-8 text-center text-xs text-ink-muted">No transactions this month.</p>
             ) : (
               latestTxns.map((t) => (
                 <ActivityRow
                   key={t.transactionId}
-                  icon={t.transactionType === "Income" ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}
-                  iconClass={t.transactionType === "Income" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}
+                  icon={
+                    t.transactionType === "Income" ? (
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowDownRight className="h-3.5 w-3.5" />
+                    )
+                  }
+                  iconClass={
+                    t.transactionType === "Income"
+                      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15"
+                      : "bg-amber-50 text-amber-600 dark:bg-amber-500/15"
+                  }
                   title={t.description ?? "Transaction"}
                   meta={`${formatDate(t.transactionDate)} · ${formatTime(t.transactionDate)}`}
                   amount={`${t.transactionType === "Income" ? "+" : "−"}${fmt(t.income || t.expense)}`}
-                  amountClass={t.transactionType === "Income" ? "text-emerald-600" : "text-slate-700"}
+                  amountClass={t.transactionType === "Income" ? "text-emerald-600" : "text-ink"}
                 />
               ))
             )}
@@ -285,18 +431,23 @@ export default function DashboardPage() {
         </Card>
 
         <Card animated={false}>
-          <CardHeader title="Payments" subtitle={monthLabel} className="px-4 pt-4" action={<Link to="/payments" className="text-[11px] font-semibold text-brand-600 hover:underline">All</Link>} />
-          <CardBody className="space-y-0.5 p-3 pt-2">
+          <CardHeader
+            title="Payments"
+            subtitle={monthLabel}
+            className="px-4 pt-4"
+            action={<SectionLink to="/payments" />}
+          />
+          <CardBody className="space-y-0.5 p-3 pt-1">
             {dashLoading ? (
               <SkeletonTable rows={3} cols={3} />
             ) : recentPayments.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">No payments.</p>
+              <p className="py-8 text-center text-xs text-ink-muted">No payments.</p>
             ) : (
               recentPayments.map((p) => (
                 <ActivityRow
                   key={p.paymentId}
                   icon={<CreditCard className="h-3.5 w-3.5" />}
-                  iconClass="bg-emerald-50 text-emerald-600"
+                  iconClass="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15"
                   title={p.customerName ?? p.paymentNumber}
                   meta={`${formatDate(p.paymentDate)} · ${formatTime(p.createdAt ?? p.paymentDate)}`}
                   amount={`+${fmt(p.amount)}`}
@@ -308,22 +459,27 @@ export default function DashboardPage() {
         </Card>
 
         <Card animated={false}>
-          <CardHeader title="Expenses" subtitle={monthLabel} className="px-4 pt-4" action={<Link to="/expenses" className="text-[11px] font-semibold text-brand-600 hover:underline">All</Link>} />
-          <CardBody className="space-y-0.5 p-3 pt-2">
+          <CardHeader
+            title="Expenses"
+            subtitle={monthLabel}
+            className="px-4 pt-4"
+            action={<SectionLink to="/expenses" />}
+          />
+          <CardBody className="space-y-0.5 p-3 pt-1">
             {dashLoading ? (
               <SkeletonTable rows={3} cols={3} />
             ) : recentExpenses.length === 0 ? (
-              <p className="py-6 text-center text-xs text-slate-400">No expenses.</p>
+              <p className="py-8 text-center text-xs text-ink-muted">No expenses.</p>
             ) : (
               recentExpenses.map((e) => (
                 <ActivityRow
                   key={e.expenseId}
                   icon={<Banknote className="h-3.5 w-3.5" />}
-                  iconClass="bg-amber-50 text-amber-600"
+                  iconClass="bg-amber-50 text-amber-600 dark:bg-amber-500/15"
                   title={e.description}
                   meta={`${e.categoryName} · ${formatDate(e.expenseDate)} · ${formatTime(e.createdAt ?? e.expenseDate)}`}
                   amount={`−${fmt(e.amount)}`}
-                  amountClass="text-slate-700"
+                  amountClass="text-ink"
                 />
               ))
             )}
@@ -331,19 +487,24 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card animated={false}>
-          <CardHeader title="Member dues" subtitle={dueSummary.month} className="px-4 pt-4" action={<Link to="/contributions" className="text-[11px] font-semibold text-brand-600 hover:underline">View</Link>} />
-          <CardBody className="p-3 pt-2">
-            <div className="grid grid-cols-3 gap-2">
+          <CardHeader
+            title="Member dues"
+            subtitle={dueSummary.month}
+            className="px-4 pt-4"
+            action={<SectionLink to="/contributions">View</SectionLink>}
+          />
+          <CardBody className="p-4 pt-2">
+            <div className="grid grid-cols-3 gap-3">
               {[
                 { label: "Paid", count: dueSummary.paid, cls: DUE_STATUS_STYLES.Paid },
                 { label: "Partial", count: dueSummary.partial, cls: DUE_STATUS_STYLES.Partial },
                 { label: "Pending", count: dueSummary.pending, cls: DUE_STATUS_STYLES.Pending },
-              ].map((s) => (
-                <div key={s.label} className="rounded-lg bg-slate-50 px-2 py-2.5 text-center dark:bg-slate-800/50">
-                  <p className="text-lg font-bold text-slate-900 dark:text-white">{dashLoading ? "—" : s.count}</p>
-                  <Badge className={cn("mt-1 text-[10px]", s.cls)}>{s.label}</Badge>
+              ].map((row) => (
+                <div key={row.label} className="rounded-xl bg-muted/60 px-3 py-3 text-center">
+                  <p className="text-xl font-bold text-ink">{dashLoading ? "—" : row.count}</p>
+                  <Badge className={cn("mt-1.5 text-[10px]", row.cls)}>{row.label}</Badge>
                 </div>
               ))}
             </div>
@@ -351,16 +512,21 @@ export default function DashboardPage() {
         </Card>
 
         <Card animated={false}>
-          <CardHeader title="Rental renewals" subtitle="Upcoming" className="px-4 pt-4" action={<Link to="/projects/customers" className="text-[11px] font-semibold text-brand-600 hover:underline">View</Link>} />
-          <CardBody className="space-y-0.5 p-3 pt-2">
+          <CardHeader
+            title="Rental renewals"
+            subtitle="Upcoming"
+            className="px-4 pt-4"
+            action={<SectionLink to="/projects/customers">View</SectionLink>}
+          />
+          <CardBody className="space-y-0.5 p-3 pt-1">
             {upcomingRenewals.length === 0 ? (
-              <p className="py-4 text-center text-xs text-slate-400">No upcoming renewals.</p>
+              <p className="py-6 text-center text-xs text-ink-muted">No upcoming renewals.</p>
             ) : (
               upcomingRenewals.map((r) => (
                 <ActivityRow
                   key={r.billingId}
                   icon={<CalendarClock className="h-3.5 w-3.5" />}
-                  iconClass="bg-brand-50 text-brand-600"
+                  iconClass="bg-[color-mix(in_srgb,var(--brand-primary)_12%,white)] text-[var(--brand-primary)]"
                   title={r.projectName}
                   meta={`${r.customerName} · ${formatDate(r.nextBillingDate)}`}
                   amount={compact(r.monthlyAmount)}
@@ -372,16 +538,27 @@ export default function DashboardPage() {
       </div>
 
       <Card animated={false}>
-        <CardHeader title="Invoices by status" className="px-4 pt-4" action={<Link to="/invoices" className="text-[11px] font-semibold text-brand-600 hover:underline">Manage</Link>} />
-        <CardBody className="p-3 pt-2">
+        <CardHeader
+          title="Invoices by status"
+          className="px-4 pt-4"
+          action={<SectionLink to="/invoices">Manage</SectionLink>}
+        />
+        <CardBody className="p-4 pt-2">
           <div className="flex flex-wrap gap-2">
             {(dash?.invoiceStatusCounts ?? []).map(({ status, count }) => (
               <div
                 key={status}
-                className="flex min-w-[7rem] flex-1 items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/50"
+                className="flex min-w-[7.5rem] flex-1 items-center justify-between gap-2 rounded-xl bg-muted/60 px-3 py-2.5"
               >
-                <Badge className={cn("text-[10px]", INVOICE_STATUS_STYLES[status as keyof typeof INVOICE_STATUS_STYLES])}>{status}</Badge>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{count}</span>
+                <Badge
+                  className={cn(
+                    "text-[10px]",
+                    INVOICE_STATUS_STYLES[status as keyof typeof INVOICE_STATUS_STYLES]
+                  )}
+                >
+                  {status}
+                </Badge>
+                <span className="text-sm font-bold text-ink">{count}</span>
               </div>
             ))}
           </div>

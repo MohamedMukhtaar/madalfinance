@@ -15,4 +15,5 @@ export const updateIncomeValidator = [
   body('amount').optional().isFloat({ min: 0.01 }).withMessage('Invalid amount'),
   body('income_date').optional().isISO8601().withMessage('Invalid income date'),
   body('notes').optional().trim().isLength({ max: 500 }),
+  body('acc_id').optional().isInt({ min: 1 }).withMessage('Invalid account'),
 ];

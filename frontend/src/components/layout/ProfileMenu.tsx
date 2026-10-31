@@ -1,13 +1,10 @@
-import { useState, type ReactNode } from "react";
-import { useForm } from "react-hook-form";
-import { KeyRound, LogOut, UserPen } from "lucide-react";
-import { Dropdown } from "@/components/ui/Dropdown";
-import { Modal } from "@/components/ui/Modal";
-import { Input } from "@/components/ui/FormField";
-import { Button } from "@/components/ui/Button";
+import { Fragment, type ReactNode } from "react";
+import { Menu, Transition } from "@headlessui/react";
+import { useNavigate } from "react-router-dom";
+import { Lock, LogOut, Settings, UserRound } from "lucide-react";
+import { Avatar } from "@/components/ui/Avatar";
 import { useAuth } from "@/context/AuthContext";
-import { getErrorMessage } from "@/services/api";
-import toast from "react-hot-toast";
+import { cn } from "@/utils/cn";
 import type { User } from "@/types";
 
 export function ProfileMenu({
@@ -19,201 +16,100 @@ export function ProfileMenu({
   trigger: ReactNode;
   onLogout: () => void;
 }) {
-  const { changeUsername, changePassword } = useAuth();
-  const [usernameOpen, setUsernameOpen] = useState(false);
-  const [passwordOpen, setPasswordOpen] = useState(false);
+  const navigate = useNavigate();
+  const { lock } = useAuth();
 
   return (
-    <>
-      <Dropdown
-        trigger={trigger}
-        items={[
-          {
-            label: (
-              <div className="px-1 py-1">
-                <p className="text-sm font-bold text-slate-900 dark:text-white">{user?.fullName}</p>
-                <p className="text-xs text-slate-400">@{user?.username}</p>
-              </div>
-            ),
-            onClick: () => undefined,
-          },
-          { divider: true },
-          {
-            label: "Change Username",
-            icon: <UserPen className="h-4 w-4" />,
-            onClick: () => setUsernameOpen(true),
-          },
-          {
-            label: "Change Password",
-            icon: <KeyRound className="h-4 w-4" />,
-            onClick: () => setPasswordOpen(true),
-          },
-          { divider: true },
-          {
-            label: "Logout",
-            icon: <LogOut className="h-4 w-4" />,
-            danger: true,
-            onClick: onLogout,
-          },
-        ]}
-      />
+    <Menu as="div" className="relative">
+      <Menu.Button className="outline-none">{trigger}</Menu.Button>
+      <Transition
+        as={Fragment}
+        enter="transition ease-out duration-150"
+        enterFrom="opacity-0 translate-y-1 scale-95"
+        enterTo="opacity-100 translate-y-0 scale-100"
+        leave="transition ease-in duration-100"
+        leaveFrom="opacity-100 scale-100"
+        leaveTo="opacity-0 translate-y-1 scale-95"
+      >
+        <Menu.Items className="absolute right-0 z-50 mt-2 w-[min(15rem,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-none bg-card shadow-pop ring-1 ring-line focus:outline-none sm:w-60">
+          <div className="flex items-center gap-3 bg-muted/70 px-4 py-3.5">
+            <Avatar
+              name={user?.fullName ?? "User"}
+              src={user?.avatarUrl}
+              color={user?.avatarColor}
+              size="md"
+              shape="rounded"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-ink">{user?.fullName ?? "User"}</p>
+              <p className="truncate text-xs text-ink-muted">{user?.role ?? "—"}</p>
+            </div>
+          </div>
 
-      <ChangeUsernameModal
-        open={usernameOpen}
-        onClose={() => setUsernameOpen(false)}
-        onSubmit={changeUsername}
-        current={user?.username}
-      />
-      <ChangePasswordModal
-        open={passwordOpen}
-        onClose={() => setPasswordOpen(false)}
-        onSubmit={changePassword}
-      />
-    </>
+          <div className="p-1.5">
+            <MenuItem
+              icon={<UserRound className="h-4 w-4" />}
+              label="Profile"
+              onClick={() => navigate("/profile")}
+            />
+            <MenuItem
+              icon={<Settings className="h-4 w-4" />}
+              label="Settings"
+              onClick={() => navigate("/settings")}
+            />
+            <MenuItem
+              icon={<Lock className="h-4 w-4" />}
+              label="Lock Screen"
+              onClick={() => lock()}
+            />
+          </div>
+
+          <div className="border-t border-line p-1.5">
+            <MenuItem
+              icon={<LogOut className="h-4 w-4" />}
+              label="Logout"
+              danger
+              onClick={onLogout}
+            />
+          </div>
+        </Menu.Items>
+      </Transition>
+    </Menu>
   );
 }
 
-function ChangeUsernameModal({
-  open,
-  onClose,
-  onSubmit,
-  current,
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  danger,
 }: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (currentPassword: string, newUsername: string) => Promise<void>;
-  current?: string;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
 }) {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-    setError,
-  } = useForm<{ username: string; password: string }>({
-    defaultValues: { username: current ?? "", password: "" },
-  });
-
-  const submit = handleSubmit(async (d) => {
-    try {
-      await onSubmit(d.password, d.username);
-      reset();
-      toast.success("Username updated");
-      onClose();
-    } catch (err) {
-      setError("password", { message: getErrorMessage(err) });
-    }
-  });
-
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Change Username"
-      subtitle="Confirm with your password to choose a new username."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button loading={isSubmitting} onClick={submit}>
-            Save changes
-          </Button>
-        </>
-      }
-    >
-      <form onSubmit={submit} className="space-y-4">
-        <Input
-          label="Username"
-          placeholder="Enter new username"
-          error={errors.username?.message}
-          {...register("username", {
-            required: "Username is required",
-            minLength: { value: 3, message: "Must be at least 3 characters" },
-          })}
-        />
-        <Input
-          label="Current password"
-          type="password"
-          error={errors.password?.message}
-          {...register("password", { required: "Password is required" })}
-        />
-      </form>
-    </Modal>
-  );
-}
-
-function ChangePasswordModal({
-  open,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (current: string, next: string) => Promise<void>;
-}) {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors, isSubmitting },
-    setError,
-  } = useForm<{ current: string; next: string; confirm: string }>();
-
-  const submit = handleSubmit(async (d) => {
-    try {
-      await onSubmit(d.current, d.next);
-      reset();
-      toast.success("Password updated");
-      onClose();
-    } catch (err) {
-      setError("current", { message: getErrorMessage(err) });
-    }
-  });
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Change Password"
-      subtitle="Your password should be strong and unique."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button loading={isSubmitting} onClick={submit}>
-            Update password
-          </Button>
-        </>
-      }
-    >
-      <form onSubmit={submit} className="space-y-4">
-        <Input
-          label="Current password"
-          type="password"
-          error={errors.current?.message}
-          {...register("current", { required: "Current password is required" })}
-        />
-        <Input
-          label="New password"
-          type="password"
-          error={errors.next?.message}
-          {...register("next", {
-            required: "New password is required",
-            minLength: { value: 8, message: "Must be at least 8 characters" },
-          })}
-        />
-        <Input
-          label="Confirm new password"
-          type="password"
-          error={errors.confirm?.message}
-          {...register("confirm", {
-            required: "Please confirm your password",
-            validate: (v, values) => v === values.next || "Passwords do not match",
-          })}
-        />
-      </form>
-    </Modal>
+    <Menu.Item>
+      {({ active }) => (
+        <button
+          type="button"
+          onClick={onClick}
+          className={cn(
+            "flex w-full items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition",
+            danger
+              ? active
+                ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10"
+                : "text-rose-600"
+              : active
+                ? "bg-muted text-ink"
+                : "text-ink-soft"
+          )}
+        >
+          {icon}
+          {label}
+        </button>
+      )}
+    </Menu.Item>
   );
 }

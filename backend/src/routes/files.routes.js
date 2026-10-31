@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { authenticate } from '../middleware/auth.js';
 import { authorize } from '../middleware/rbac.js';
-import { APP_ACCESS } from '../utils/constants.js';
+import { P } from '../utils/constants.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { safeResolve, uploadDirs } from '../helpers/fileHelper.js';
 import ApiError from '../utils/ApiError.js';
@@ -20,7 +20,18 @@ const ALLOWED_TYPES = new Set([...Object.keys(uploadDirs), 'reports']);
 router.get(
   '/:type/:filename',
   authenticate,
-  authorize(...APP_ACCESS),
+  authorize(
+    P.view('dashboard'),
+    P.view('invoices'),
+    P.view('payments'),
+    P.view('expenses'),
+    P.view('projects'),
+    P.view('customers'),
+    P.view('members'),
+    P.view('employees'),
+    P.view('organizations'),
+    P.manage('settings')
+  ),
   asyncHandler(async (req, res) => {
     const { type, filename } = req.params;
     if (!ALLOWED_TYPES.has(type)) throw ApiError.notFound('Unknown file type');

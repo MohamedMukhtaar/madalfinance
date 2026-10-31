@@ -119,7 +119,11 @@ export const categories = (conn) =>
     `SELECT DISTINCT category_name FROM other_income WHERE deleted_at IS NULL ORDER BY category_name`
   );
 
+export const updateMoney = (conn, id, { amount, account_id }) =>
+  run(conn, `UPDATE other_income SET amount = ?, account_id = ? WHERE income_id = ?`, [amount, account_id, id]);
+
 export default {
+  updateMoney,
   findById,
   findByIdIncludingDeleted,
   list,

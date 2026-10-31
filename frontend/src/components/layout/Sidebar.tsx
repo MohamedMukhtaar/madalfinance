@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, X } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { NAV_ITEMS, type NavItem } from "@/utils/constants";
-import { useAuth } from "@/context/AuthContext";
 import { useDashboardContext } from "@/context/DashboardContext";
-import { isSuperAdmin } from "@/utils/roles";
+import { usePermission } from "@/hooks/usePermission";
 import { cn } from "@/utils/cn";
 import type { DashboardData } from "@/types";
 
@@ -18,7 +17,6 @@ interface SidebarProps {
 
 const OPEN_KEY = "madal_sidebar_open_group";
 
-/** Every navigable path in the sidebar (for precise active matching). */
 const ALL_NAV_PATHS = NAV_ITEMS.flatMap((item) =>
   item.children?.length ? item.children.map((c) => c.path) : item.path ? [item.path] : []
 ).filter(Boolean) as string[];
@@ -34,10 +32,6 @@ function badgeFor(key: string | undefined, dash?: DashboardData): number | undef
   return map[key];
 }
 
-/**
- * Exact path match, or detail child (/customers/5) when no sibling nav path is more specific.
- * Prevents /expenses from lighting up while on /expenses/categories.
- */
 function pathActive(pathname: string, path?: string) {
   if (!path) return false;
   if (path === "/") return pathname === "/";
@@ -61,19 +55,29 @@ function activeGroupLabel(pathname: string): string | null {
   return null;
 }
 
+const shellStyle: CSSProperties = {
+  backgroundColor: "var(--brand-sidebar, #101848)",
+  color: "var(--brand-sidebar-ink, #C7CEDB)",
+};
+
 function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { hasAnyPermission } = usePermission();
   const { data: dash } = useDashboardContext();
   const location = useLocation();
 
   const visibleNav = useMemo(
     () =>
-      NAV_ITEMS.filter((item) => {
-        if (item.superAdminOnly && !isSuperAdmin(user?.role)) return false;
-        return true;
-      }),
-    [user?.role]
+      NAV_ITEMS.map((item) => {
+        if (item.permissions?.length && !hasAnyPermission(item.permissions)) return null;
+        if (!item.children?.length) return item;
+        const children = item.children.filter(
+          (c) => !c.permissions?.length || hasAnyPermission(c.permissions)
+        );
+        if (!children.length) return null;
+        return { ...item, children };
+      }).filter((item): item is NavItem => item != null),
+    [hasAnyPermission]
   );
 
   const initialOpen = useMemo(() => activeGroupLabel(location.pathname), []);
@@ -86,7 +90,6 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
     }
   });
 
-  // Keep only the group for the current route open (accordion).
   useEffect(() => {
     const active = activeGroupLabel(location.pathname);
     if (active) {
@@ -94,11 +97,6 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
       localStorage.setItem(OPEN_KEY, active);
     }
   }, [location.pathname]);
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/login");
-  };
 
   const toggleGroup = (label: string) => {
     setOpenGroup((prev) => {
@@ -109,34 +107,46 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
     });
   };
 
+  /** Hover uses sidebar ink so it stays visible on both dark and light brand backgrounds. */
+  const hoverIdle =
+    "hover:bg-[color-mix(in_srgb,var(--brand-sidebar-ink,#C7CEDB)_14%,transparent)] hover:text-[var(--brand-sidebar-text,#FFFFFF)]";
+
   const linkClass = (active: boolean, nested = false) =>
     cn(
-      "group relative flex items-center rounded-xl text-sm font-semibold transition-colors duration-150",
+      "group relative flex items-center rounded-none text-sm font-semibold transition-colors duration-150",
       collapsed ? "justify-center px-2.5 py-2.5" : nested ? "gap-3 px-3 py-2 pl-10" : "gap-3 px-3 py-2.5",
-      active
-        ? "bg-secondary-500/25 text-white shadow-sm ring-1 ring-inset ring-secondary-400/40"
-        : "text-white/75 hover:bg-white/10 hover:text-white"
+      active ? "shadow-sm" : hoverIdle
     );
+
+  const activeStyle = (active: boolean): CSSProperties | undefined =>
+    active
+      ? {
+          backgroundColor: "var(--brand-sidebar-bg, var(--brand-primary, #1A255C))",
+          color: "var(--brand-sidebar-text, #FFFFFF)",
+        }
+      : undefined;
 
   const groupClass = (active: boolean, open: boolean) =>
     cn(
-      "group relative flex w-full items-center rounded-xl text-sm font-semibold transition-colors duration-150",
+      "group relative flex w-full items-center rounded-none text-sm font-semibold transition-colors duration-150",
       collapsed ? "justify-center px-2.5 py-2.5" : "gap-3 px-3 py-2.5",
       active && !open
-        ? "bg-secondary-500/25 text-white shadow-sm ring-1 ring-inset ring-secondary-400/40"
+        ? "shadow-sm"
         : active && open
-          ? "bg-white/10 text-white"
-          : "text-white/75 hover:bg-white/10 hover:text-white"
+          ? "bg-[color-mix(in_srgb,var(--brand-sidebar-ink,#C7CEDB)_14%,transparent)] text-[var(--brand-sidebar-text,#FFFFFF)]"
+          : hoverIdle
     );
 
   const badgeClass = (active: boolean) =>
     cn(
       "relative z-10 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-      active ? "bg-white/25 text-white" : "bg-white/10 text-white/80"
+      active
+        ? "bg-[color-mix(in_srgb,var(--brand-sidebar-text,#fff)_25%,transparent)] text-[var(--brand-sidebar-text,#fff)]"
+        : "bg-[color-mix(in_srgb,var(--brand-sidebar-ink,#C7CEDB)_14%,transparent)] opacity-80"
     );
 
   return (
-    <div className="flex h-full flex-col bg-navy text-white">
+    <div className="flex h-full flex-col" style={shellStyle}>
       <div className={cn("flex shrink-0 flex-col justify-center", collapsed ? "px-3 py-4" : "px-5 pb-5 pt-4")}>
         <Logo compact={collapsed} onDark />
       </div>
@@ -164,6 +174,7 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                     }}
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) => linkClass(isActive)}
+                    style={({ isActive }) => activeStyle(isActive)}
                   >
                     {({ isActive }) => (
                       <>
@@ -193,6 +204,7 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                   }}
                   title={collapsed ? item.label : undefined}
                   className={groupClass(active, open)}
+                  style={active && !open ? activeStyle(true) : undefined}
                   aria-expanded={open}
                 >
                   <Icon className="relative z-10 h-[18px] w-[18px] shrink-0" />
@@ -204,7 +216,7 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                       )}
                       <ChevronDown
                         className={cn(
-                          "relative z-10 h-4 w-4 shrink-0 text-white/60 transition-transform",
+                          "relative z-10 h-4 w-4 shrink-0 opacity-60 transition-transform",
                           open && "rotate-180"
                         )}
                       />
@@ -232,6 +244,7 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                               end
                               onClick={onNavigate}
                               className={() => linkClass(childActive, true)}
+                              style={activeStyle(childActive)}
                             >
                               <ChildIcon className="relative z-10 h-4 w-4 shrink-0" />
                               <span className="relative z-10 flex-1 truncate">{child.label}</span>
@@ -250,32 +263,6 @@ function NavContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
           })}
         </ul>
       </nav>
-
-      <div className="shrink-0 border-t border-white/10 p-3">
-        <button
-          onClick={handleLogout}
-          className={cn(
-            "flex w-full items-center rounded-xl text-sm font-semibold text-white/75 transition-colors hover:bg-rose-500/20 hover:text-rose-200",
-            collapsed ? "justify-center px-2.5 py-2.5" : "gap-3 px-3 py-2.5"
-          )}
-          title={collapsed ? "Logout" : undefined}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="h-[18px] w-[18px]"
-          >
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
-          {!collapsed && "Logout"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -285,9 +272,10 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: SidebarProps) 
     <>
       <aside
         className={cn(
-          "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-[#0a1030] bg-navy transition-[width] duration-300 lg:flex",
+          "sticky top-0 z-30 hidden h-screen shrink-0 flex-col border-r border-black/20 transition-[width] duration-300 lg:flex",
           collapsed ? "w-[76px]" : "w-[264px]"
         )}
+        style={shellStyle}
       >
         <NavContent collapsed={collapsed} />
       </aside>
@@ -307,11 +295,12 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: SidebarProps) 
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: "spring", stiffness: 350, damping: 32 }}
-              className="fixed inset-y-0 left-0 z-50 w-[280px] bg-navy text-white shadow-pop lg:hidden"
+              className="fixed inset-y-0 left-0 z-50 w-[280px] shadow-pop lg:hidden"
+              style={shellStyle}
             >
               <button
                 onClick={onCloseMobile}
-                className="absolute right-3 top-4 rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+                className="absolute right-3 top-4 z-10 rounded-lg p-1.5 opacity-70 transition hover:bg-[color-mix(in_srgb,var(--brand-sidebar-ink)_14%,transparent)] hover:opacity-100"
                 aria-label="Close menu"
               >
                 <X className="h-5 w-5" />

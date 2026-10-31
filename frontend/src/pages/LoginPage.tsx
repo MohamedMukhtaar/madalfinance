@@ -4,7 +4,9 @@ import { useForm } from "react-hook-form";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Fingerprint, Info, Lock, LogIn, User } from "lucide-react";
 import { Input, Checkbox } from "@/components/ui";
+import { fieldBase } from "@/components/ui/FormField";
 import { Button } from "@/components/ui/Button";
+import { cn } from "@/utils/cn";
 import { useAuth } from "@/context/AuthContext";
 import { getErrorMessage } from "@/services/api";
 
@@ -49,7 +51,7 @@ export default function LoginPage() {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.1 }}
-      className="rounded-3xl bg-card p-8 shadow-card ring-1 ring-line sm:p-10"
+      className="rounded-none bg-card p-5 shadow-card ring-1 ring-line sm:rounded-3xl sm:p-10"
     >
       <h1 className="text-2xl font-bold tracking-tight text-ink">Welcome back</h1>
       <p className="mt-1.5 text-sm text-ink-muted">Sign in to your finance dashboard to continue.</p>
@@ -65,16 +67,16 @@ export default function LoginPage() {
         />
 
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold text-ink-soft">
+          <label className="block text-sm font-medium text-ink">
             Password <span className="ml-0.5 text-rose-500">*</span>
           </label>
           <div className="relative">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
+            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Enter your password"
               autoComplete="current-password"
-              className="h-10 w-full rounded-xl border-0 bg-card pl-10 pr-11 text-sm text-ink shadow-sm ring-1 ring-inset ring-line placeholder:text-ink-muted transition focus:outline-none focus:ring-2 focus:ring-navy"
+              className={cn(fieldBase, "h-10 pl-10 pr-11")}
               {...register("password", {
                 required: "Password is required",
                 minLength: { value: 6, message: "Minimum 6 characters" },

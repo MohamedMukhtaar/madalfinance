@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Plus, Trash2, TrendingUp } from "lucide-react";
+import { Pencil, Plus, Trash2, TrendingUp } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
 import { DataTable } from "@/components/tables/DataTable";
 import { Button } from "@/components/ui/Button";
 import { DateRangeFilter, type DateFilterMode, Modal, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
@@ -14,6 +18,7 @@ import {
   useDeleteIncome,
   useIncome,
   useIncomeCategories,
+  useInvalidateMoney,
 } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
@@ -43,6 +48,17 @@ export function OtherIncomePanel() {
   const [pageIndex, setPageIndex] = useState(0);
   const [pageSize, setPageSize] = useState(12);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<OtherIncome | undefined>();
+  const invalidateMoney = useInvalidateMoney();
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Parameters<typeof financeService.updateIncome>[1] }) =>
+      financeService.updateIncome(id, data),
+    onSuccess: () => {
+      invalidateMoney();
+      toast.success("Income updated");
+    },
+    onError: (err) => toast.error(getErrorMessage(err, "Failed to update income")),
+  });
   const [dateMode, setDateMode] = useState<DateFilterMode>("all");
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
@@ -168,6 +184,15 @@ export function OtherIncomePanel() {
           manage
             ? (row) => [
                 {
+                  label: "Edit",
+                  icon: <Pencil className="h-4 w-4" />,
+                  onClick: () => {
+                    setEditing(row);
+                    setModalOpen(true);
+                  },
+                },
+                { divider: true },
+                {
                   label: "Delete",
                   icon: <Trash2 className="h-4 w-4" />,
                   danger: true,
@@ -221,10 +246,16 @@ export function OtherIncomePanel() {
         accounts={accounts}
         currency={currency}
         categories={categories.map((c) => c.name).filter(Boolean)}
-        onClose={() => setModalOpen(false)}
-        onCreate={async (payload) => {
-          await createMutation.mutateAsync(payload);
+        editing={editing}
+        onClose={() => {
           setModalOpen(false);
+          setEditing(undefined);
+        }}
+        onCreate={async (payload) => {
+          if (editing) await updateMutation.mutateAsync({ id: editing.incomeId, data: payload });
+          else await createMutation.mutateAsync(payload);
+          setModalOpen(false);
+          setEditing(undefined);
         }}
       />
     </div>
@@ -236,9 +267,11 @@ function RecordIncomeModal({
   accounts,
   currency,
   categories,
+  editing,
   onClose,
   onCreate,
 }: {
+  editing?: OtherIncome;
   open: boolean;
   accounts: Array<{ accId: number; institution: string; number: string; balance?: number; isDefault?: boolean }>;
   currency: string;
@@ -269,6 +302,17 @@ function RecordIncomeModal({
   useEffect(() => {
     if (!open) return;
     const fallback = defaultAccount?.accId ?? accounts.find((a) => a.isDefault)?.accId ?? accounts[0]?.accId;
+    if (editing) {
+      reset({
+        accId: String(editing.accId ?? fallback ?? ""),
+        categoryName: editing.categoryName ?? "Other",
+        description: editing.description ?? "",
+        amount: Number(editing.amount),
+        incomeDate: String(editing.incomeDate ?? "").slice(0, 10),
+        notes: (editing as OtherIncome & { notes?: string | null }).notes ?? "",
+      });
+      return;
+    }
     reset({
       accId: fallback ? String(fallback) : "",
       categoryName: "Other",
@@ -277,14 +321,18 @@ function RecordIncomeModal({
       incomeDate: todayISO(),
       notes: "",
     });
-  }, [open, reset, defaultAccount, accounts]);
+  }, [open, reset, defaultAccount, accounts, editing]);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
-      title="Record other income"
-      subtitle="This deposits money into the selected account and posts to the ledger."
+      title={editing ? "Edit other income" : "Record other income"}
+      subtitle={
+        editing
+          ? "Changing the amount or account posts a correction to the ledger."
+          : "This deposits money into the selected account and posts to the ledger."
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

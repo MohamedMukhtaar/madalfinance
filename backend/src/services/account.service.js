@@ -1,3 +1,5 @@
+import dayjs from 'dayjs';
+import { requireDeleteReason } from '../helpers/deleteReason.js';
 import accountRepo from '../repositories/account.repo.js';
 import transactionRepo from '../repositories/transaction.repo.js';
 import auditService from './audit.service.js';
@@ -115,6 +117,68 @@ export const accountService = {
 
       await auditService.log({ module: 'Account', action: 'TRANSFER', userId, recordId: transferId, ip });
       return { transfer_id: transferId };
+    });
+  },
+
+  /** Delete an account that has never been used. */
+  async remove(id, userId, ip) {
+    return withTransaction(async (conn) => {
+      const account = await accountRepo.findById(conn, id);
+      if (!account) throw ApiError.notFound('Account not found');
+      if (account.is_default) throw ApiError.conflict('Make another account the default before deleting this one');
+      if ((await accountRepo.countTransactions(conn, id)) > 0 || Math.abs(Number(account.balance)) > 0.001) {
+        throw ApiError.conflict('This account has transactions, so it cannot be deleted. It keeps the history of those payments.');
+      }
+      try {
+        await accountRepo.remove(conn, id);
+      } catch (err) {
+        if (err?.code === '23503') throw ApiError.conflict('This account is linked to other records and cannot be deleted');
+        throw err;
+      }
+      await auditService.log({ module: 'Account', action: 'DELETE', userId, recordId: id, ip });
+      return { acc_id: id, deleted: true };
+    });
+  },
+
+  /** Undo a transfer: money goes back to the source account and the ledger gets reversing rows. */
+  async removeTransfer(id, reason, userId, ip) {
+    const deleteReason = requireDeleteReason(reason);
+    return withTransaction(async (conn) => {
+      const t = await accountRepo.findTransfer(conn, id);
+      if (!t) throw ApiError.notFound('Transfer not found');
+      const amount = Number(t.amount);
+      const to = await accountRepo.findById(conn, t.to_account_id);
+      if (Number(to.balance) < amount - 0.001) {
+        throw ApiError.badRequest('The receiving account no longer has enough balance to reverse this transfer');
+      }
+      await accountRepo.adjustBalance(conn, t.to_account_id, -amount);
+      await accountRepo.adjustBalance(conn, t.from_account_id, amount);
+      const today = dayjs().format('YYYY-MM-DD');
+      await transactionRepo.create(conn, {
+        transaction_date: today,
+        transaction_type: 'Transfer',
+        reference_type: 'Transfer',
+        reference_id: id,
+        description: `Reversal of transfer ${t.transfer_number}`,
+        income: 0,
+        expense: amount,
+        acc_id: t.to_account_id,
+        created_by: userId,
+      });
+      await transactionRepo.create(conn, {
+        transaction_date: today,
+        transaction_type: 'Transfer',
+        reference_type: 'Transfer',
+        reference_id: id,
+        description: `Reversal of transfer ${t.transfer_number}`,
+        income: amount,
+        expense: 0,
+        acc_id: t.from_account_id,
+        created_by: userId,
+      });
+      await accountRepo.softDeleteTransfer(conn, id, { reason: deleteReason, deletedBy: userId });
+      await auditService.log({ module: 'Account', action: 'DELETE_TRANSFER', userId, recordId: id, ip, details: deleteReason });
+      return { transfer_id: id, deleted: true };
     });
   },
 

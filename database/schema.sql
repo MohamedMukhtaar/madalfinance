@@ -248,7 +248,7 @@ CREATE TABLE member_due_batches (
     generated_by      BIGINT NOT NULL
         REFERENCES users(user_id),
 
-    UNIQUE (month, year)
+    -- Multiple charges per month allowed when reasons differ (see contribution_charges.sql)
 );
 
 -- ============================================================

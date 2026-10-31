@@ -6,13 +6,13 @@ import { validate } from '../middleware/validate.js';
 import { singleUpload } from '../middleware/upload.js';
 import { uploadLimiter } from '../middleware/rateLimiters.js';
 import { createPaymentValidator, updatePaymentValidator } from '../validators/payment.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('payments')));
 
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('payments');
 
 router.get('/', paymentController.list);
 router.get('/:id/pdf', paymentController.generatePdf);

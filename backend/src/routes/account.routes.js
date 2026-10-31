@@ -8,13 +8,13 @@ import {
   transferValidator,
   updateAccountValidator,
 } from '../validators/account.validator.js';
-import { APP_ACCESS, MANAGE_ROLES } from '../utils/constants.js';
+import { P, manageModule } from '../utils/constants.js';
 
 const router = Router();
-const MANAGE = MANAGE_ROLES;
+const MANAGE = manageModule('accounts');
 
 router.use(authenticate);
-router.use(authorize(...APP_ACCESS));
+router.use(authorize(P.view('accounts')));
 
 router.get('/', accountController.list);
 router.get('/default', accountController.getDefault);
@@ -25,5 +25,7 @@ router.post('/', validate(createAccountValidator), accountController.create);
 router.post('/transfer', validate(transferValidator), accountController.transfer);
 router.patch('/:id', validate(updateAccountValidator), accountController.update);
 router.patch('/:id/default', accountController.setDefault);
+router.delete('/transfers/:id', authorize(...MANAGE), accountController.removeTransfer);
+router.delete('/:id', authorize(...MANAGE), accountController.remove);
 
 export default router;

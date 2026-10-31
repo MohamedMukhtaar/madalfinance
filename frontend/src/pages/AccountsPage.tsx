@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { ArrowLeftRight, Landmark, Plus, Star, TrendingUp } from "lucide-react";
+import { ArrowLeftRight, Landmark, Pencil, Plus, Star, Trash2, TrendingUp } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Modal, StatCard, StatCardsGrid, Badge, Tabs, DateRangeFilter, type DateFilterMode } from "@/components/ui";
+import { Modal, StatCard, StatCardsGrid, Badge, Tabs, DateRangeFilter, promptDeleteReason, type DateFilterMode } from "@/components/ui";
 import { AmountVisibilityToggle } from "@/context/AmountVisibilityContext";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Select } from "@/components/ui/FormField";
@@ -17,7 +19,10 @@ import {
   useSetDefaultAccount,
   useTransferAccount,
   useAccountTransfers,
+  useInvalidateMoney,
 } from "@/hooks/queries";
+import { financeService } from "@/services/finance";
+import { getErrorMessage } from "@/services/api";
 import { useSettings } from "@/context/SettingsContext";
 import { formatCurrency, todayISO, formatAccountOptionLabel } from "@/utils/format";
 import { dateTimeColumns } from "@/utils/tableHelpers";
@@ -45,6 +50,35 @@ export default function AccountsPage() {
   const transferMutation = useTransferAccount();
   const [createOpen, setCreateOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | undefined>();
+  const invalidateMoney = useInvalidateMoney();
+  const onFail = (fallback: string) => (err: unknown) => toast.error(getErrorMessage(err, fallback));
+  const updateAccountMutation = useMutation({
+    mutationFn: ({ id, number, institution }: { id: number; number: string; institution: string }) =>
+      financeService.updateAccount(id, { number, institution }),
+    onSuccess: () => {
+      invalidateMoney();
+      toast.success("Account updated");
+      setEditingAccount(undefined);
+    },
+    onError: onFail("Failed to update account"),
+  });
+  const deleteAccountMutation = useMutation({
+    mutationFn: (id: number) => financeService.deleteAccount(id),
+    onSuccess: () => {
+      invalidateMoney();
+      toast.success("Account deleted");
+    },
+    onError: onFail("Failed to delete account"),
+  });
+  const deleteTransferMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => financeService.deleteTransfer(id, reason),
+    onSuccess: () => {
+      invalidateMoney();
+      toast.success("Transfer reversed — the money is back in the source account");
+    },
+    onError: onFail("Failed to reverse transfer"),
+  });
 
   const totalBalance = accounts.reduce((s, a) => s + Number(a.balance), 0);
   const filteredTransfers = useMemo(
@@ -169,7 +203,36 @@ export default function AccountsPage() {
                       </Button>
                     )}
                   </div>
-                  <p className="mt-3 font-mono text-lg font-bold text-emerald-600">{formatCurrency(a.balance, currency)}</p>
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    <p className="font-mono text-lg font-bold text-emerald-600">{formatCurrency(a.balance, currency)}</p>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        title="Edit account"
+                        aria-label={`Edit ${a.institution}`}
+                        onClick={() => setEditingAccount(a)}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete account"
+                        aria-label={`Delete ${a.institution}`}
+                        onClick={async () => {
+                          const ok = await confirmDialog({
+                            title: `Delete ${a.institution}?`,
+                            text: "Only accounts that were never used can be deleted. Accounts with payments keep their history.",
+                            confirmText: "Delete",
+                          });
+                          if (ok) deleteAccountMutation.mutate(a.accId);
+                        }}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                 </CardBody>
               </Card>
             ))}
@@ -192,6 +255,21 @@ export default function AccountsPage() {
           searchPlaceholder="Search transfers…"
           emptyTitle="No transfers"
           emptyDescription="No transfers for the selected dates."
+          actions={(row) => [
+            {
+              label: "Delete (reverse)",
+              icon: <Trash2 className="h-4 w-4" />,
+              danger: true,
+              onClick: async () => {
+                const reason = await promptDeleteReason({
+                  title: "Reverse this transfer?",
+                  text: `${formatCurrency(row.amount, currency)} moves back from ${row.toInstitution ?? "the receiving account"} to ${row.fromInstitution ?? "the source account"}.`,
+                  confirmText: "Reverse transfer",
+                });
+                if (reason) deleteTransferMutation.mutate({ id: row.transferId, reason });
+              },
+            },
+          ]}
         />
       )}
 
@@ -202,6 +280,13 @@ export default function AccountsPage() {
         onClose={() => setCreateOpen(false)}
         onCreate={(d) => createMutation.mutate(d, { onSuccess: () => setCreateOpen(false) })}
         loading={createMutation.isPending}
+      />
+
+      <EditAccountModal
+        account={editingAccount}
+        onClose={() => setEditingAccount(undefined)}
+        loading={updateAccountMutation.isPending}
+        onSave={(d) => editingAccount && updateAccountMutation.mutate({ id: editingAccount.accId, ...d })}
       />
 
       <TransferModal
@@ -217,6 +302,45 @@ export default function AccountsPage() {
         }
       />
     </div>
+  );
+}
+
+function EditAccountModal({
+  account,
+  onClose,
+  onSave,
+  loading,
+}: {
+  account?: Account;
+  onClose: () => void;
+  onSave: (d: { number: string; institution: string }) => void;
+  loading: boolean;
+}) {
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<{ number: string; institution: string }>();
+  useEffect(() => {
+    if (account) reset({ number: account.number, institution: account.institution });
+  }, [account, reset]);
+
+  return (
+    <Modal
+      open={!!account}
+      onClose={onClose}
+      title="Edit account"
+      subtitle="The balance changes only through payments, expenses and transfers."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button loading={loading} onClick={handleSubmit((d) => onSave({ number: d.number.trim(), institution: d.institution.trim() }))}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <form className="space-y-3">
+        <Input label="Account number" required error={errors.number?.message} {...register("number", { required: "Required" })} />
+        <Input label="Institution" required error={errors.institution?.message} {...register("institution", { required: "Required" })} />
+      </form>
+    </Modal>
   );
 }
 
