@@ -1,4 +1,5 @@
 import run from './_base.js';
+import { ALL_PERMISSIONS } from '../utils/permissions.js';
 
 export const list = (conn) =>
   run(
@@ -20,6 +21,13 @@ export const upsert = (conn, { name, module, action, guardName = 'web' }) =>
      DO UPDATE SET module = EXCLUDED.module, action = EXCLUDED.action, updated_at = now()`,
     [name, guardName, module, action]
   );
+
+/** Ensure every catalog permission exists in the DB (idempotent). */
+export const syncCatalog = async (conn) => {
+  for (const p of ALL_PERMISSIONS) {
+    await upsert(conn, { name: p.name, module: p.module, action: p.action });
+  }
+};
 
 export const namesForUser = (conn, userId) =>
   run(
@@ -50,22 +58,22 @@ export const namesForRole = (conn, roleId) =>
   ).then((rows) => rows.map((r) => r.permission_name));
 
 export const replaceRolePermissions = async (conn, roleId, permissionNames) => {
+  await syncCatalog(conn);
   await run(conn, `DELETE FROM role_has_permissions WHERE role_id = ?`, [roleId]);
-  if (!permissionNames?.length) return;
-  const rows = await run(
+  const names = [...new Set((permissionNames || []).map((n) => String(n).trim()).filter(Boolean))];
+  if (!names.length) return;
+
+  // Prefer explicit IN list — more reliable than ANY(?::text[]) across drivers.
+  const placeholders = names.map(() => '?').join(', ');
+  await run(
     conn,
-    `SELECT permission_id FROM permissions WHERE permission_name = ANY(?::text[])`,
-    [permissionNames]
+    `INSERT INTO role_has_permissions (permission_id, role_id)
+     SELECT permission_id, ?
+       FROM permissions
+      WHERE permission_name IN (${placeholders})
+     ON CONFLICT DO NOTHING`,
+    [roleId, ...names]
   );
-  for (const row of rows) {
-    await run(
-      conn,
-      `INSERT INTO role_has_permissions (permission_id, role_id)
-       VALUES (?, ?)
-       ON CONFLICT DO NOTHING`,
-      [row.permission_id, roleId]
-    );
-  }
 };
 
 export const grantRoleAll = async (conn, roleId) => {
@@ -95,6 +103,7 @@ export default {
   list,
   findByName,
   upsert,
+  syncCatalog,
   namesForUser,
   namesForRole,
   replaceRolePermissions,

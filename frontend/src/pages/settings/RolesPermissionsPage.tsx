@@ -55,6 +55,28 @@ function namesForColumn(mod: PermissionModule, colActions: readonly string[]) {
   return mod.actions.filter((a) => colActions.includes(a.action)).map((a) => a.name);
 }
 
+function asPermissionNames(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw || raw === "{}" || raw === "[]") return [];
+    if (raw.startsWith("{") && raw.endsWith("}")) {
+      return raw
+        .slice(1, -1)
+        .split(",")
+        .map((s) => s.replace(/^"|"$/g, "").trim())
+        .filter(Boolean);
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function MatrixCheck({
   checked,
   disabled,
@@ -105,15 +127,23 @@ export default function RolesPermissionsPage() {
       setChecked(new Set());
       return;
     }
-    const perms = Array.isArray(selected.permissions) ? selected.permissions : [];
-    setChecked(new Set(perms));
+    setChecked(new Set(asPermissionNames(selected.permissions)));
   }, [selected]);
 
   // Keep selected role in sync when roles list refreshes after save
   useEffect(() => {
     if (!selected) return;
     const fresh = roles.find((r) => r.roleId === selected.roleId);
-    if (fresh && fresh !== selected) setSelected(fresh);
+    if (!fresh || fresh === selected) return;
+    const prev = asPermissionNames(selected.permissions).slice().sort().join("|");
+    const next = asPermissionNames(fresh.permissions).slice().sort().join("|");
+    if (
+      fresh.roleName !== selected.roleName ||
+      fresh.description !== selected.description ||
+      prev !== next
+    ) {
+      setSelected(fresh);
+    }
   }, [roles, selected]);
 
   const openCreate = () => {
@@ -263,7 +293,15 @@ export default function RolesPermissionsPage() {
                   onClick={() =>
                     assignMutation.mutate(
                       { id: selected.roleId, permissions: [...checked] },
-                      { onSuccess: (role) => setSelected(role) }
+                      {
+                        onSuccess: (role) => {
+                          setSelected({
+                            ...role,
+                            permissions: asPermissionNames(role.permissions),
+                          });
+                          setChecked(new Set(asPermissionNames(role.permissions)));
+                        },
+                      }
                     )
                   }
                 >

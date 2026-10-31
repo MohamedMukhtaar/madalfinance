@@ -27,7 +27,9 @@ export const roleService = {
     return role;
   },
 
-  catalog() {
+  async catalog() {
+    // Keep DB permission rows in sync with the code catalog (new modules like tasks).
+    await permissionRepo.syncCatalog(null);
     return permissionService.catalog();
   },
 

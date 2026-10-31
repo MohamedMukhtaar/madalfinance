@@ -139,7 +139,11 @@ export function useAssignRolePermissions() {
   return useMutation({
     mutationFn: ({ id, permissions }: { id: number; permissions: string[] }) =>
       financeService.assignRolePermissions(id, permissions),
-    onSuccess: () => {
+    onSuccess: (role) => {
+      qc.setQueryData(qk.roles, (prev: unknown) => {
+        if (!Array.isArray(prev)) return prev;
+        return prev.map((r: { roleId?: number }) => (r?.roleId === role.roleId ? role : r));
+      });
       qc.invalidateQueries({ queryKey: qk.roles });
       toast.success("Permissions saved");
     },

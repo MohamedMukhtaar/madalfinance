@@ -1,5 +1,29 @@
 import run from './_base.js';
 
+const normalizeRole = (row) => {
+  if (!row) return row;
+  let permissions = row.permissions;
+  if (typeof permissions === 'string') {
+    const raw = permissions.trim();
+    if (!raw || raw === '{}' || raw === '[]') permissions = [];
+    else if (raw.startsWith('{') && raw.endsWith('}')) {
+      permissions = raw
+        .slice(1, -1)
+        .split(',')
+        .map((s) => s.replace(/^"|"$/g, '').trim())
+        .filter(Boolean);
+    } else {
+      try {
+        permissions = JSON.parse(raw);
+      } catch {
+        permissions = [];
+      }
+    }
+  }
+  if (!Array.isArray(permissions)) permissions = [];
+  return { ...row, permissions };
+};
+
 export const list = (conn) =>
   run(
     conn,
@@ -17,7 +41,7 @@ export const list = (conn) =>
       WHERE r.deleted_at IS NULL
       GROUP BY r.role_id
       ORDER BY r.is_system DESC, r.role_name ASC`
-  );
+  ).then((rows) => rows.map(normalizeRole));
 
 export const findById = (conn, id) =>
   run(
@@ -36,7 +60,7 @@ export const findById = (conn, id) =>
       WHERE r.role_id = ? AND r.deleted_at IS NULL
       GROUP BY r.role_id`,
     [id]
-  ).then((rows) => rows[0]);
+  ).then((rows) => normalizeRole(rows[0]));
 
 export const findByName = (conn, roleName) =>
   run(
