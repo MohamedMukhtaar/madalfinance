@@ -389,7 +389,9 @@ export default function RolesPermissionsPage() {
                 {!filteredCatalog.length && (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-sm text-ink-muted">
-                      No modules match your search.
+                      {catalog.length === 0
+                        ? "Permission modules could not be loaded. Refresh and try again."
+                        : "No modules match your search."}
                     </td>
                   </tr>
                 )}

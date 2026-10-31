@@ -27,7 +27,8 @@ export const listRoles = asyncHandler(async (_req, res) => {
 });
 
 export const permissionCatalog = asyncHandler(async (_req, res) => {
-  return ApiResponse.success(res, roleService.catalog(), 'Permissions fetched');
+  const data = await roleService.catalog();
+  return ApiResponse.success(res, data, 'Permissions fetched');
 });
 
 export const assignRolePermissions = asyncHandler(async (req, res) => {
