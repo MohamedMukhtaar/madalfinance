@@ -4,7 +4,7 @@ import { CreditCard, Download, Eye, Pencil, Paperclip, Plus, Printer, Trash2, Up
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, FilterBar, type DateFilterMode, StatCard, StatCardsGrid, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
 import { EditPaymentModal } from "@/features/payments/EditPaymentModal";
 import { useCustomers, useInvoices, usePayments, useVoidPayment } from "@/hooks/queries";
@@ -280,6 +280,7 @@ export default function PaymentsPage() {
             : []),
         ]}
         toolbar={
+          <FilterBar>
           <DateRangeFilter
             mode={dateMode}
             onModeChange={(mode) => {
@@ -302,6 +303,7 @@ export default function PaymentsPage() {
               setPageIndex(0);
             }}
           />
+          </FilterBar>
         }
       />
 

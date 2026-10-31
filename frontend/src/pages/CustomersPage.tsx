@@ -5,7 +5,7 @@ import { FileDown, FileSpreadsheet, Eye, Pencil, Plus, Trash2, Users, CircleChec
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, Avatar, DateRangeFilter, type DateFilterMode, Select, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
+import { Badge, Avatar, DateRangeFilter, FilterBar, type DateFilterMode, Select, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
 import { CustomerFormModal } from "@/features/customers/CustomerFormModal";
 import { useCustomers, useDeleteCustomer, usePayments } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
@@ -221,7 +221,7 @@ export default function CustomersPage() {
           { label: "Delete", icon: <Trash2 className="h-4 w-4" />, danger: true, onClick: () => handleDelete(row) },
         ]}
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
+          <FilterBar>
             <Select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
@@ -230,7 +230,7 @@ export default function CustomersPage() {
                 { value: "active", label: "Active" },
                 { value: "inactive", label: "Inactive" },
               ]}
-              className="w-40"
+              className="w-auto min-w-[9.5rem]"
             />
             <DateRangeFilter
               mode={dateMode}
@@ -242,7 +242,7 @@ export default function CustomersPage() {
               onFromChange={setFrom}
               onToChange={setTo}
             />
-          </div>
+          </FilterBar>
         }
       />
 

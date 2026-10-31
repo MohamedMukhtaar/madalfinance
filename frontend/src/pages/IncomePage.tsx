@@ -9,7 +9,7 @@ import { financeService } from "@/services/finance";
 import { getErrorMessage } from "@/services/api";
 import { DataTable } from "@/components/tables/DataTable";
 import { Button } from "@/components/ui/Button";
-import { DateRangeFilter, type DateFilterMode, Modal, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
+import { DateRangeFilter, FilterBar, type DateFilterMode, Modal, StatCard, StatCardsGrid, promptDeleteReason } from "@/components/ui";
 import { Input, Select, Textarea } from "@/components/ui/FormField";
 import {
   useAccounts,
@@ -209,7 +209,7 @@ export function OtherIncomePanel() {
             : undefined
         }
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
+          <FilterBar>
             <DateRangeFilter
               mode={dateMode}
               onModeChange={(mode) => {
@@ -237,7 +237,7 @@ export function OtherIncomePanel() {
                 Record income
               </Button>
             )}
-          </div>
+          </FilterBar>
         }
       />
 

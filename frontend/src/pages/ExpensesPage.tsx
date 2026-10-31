@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, FilterBar, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { DonutChart } from "@/components/charts/Charts";
 import { ChartCard } from "@/components/charts/Charts";
 import { useExpenses, useInvalidateExpenses } from "@/hooks/queries";
@@ -185,12 +185,12 @@ export default function ExpensesPage() {
             loading={isLoading}
             searchPlaceholder="Search expenses…"
             toolbar={
-              <div className="flex flex-wrap items-center gap-2">
+              <FilterBar>
                 <Select
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
                   options={[{ value: "all", label: "All categories" }, ...categories.map((c) => ({ value: c, label: c }))]}
-                  className="w-44"
+                  className="w-auto min-w-[10rem]"
                 />
                 <DateRangeFilter
                   mode={dateMode}
@@ -202,7 +202,7 @@ export default function ExpensesPage() {
                   onFromChange={setFrom}
                   onToChange={setTo}
                 />
-              </div>
+              </FilterBar>
             }
             actions={(row) => [
               { label: "Edit", icon: <Pencil className="h-4 w-4" />, onClick: () => setEditing(row) },

@@ -3,7 +3,7 @@ import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Badge, ErrorState } from "@/components/ui";
+import { DateRangeFilter, FilterBar, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Badge, ErrorState } from "@/components/ui";
 import { useTransactions } from "@/hooks/queries";
 import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
@@ -137,7 +137,7 @@ export default function TransactionsPage() {
         pageSize={12}
         initialSorting={[{ id: "transactionDate", desc: false }]}
         toolbar={
-          <div className="flex flex-wrap items-center gap-2">
+          <FilterBar>
             <Select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
@@ -146,7 +146,7 @@ export default function TransactionsPage() {
                 { value: "Income", label: "Income" },
                 { value: "Expense", label: "Expense" },
               ]}
-              className="w-36"
+              className="w-auto min-w-[8.5rem]"
             />
             <DateRangeFilter
               mode={dateMode}
@@ -158,7 +158,7 @@ export default function TransactionsPage() {
               onFromChange={setFrom}
               onToChange={setTo}
             />
-          </div>
+          </FilterBar>
         }
         className={cn(filtered.length > 0 && "overflow-hidden")}
       />

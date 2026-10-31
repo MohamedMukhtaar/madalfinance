@@ -14,7 +14,7 @@ import {
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, FilterBar, type DateFilterMode, StatCard, StatCardsGrid, MonthNavigator, Select, Modal, EmptyState, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { InvoiceViewModal } from "@/features/invoices/InvoiceViewModal";
 import { BillingPeriodPicker, MONTHS } from "@/features/invoices/BillingPeriodPicker";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
@@ -354,7 +354,7 @@ export default function InvoicesPage() {
           ];
         }}
         toolbar={
-          <>
+          <FilterBar>
             <Select
               value={statusFilter}
               onChange={(e) => {
@@ -370,7 +370,7 @@ export default function InvoicesPage() {
                 { value: "Overdue", label: "Overdue" },
                 { value: "Cancelled", label: "Cancelled" },
               ]}
-              className="w-40"
+              className="w-auto min-w-[9.5rem]"
             />
             <DateRangeFilter
               mode={dateMode}
@@ -394,7 +394,7 @@ export default function InvoicesPage() {
                 setPageIndex(0);
               }}
             />
-          </>
+          </FilterBar>
         }
       />
 

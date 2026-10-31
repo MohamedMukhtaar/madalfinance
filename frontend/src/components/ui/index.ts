@@ -24,6 +24,7 @@ export { MonthNavigator } from "./MonthNavigator";
 export type { MonthValue } from "./MonthNavigator";
 export { DateRangeFilter } from "./DateRangeFilter";
 export type { DateFilterMode, DateRangeFilterProps } from "./DateRangeFilter";
+export { FilterBar } from "./FilterBar";
 export { RowActions, ActionIconButton } from "./RowActions";
 export type { RowAction } from "./RowActions";
 export { TableCheck } from "./TableCheck";

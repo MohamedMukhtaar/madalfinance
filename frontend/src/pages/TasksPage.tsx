@@ -17,6 +17,7 @@ import {
   Badge,
   Button,
   DateRangeFilter,
+  FilterBar,
   Modal,
   StatCard,
   StatCardsGrid,
@@ -324,7 +325,7 @@ export default function TasksPage() {
         />
       </StatCardsGrid>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <FilterBar>
         <Select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -400,7 +401,7 @@ export default function TasksPage() {
           onFromChange={setFromFilter}
           onToChange={setToFilter}
         />
-      </div>
+      </FilterBar>
 
       <DataTable
         columns={columns}

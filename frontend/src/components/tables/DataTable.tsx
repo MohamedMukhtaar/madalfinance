@@ -223,7 +223,7 @@ export function DataTable<T>({
     <Card className={cn("overflow-hidden shadow-sm", className)} animated={false}>
       {/* Toolbar — DreamPOS search left / filters right */}
       <div className="flex flex-col gap-3 border-b border-line px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {searchable && (
             <SearchInput
               value={globalFilter}
@@ -233,7 +233,7 @@ export function DataTable<T>({
             />
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-full flex-nowrap items-center gap-2 overflow-x-auto pb-0.5">
           {toolbar}
           {showColumnToggle && (
             <Dropdown

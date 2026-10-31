@@ -9,6 +9,7 @@ import {
   Badge,
   Avatar,
   DateRangeFilter,
+  FilterBar,
   type DateFilterMode,
   Skeleton,
   EmptyState,
@@ -369,7 +370,7 @@ function CustomerProjectsPanel() {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <FilterBar>
         <DateRangeFilter
           mode={dateMode}
           onModeChange={setDateMode}
@@ -380,7 +381,7 @@ function CustomerProjectsPanel() {
           onFromChange={setFrom}
           onToChange={setTo}
         />
-      </div>
+      </FilterBar>
 
       {isLoading ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,280px))] justify-center gap-4">

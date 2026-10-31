@@ -2,7 +2,15 @@ import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { ClipboardList } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
-import { Badge, DateRangeFilter, type DateFilterMode, ErrorState, Select, StatCard } from "@/components/ui";
+import {
+  Badge,
+  DateRangeFilter,
+  FilterBar,
+  type DateFilterMode,
+  ErrorState,
+  Select,
+  StatCard,
+} from "@/components/ui";
 import { useAuditLogs } from "@/hooks/queries";
 import { addDays, formatDate, formatTime, toDateInput } from "@/utils/format";
 import type { AuditLog } from "@/types";
@@ -157,9 +165,8 @@ export default function AuditLogsPage() {
         emptyDescription="Try widening the date range or clearing the module filter."
         getRowId={(row) => String(row.logId)}
         toolbar={
-          <div className="flex flex-wrap items-end gap-3">
+          <FilterBar>
             <Select
-              label="Module"
               value={moduleFilter}
               onChange={(e) => {
                 setModuleFilter(e.target.value);
@@ -169,7 +176,7 @@ export default function AuditLogsPage() {
                 { value: "all", label: "All modules" },
                 ...MODULE_OPTIONS.map((m) => ({ value: m, label: m })),
               ]}
-              className="w-44"
+              className="w-auto min-w-[10rem]"
             />
             <DateRangeFilter
               mode={dateMode}
@@ -184,7 +191,7 @@ export default function AuditLogsPage() {
               onFromChange={setFrom}
               onToChange={setTo}
             />
-          </div>
+          </FilterBar>
         }
         renderMobileCard={(row) => (
           <div className="space-y-1">

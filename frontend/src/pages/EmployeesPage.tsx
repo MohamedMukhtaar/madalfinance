@@ -304,8 +304,8 @@ function StaffPanel() {
             Clear
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[12rem] flex-1">
+        <div className="flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto pb-0.5">
+          <div className="relative min-w-[10rem] shrink-0">
             <select
               className={filterSelect}
               value={filters.departmentId}
@@ -319,7 +319,7 @@ function StaffPanel() {
               ))}
             </select>
           </div>
-          <div className="relative min-w-[12rem] flex-1">
+          <div className="relative min-w-[10rem] shrink-0">
             <select
               className={filterSelect}
               value={filters.jobTitleId}
