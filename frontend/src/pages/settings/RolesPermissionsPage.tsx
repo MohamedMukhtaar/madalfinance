@@ -175,7 +175,7 @@ export default function RolesPermissionsPage() {
     return catalog.filter((m) => m.label.toLowerCase().includes(q) || m.module.includes(q));
   }, [catalog, permSearch]);
 
-  const columns = useMemo<ColumnDef<AppRoleRecord>[]>(
+  const columns = useMemo<ColumnDef<AppRoleRecord, any>[]>(
     () => [
       roleColumnHelper.accessor("roleName", {
         header: "Role",

@@ -101,7 +101,7 @@ export function OtherIncomePanel() {
     [statsData?.rows]
   );
 
-  const columns = useMemo<ColumnDef<OtherIncome, unknown>[]>(
+  const columns = useMemo<ColumnDef<OtherIncome, any>[]>(
     () => [
       columnHelper.accessor("incomeDate", {
         header: "Date",

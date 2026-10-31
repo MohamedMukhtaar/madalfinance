@@ -20,7 +20,7 @@ export default function SalaryPaymentsPage() {
 
   const total = useMemo(() => payments.reduce((s, p) => s + Number(p.amount), 0), [payments]);
 
-  const columns = useMemo<ColumnDef<SalaryPayment>[]>(
+  const columns = useMemo<ColumnDef<SalaryPayment, any>[]>(
     () => [
       columnHelper.accessor("paymentNumber", {
         header: "Reference",

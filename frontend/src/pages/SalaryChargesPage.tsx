@@ -64,7 +64,7 @@ export default function SalaryChargesPage() {
     };
   }, [charges]);
 
-  const columns = useMemo<ColumnDef<SalaryCharge>[]>(
+  const columns = useMemo<ColumnDef<SalaryCharge, any>[]>(
     () => [
       columnHelper.accessor("fullName", {
         header: "Employee",

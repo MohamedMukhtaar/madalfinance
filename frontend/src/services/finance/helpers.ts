@@ -123,8 +123,6 @@ export const toQuery = (params?: ListParams): Record<string, unknown> | undefine
     projectTypeId: "project_type_id",
     entityType: "entity_type",
     assigneeType: "assignee_type",
-    employeeId: "employee_id",
-    memberId: "member_id",
   };
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(params)) {

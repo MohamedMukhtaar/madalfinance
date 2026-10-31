@@ -193,7 +193,7 @@ function StaffPanel() {
     }
   };
 
-  const columns = useMemo<ColumnDef<Employee>[]>(
+  const columns = useMemo<ColumnDef<Employee, any>[]>(
     () => [
       columnHelper.accessor("employeeCode", {
         header: "ID",
@@ -409,8 +409,8 @@ function OrgPanel({ kind }: { kind: EmployeeOrgKind }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<EmployeeOrgRecord | undefined>();
 
-  const columns = useMemo<ColumnDef<EmployeeOrgRecord>[]>(() => {
-    const cols: ColumnDef<EmployeeOrgRecord>[] = [
+  const columns = useMemo<ColumnDef<EmployeeOrgRecord, any>[]>(() => {
+    const cols: ColumnDef<EmployeeOrgRecord, any>[] = [
       orgHelper.display({
         id: "name",
         header: meta.singular.charAt(0).toUpperCase() + meta.singular.slice(1),

@@ -218,7 +218,7 @@ function UsersTab({ roles, embedded = false }: { roles: AppRoleRecord[]; embedde
     );
   });
 
-  const columns = useMemo<ColumnDef<User>[]>(
+  const columns = useMemo<ColumnDef<User, any>[]>(
     () => [
       userColumnHelper.accessor("fullName", {
         header: "User Name",
@@ -589,7 +589,7 @@ function RolesTab() {
     createMutation.mutate({ roleName }, { onSuccess: closeModal });
   });
 
-  const columns = useMemo<ColumnDef<AppRoleRecord>[]>(
+  const columns = useMemo<ColumnDef<AppRoleRecord, any>[]>(
     () => [
       roleColumnHelper.accessor("roleName", {
         header: "Role",

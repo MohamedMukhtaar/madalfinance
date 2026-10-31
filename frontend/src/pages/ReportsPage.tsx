@@ -235,7 +235,7 @@ export default function ReportsPage() {
     [statementEmployees, dateMode, day, from, to]
   );
 
-  const employeeColumns = useMemo<ColumnDef<Employee>[]>(
+  const employeeColumns = useMemo<ColumnDef<Employee, any>[]>(
     () => [
       employeeColumnHelper.accessor("fullName", {
         header: "Name",
