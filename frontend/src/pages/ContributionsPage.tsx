@@ -27,6 +27,7 @@ import {
   EmptyState,
   ErrorState,
   FileUpload,
+  FilterBar,
   Select,
   confirmDialog,
   type UploadedFile,
@@ -65,6 +66,7 @@ const periodLabel = (year: number, month: number) => `${monthName(month)} ${year
 export default function ContributionsPage() {
   const qc = useQueryClient();
   const [period, setPeriod] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [year, monthNum] = period ? period.split("-").map(Number) : [undefined, undefined];
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -72,11 +74,24 @@ export default function ContributionsPage() {
     queryFn: () =>
       financeService.memberDues({ perPage: 1000, sort: "charge_date:desc", ...(period ? { year, month: monthNum } : {}) }),
   });
-  const dues = data?.rows ?? [];
+  const allDues = data?.rows ?? [];
+  const dues = useMemo(() => {
+    if (!statusFilter) return allDues;
+    return allDues.filter((d) => d.status === statusFilter);
+  }, [allDues, statusFilter]);
   const { data: periods = [] } = useQuery({
     queryKey: ["dues", "periods"],
     queryFn: () => financeService.contributionPeriods(),
   });
+  const unpaidBatchIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const d of allDues) {
+      if (d.paidAmount <= 0) ids.add(d.batchId);
+    }
+    // Only batches where every due is unpaid can be bulk-deleted safely.
+    const paidBatches = new Set(allDues.filter((d) => d.paidAmount > 0).map((d) => d.batchId));
+    return [...ids].filter((id) => !paidBatches.has(id));
+  }, [allDues]);
 
   const chargeMutation = useChargeMembers();
   const receiveMutation = useReceiveDue();
@@ -150,13 +165,13 @@ export default function ContributionsPage() {
 
   const batchStats = useMemo(
     () => ({
-      expected: dues.reduce((s, d) => s + Number(d.amount ?? 0), 0),
-      collected: dues.reduce((s, d) => s + Number(d.paidAmount ?? 0), 0),
-      pending: dues.filter((d) => d.status === "Pending").reduce((s, d) => s + Number(d.balance ?? 0), 0),
-      partial: dues.filter((d) => d.status === "Partial").reduce((s, d) => s + Number(d.balance ?? 0), 0),
+      expected: allDues.reduce((s, d) => s + Number(d.amount ?? 0), 0),
+      collected: allDues.reduce((s, d) => s + Number(d.paidAmount ?? 0), 0),
+      pending: allDues.filter((d) => d.status === "Pending").reduce((s, d) => s + Number(d.balance ?? 0), 0),
+      partial: allDues.filter((d) => d.status === "Partial").reduce((s, d) => s + Number(d.balance ?? 0), 0),
       overdue: 0,
     }),
-    [dues]
+    [allDues]
   );
 
   const { data: historyDuesData } = useQuery({
@@ -312,7 +327,7 @@ export default function ContributionsPage() {
     setRepayAccId(defAcc ? String(defAcc) : "");
   };
 
-  /** DreamPOS pattern: 3 primary icons + overflow menu for the rest. */
+  /** Row actions: receive / edit / delete member, plus overflow for charge-level ops. */
   const dueActions = (due: MemberDue) => {
     const paid = due.balance <= 0;
     const loanOwed = Number(due.creditBalance ?? 0);
@@ -332,17 +347,31 @@ export default function ContributionsPage() {
         },
       },
       {
-        label: "Delete due",
+        label: "Delete member charge",
         icon: <Trash2 className="h-4 w-4" />,
         danger: true,
         disabled: due.paidAmount > 0,
         onClick: async () => {
           const ok = await confirmDialog({
-            title: `Delete ${due.memberName}'s due?`,
-            text: `${due.reason ?? "Charge"} · ${formatCurrency(due.amount, currency)}. Only unpaid dues can be deleted.`,
-            confirmText: "Yes Delete",
+            title: `Remove ${due.memberName} from this charge?`,
+            text: `${due.reason ?? "Charge"} · ${formatCurrency(due.amount, currency)}. Only unpaid member dues can be deleted.`,
+            confirmText: "Delete",
           });
           if (ok) deleteDueMutation.mutate(due.dueId);
+        },
+      },
+      {
+        label: "Delete whole month charge",
+        icon: <Trash2 className="h-4 w-4" />,
+        danger: true,
+        overflow: true,
+        onClick: async () => {
+          const ok = await confirmDialog({
+            title: `Delete "${due.reason ?? "this charge"}" for every member?`,
+            text: "Removes this charge for all members in the batch. Not possible once anyone has paid.",
+            confirmText: "Delete charge",
+          });
+          if (ok) deleteChargeMutation.mutate(due.batchId);
         },
       },
       ...(loanOwed > 0
@@ -377,21 +406,20 @@ export default function ContributionsPage() {
           setEditChargeDate(String(due.chargeDate ?? "").slice(0, 10));
         },
       },
-      {
-        label: "Delete whole charge",
-        icon: <Trash2 className="h-4 w-4" />,
-        danger: true,
-        overflow: true,
-        onClick: async () => {
-          const ok = await confirmDialog({
-            title: `Delete "${due.reason ?? "this charge"}" for every member?`,
-            text: "Removes all dues of this charge. Not possible once anyone has paid towards it.",
-            confirmText: "Yes Delete",
-          });
-          if (ok) deleteChargeMutation.mutate(due.batchId);
-        },
-      },
     ];
+  };
+
+  const deleteAllUnpaidInPeriod = async () => {
+    if (!period || unpaidBatchIds.length === 0) return;
+    const ok = await confirmDialog({
+      title: `Delete unpaid charges in ${periodLabel(year!, monthNum!)}?`,
+      text: `${unpaidBatchIds.length} charge(s) with no payments will be removed for all members.`,
+      confirmText: "Delete charges",
+    });
+    if (!ok) return;
+    for (const batchId of unpaidBatchIds) {
+      await deleteChargeMutation.mutateAsync(batchId);
+    }
   };
 
   const handleReceive = () => {
@@ -416,19 +444,16 @@ export default function ContributionsPage() {
         subtitle="Charges and dues from Madal ICT co-founders."
         actions={
           <>
-            <select
-              aria-label="Filter by month"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="h-10 rounded-md border border-line bg-panel px-3 text-sm font-medium text-ink transition focus:outline-none focus:border-[var(--brand-primary)] focus:ring-1 focus:ring-[var(--brand-primary)]"
-            >
-              <option value="">All months</option>
-              {periods.map((p) => (
-                <option key={periodKey(p.year, p.month)} value={periodKey(p.year, p.month)}>
-                  {periodLabel(p.year, p.month)}
-                </option>
-              ))}
-            </select>
+            {period && unpaidBatchIds.length > 0 && (
+              <Button
+                variant="secondary"
+                leftIcon={<Trash2 className="h-4 w-4" />}
+                loading={deleteChargeMutation.isPending}
+                onClick={() => void deleteAllUnpaidInPeriod()}
+              >
+                Delete month charges
+              </Button>
+            )}
             <Button onClick={() => setChargeOpen(true)} leftIcon={<Receipt className="h-4 w-4" />}>
               Charge Members
             </Button>
@@ -489,6 +514,34 @@ export default function ContributionsPage() {
         searchPlaceholder="Search members or reasons…"
         emptyTitle="No dues"
         emptyDescription="No member dues match this filter."
+        toolbar={
+          <FilterBar>
+            <Select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              options={[
+                { value: "", label: "All months" },
+                ...periods.map((p) => ({
+                  value: periodKey(p.year, p.month),
+                  label: periodLabel(p.year, p.month),
+                })),
+              ]}
+              className="w-auto min-w-[10rem]"
+            />
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={[
+                { value: "", label: "All statuses" },
+                { value: "Pending", label: "Pending" },
+                { value: "Partial", label: "Partial" },
+                { value: "Paid", label: "Paid" },
+                { value: "Overdue", label: "Overdue" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+          </FilterBar>
+        }
         actions={(due) => dueActions(due)}
         renderMobileCard={(due) => (
           <div className="space-y-1">

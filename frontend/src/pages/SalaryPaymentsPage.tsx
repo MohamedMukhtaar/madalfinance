@@ -1,14 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { Banknote, Receipt } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge, StatCard } from "@/components/ui";
+import { Badge, DateRangeFilter, FilterBar, Select, StatCard, type DateFilterMode } from "@/components/ui";
 import { HrTabs } from "@/features/hr/HrTabs";
 import { useSalaryPayments } from "@/hooks/queries";
 import { useSettings } from "@/context/SettingsContext";
-import { PAYMENT_STATUS_STYLES } from "@/utils/constants";
+import { PAYMENT_METHODS, PAYMENT_STATUS_STYLES } from "@/utils/constants";
 import { formatCurrency, formatDate } from "@/utils/format";
+import { matchesDateFilter } from "@/utils/dateFilter";
 import type { SalaryPayment } from "@/types";
 
 const columnHelper = createColumnHelper<SalaryPayment>();
@@ -17,8 +18,22 @@ export default function SalaryPaymentsPage() {
   const { data, isLoading, error, refetch } = useSalaryPayments();
   const payments = data?.rows ?? [];
   const { currency } = useSettings();
+  const [methodFilter, setMethodFilter] = useState("all");
+  const [dateMode, setDateMode] = useState<DateFilterMode>("all");
+  const [day, setDay] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
-  const total = useMemo(() => payments.reduce((s, p) => s + Number(p.amount), 0), [payments]);
+  const filtered = useMemo(
+    () =>
+      payments.filter((p) => {
+        if (methodFilter !== "all" && p.paymentMethod !== methodFilter) return false;
+        return matchesDateFilter(p.paymentDate, { mode: dateMode, date: day, from, to });
+      }),
+    [payments, methodFilter, dateMode, day, from, to]
+  );
+
+  const total = useMemo(() => filtered.reduce((s, p) => s + Number(p.amount), 0), [filtered]);
 
   const columns = useMemo<ColumnDef<SalaryPayment, any>[]>(
     () => [
@@ -69,13 +84,13 @@ export default function SalaryPaymentsPage() {
       <PageHeader title="Salary payments" subtitle="Cash outflows posted against salary charges." />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <StatCard label="Payments" value={String(payments.length)} icon={<Receipt className="h-5 w-5" />} loading={isLoading} />
+        <StatCard label="Payments" value={String(filtered.length)} icon={<Receipt className="h-5 w-5" />} loading={isLoading} />
         <StatCard label="Total paid" value={formatCurrency(total, currency)} icon={<Banknote className="h-5 w-5" />} loading={isLoading} />
       </div>
 
       <DataTable
         columns={columns}
-        data={payments}
+        data={filtered}
         loading={isLoading}
         error={error ? String(error) : undefined}
         onRetry={() => refetch()}
@@ -83,6 +98,29 @@ export default function SalaryPaymentsPage() {
         emptyTitle="No salary payments yet"
         emptyDescription="Pay a salary charge to see it here and on the ledger."
         getRowId={(row) => String(row.salaryPaymentId)}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={methodFilter}
+              onChange={(e) => setMethodFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All methods" },
+                ...PAYMENT_METHODS.map((m) => ({ value: m, label: m })),
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+            <DateRangeFilter
+              mode={dateMode}
+              onModeChange={setDateMode}
+              date={day}
+              from={from}
+              to={to}
+              onDateChange={setDay}
+              onFromChange={setFrom}
+              onToChange={setTo}
+            />
+          </FilterBar>
+        }
       />
     </div>
   );

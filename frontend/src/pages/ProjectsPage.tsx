@@ -10,6 +10,7 @@ import {
   Avatar,
   DateRangeFilter,
   FilterBar,
+  Select,
   type DateFilterMode,
   Skeleton,
   EmptyState,
@@ -290,6 +291,7 @@ function CustomerProjectsPanel() {
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const [attachmentBlobUrl, setAttachmentBlobUrl] = useState<string | undefined>();
   const attachmentBlobUrlRef = useRef<string | undefined>();
@@ -342,10 +344,11 @@ function CustomerProjectsPanel() {
 
   const filtered = useMemo(
     () =>
-      projects.filter((p) =>
-        matchesDateFilter(p.startDate ?? p.createdAt, { mode: dateMode, date: day, from, to })
-      ),
-    [projects, dateMode, day, from, to]
+      projects.filter((p) => {
+        if (statusFilter !== "all" && p.status !== statusFilter) return false;
+        return matchesDateFilter(p.startDate ?? p.createdAt, { mode: dateMode, date: day, from, to });
+      }),
+    [projects, statusFilter, dateMode, day, from, to]
   );
 
   const customerName = (id: number) => customers.find((c) => c.customerId === id)?.customerName ?? "Unknown";
@@ -371,6 +374,18 @@ function CustomerProjectsPanel() {
       />
 
       <FilterBar>
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          options={[
+            { value: "all", label: "All statuses" },
+            { value: "Pending", label: "Pending" },
+            { value: "In Progress", label: "In Progress" },
+            { value: "Completed", label: "Completed" },
+            { value: "Cancelled", label: "Cancelled" },
+          ]}
+          className="w-auto min-w-[9.5rem]"
+        />
         <DateRangeFilter
           mode={dateMode}
           onModeChange={setDateMode}

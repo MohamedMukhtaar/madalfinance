@@ -11,6 +11,7 @@ import {
   Avatar,
   Badge,
   Button,
+  FilterBar,
   Modal,
   ErrorState,
   Tabs,
@@ -113,11 +114,23 @@ function UsersTab({ roles, embedded = false }: { roles: AppRoleRecord[]; embedde
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
-  const users = data?.rows ?? [];
+  const usersRaw = data?.rows ?? [];
   const [modalOpen, setModalOpen] = useState(false);
   const [editFor, setEditFor] = useState<User | undefined>();
   const [viewFor, setViewFor] = useState<User | undefined>();
   const [photoFiles, setPhotoFiles] = useState<UploadedFile[]>([]);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
+
+  const users = useMemo(
+    () =>
+      usersRaw.filter((u) => {
+        if (statusFilter !== "all" && u.status !== statusFilter) return false;
+        if (roleFilter !== "all" && u.role !== roleFilter) return false;
+        return true;
+      }),
+    [usersRaw, statusFilter, roleFilter]
+  );
 
   const {
     register,
@@ -335,6 +348,29 @@ function UsersTab({ roles, embedded = false }: { roles: AppRoleRecord[]; embedde
         loading={isLoading}
         searchPlaceholder="Search"
         showColumnToggle={false}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+            <Select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All roles" },
+                ...roles.map((r) => ({ value: r.roleName, label: r.roleName })),
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+          </FilterBar>
+        }
         renderMobileCard={(row) => (
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-2">

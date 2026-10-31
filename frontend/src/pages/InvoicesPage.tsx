@@ -23,7 +23,7 @@ import { useSelectedMonth } from "@/hooks/useSelectedMonth";
 import { useSettings } from "@/context/SettingsContext";
 import { useAuth } from "@/context/AuthContext";
 import { INVOICE_STATUS_STYLES } from "@/utils/constants";
-import { describeInvoice, INVOICE_KIND_STYLES } from "@/utils/invoiceKind";
+import { describeInvoice, invoiceKindFromText, INVOICE_KIND_STYLES } from "@/utils/invoiceKind";
 import { formatCurrency, formatDate, formatTime } from "@/utils/format";
 import { monthDateBounds, rentalPeriodLabel } from "@/utils/validation";
 import { monthRangeParams } from "@/utils/monthFilter";
@@ -52,6 +52,7 @@ export default function InvoicesPage() {
   const [viewId, setViewId] = useState<number | undefined>();
   const [payFor, setPayFor] = useState<Invoice | undefined>();
   const [statusFilter, setStatusFilter] = useState("all");
+  const [kindFilter, setKindFilter] = useState("all");
   const [attachmentFor, setAttachmentFor] = useState<Invoice | undefined>();
   const [uploadingFor, setUploadingFor] = useState<Invoice | undefined>();
   const [uploads, setUploads] = useState<Record<number, UploadedFile[]>>({});
@@ -82,7 +83,13 @@ export default function InvoicesPage() {
   const { data: monthInvoicesData } = useInvoices({ ...monthParams, perPage: 500 });
   const { data: customersData } = useCustomers();
   const { data: rentalsData } = useRentals();
-  const invoices = invoicesData?.rows ?? [];
+  const invoicesRaw = invoicesData?.rows ?? [];
+  const invoices = useMemo(() => {
+    if (kindFilter === "all") return invoicesRaw;
+    return invoicesRaw.filter(
+      (inv) => invoiceKindFromText(inv.firstItemDescription ?? inv.items?.[0]?.description) === kindFilter
+    );
+  }, [invoicesRaw, kindFilter]);
   const totalCount = invoicesData?.total ?? 0;
   const customers = customersData?.rows ?? [];
   const monthInvoices = monthInvoicesData?.rows ?? [];
@@ -369,6 +376,20 @@ export default function InvoicesPage() {
                 { value: "Paid", label: "Paid" },
                 { value: "Overdue", label: "Overdue" },
                 { value: "Cancelled", label: "Cancelled" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+            <Select
+              value={kindFilter}
+              onChange={(e) => {
+                setKindFilter(e.target.value);
+                setPageIndex(0);
+              }}
+              options={[
+                { value: "all", label: "All kinds" },
+                { value: "setup", label: "Setup" },
+                { value: "rent", label: "Monthly rent" },
+                { value: "other", label: "Other" },
               ]}
               className="w-auto min-w-[9.5rem]"
             />

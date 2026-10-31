@@ -7,7 +7,7 @@ import { Banknote, Pencil, Plus, Printer, Receipt, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, Modal, StatCard, confirmDialog } from "@/components/ui";
+import { Badge, FilterBar, Modal, StatCard, confirmDialog } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
 import { ExpenseFormModal } from "@/features/expenses/ExpenseFormModal";
 import { ExpenseTabs } from "@/features/expenses/ExpenseTabs";
@@ -83,6 +83,7 @@ export default function ExpenseChargesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ExpenseChargeRecord | undefined>();
   const [payFor, setPayFor] = useState<ExpenseChargeRecord | undefined>();
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const {
     register,
@@ -144,6 +145,10 @@ export default function ExpenseChargesPage() {
     onError: (err) => toast.error(getErrorMessage(err, "Failed to delete charge")),
   });
 
+  const filteredCharges = useMemo(
+    () => charges.filter((c) => categoryFilter === "all" || String(c.expenseCategoryId) === categoryFilter),
+    [charges, categoryFilter]
+  );
   const totalPending = useMemo(() => charges.reduce((s, c) => s + c.balance, 0), [charges]);
 
   const columns = useMemo<ColumnDef<ExpenseChargeRecord, any>[]>(
@@ -222,7 +227,7 @@ export default function ExpenseChargesPage() {
 
       <DataTable
         columns={columns}
-        data={charges}
+        data={filteredCharges}
         loading={isLoading}
         error={error ? getErrorMessage(error) : undefined}
         onRetry={() => refetch()}
@@ -230,6 +235,19 @@ export default function ExpenseChargesPage() {
         emptyTitle="No open expense charges"
         emptyDescription="Add a bill to pay, then use Pay to record the payment."
         getRowId={(row) => String(row.expenseChargeId)}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All categories" },
+                ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+              ]}
+              className="w-auto min-w-[10rem]"
+            />
+          </FilterBar>
+        }
         actions={(row) => [
           { label: "Pay", icon: <Banknote className="h-4 w-4" />, onClick: () => setPayFor(row) },
           {

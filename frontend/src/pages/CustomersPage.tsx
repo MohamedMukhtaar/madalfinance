@@ -31,6 +31,7 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | undefined>();
   const [statusFilter, setStatusFilter] = useState("all");
+  const [balanceFilter, setBalanceFilter] = useState("all");
   const [dateMode, setDateMode] = useState<DateFilterMode>("all");
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
@@ -50,12 +51,13 @@ export default function CustomersPage() {
 
   const filtered = useMemo(
     () =>
-      customers.filter(
-        (c) =>
-          (statusFilter === "all" || c.status === statusFilter) &&
-          matchesDateFilter(c.createdAt, { mode: dateMode, date: day, from, to })
-      ),
-    [customers, statusFilter, dateMode, day, from, to]
+      customers.filter((c) => {
+        if (statusFilter !== "all" && c.status !== statusFilter) return false;
+        if (balanceFilter === "owed" && !(Number(c.outstandingBalance) > 0)) return false;
+        if (balanceFilter === "clear" && Number(c.outstandingBalance) > 0) return false;
+        return matchesDateFilter(c.createdAt, { mode: dateMode, date: day, from, to });
+      }),
+    [customers, statusFilter, balanceFilter, dateMode, day, from, to]
   );
 
   const columns = useMemo<ColumnDef<Customer, any>[]>(
@@ -229,6 +231,16 @@ export default function CustomersPage() {
                 { value: "all", label: "All statuses" },
                 { value: "active", label: "Active" },
                 { value: "inactive", label: "Inactive" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+            <Select
+              value={balanceFilter}
+              onChange={(e) => setBalanceFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All balances" },
+                { value: "owed", label: "Has balance" },
+                { value: "clear", label: "Cleared" },
               ]}
               className="w-auto min-w-[9.5rem]"
             />

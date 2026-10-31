@@ -9,7 +9,7 @@ import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Modal, StatCard, StatCardsGrid, Badge, Tabs, DateRangeFilter, promptDeleteReason, type DateFilterMode } from "@/components/ui";
+import { Modal, StatCard, StatCardsGrid, Badge, Tabs, DateRangeFilter, FilterBar, promptDeleteReason, type DateFilterMode } from "@/components/ui";
 import { AmountVisibilityToggle } from "@/context/AmountVisibilityContext";
 import { confirmDialog } from "@/components/ui/ConfirmDialog";
 import { Input, Select } from "@/components/ui/FormField";
@@ -132,23 +132,7 @@ export default function AccountsPage() {
         subtitle="Bank and cash accounts — income deposits here, expenses pay from here."
         actions={
           <>
-            {tab === "transfer" ? (
-              <>
-                <DateRangeFilter
-                  mode={dateMode}
-                  onModeChange={setDateMode}
-                  date={day}
-                  from={from}
-                  to={to}
-                  onDateChange={setDay}
-                  onFromChange={setFrom}
-                  onToChange={setTo}
-                />
-                <AmountVisibilityToggle />
-              </>
-            ) : (
-              <AmountVisibilityToggle />
-            )}
+            <AmountVisibilityToggle />
             {tab === "list" ? (
               <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
                 New account
@@ -255,6 +239,20 @@ export default function AccountsPage() {
           searchPlaceholder="Search transfers…"
           emptyTitle="No transfers"
           emptyDescription="No transfers for the selected dates."
+          toolbar={
+            <FilterBar>
+              <DateRangeFilter
+                mode={dateMode}
+                onModeChange={setDateMode}
+                date={day}
+                from={from}
+                to={to}
+                onDateChange={setDay}
+                onFromChange={setFrom}
+                onToChange={setTo}
+              />
+            </FilterBar>
+          }
           actions={(row) => [
             {
               label: "Delete (reverse)",

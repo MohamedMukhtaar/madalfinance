@@ -4,7 +4,7 @@ import { Banknote, Plus, Receipt, Trash2, Wand2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge, Button, Modal, MonthNavigator, StatCard, confirmDialog } from "@/components/ui";
+import { Badge, Button, FilterBar, Modal, MonthNavigator, StatCard, confirmDialog } from "@/components/ui";
 import { Input, Select } from "@/components/ui/FormField";
 import { HrTabs } from "@/features/hr/HrTabs";
 import {
@@ -55,6 +55,12 @@ export default function SalaryChargesPage() {
   const payMutation = usePaySalaryCharge();
   const [addOpen, setAddOpen] = useState(false);
   const [payFor, setPayFor] = useState<SalaryCharge | undefined>();
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const filteredCharges = useMemo(
+    () => charges.filter((c) => statusFilter === "all" || c.status === statusFilter),
+    [charges, statusFilter]
+  );
 
   const totals = useMemo(() => {
     return {
@@ -139,7 +145,7 @@ export default function SalaryChargesPage() {
 
       <DataTable
         columns={columns}
-        data={charges}
+        data={filteredCharges}
         loading={isLoading}
         error={error ? String(error) : undefined}
         onRetry={() => refetch()}
@@ -147,6 +153,22 @@ export default function SalaryChargesPage() {
         emptyTitle="No salary charges this month"
         emptyDescription="Generate charges for all active employees, or add one."
         getRowId={(row) => String(row.salaryChargeId)}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "Pending", label: "Pending" },
+                { value: "Partial", label: "Partial" },
+                { value: "Paid", label: "Paid" },
+                { value: "Cancelled", label: "Cancelled" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+          </FilterBar>
+        }
         actions={(row) => {
           const items = [];
           if (row.status !== "Paid" && row.status !== "Cancelled" && Number(row.balance) > 0) {

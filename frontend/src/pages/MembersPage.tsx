@@ -4,7 +4,7 @@ import { Plus, Users, UsersRound, Pencil, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Avatar, Badge, StatCard, Modal, Button, promptDeleteReason, FileUpload, type UploadedFile } from "@/components/ui";
+import { Avatar, Badge, FilterBar, StatCard, Modal, Button, promptDeleteReason, FileUpload, type UploadedFile } from "@/components/ui";
 import { Input, Select, FormSection } from "@/components/ui/FormField";
 import {
   useMembers,
@@ -50,6 +50,7 @@ export default function MembersPage() {
   const deactivateMutation = useDeactivateMember();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | undefined>();
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const currentDues = useMemo(() => {
     const map = new Map<number, { status: string; balance: number; amount: number; month: string }>();
@@ -69,6 +70,11 @@ export default function MembersPage() {
     });
     return map;
   }, [batches]);
+
+  const filtered = useMemo(
+    () => members.filter((m) => statusFilter === "all" || m.status === statusFilter),
+    [members, statusFilter]
+  );
 
   const columns = useMemo<ColumnDef<Member, any>[]>(
     () => [
@@ -180,7 +186,7 @@ export default function MembersPage() {
 
       <DataTable
         columns={columns}
-        data={members}
+        data={filtered}
         loading={isLoading}
         error={error ? String(error) : undefined}
         onRetry={() => refetch()}
@@ -188,6 +194,20 @@ export default function MembersPage() {
         emptyTitle="No members yet"
         emptyDescription="Add your first member to start tracking contributions."
         getRowId={(row) => String(row.memberId)}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+          </FilterBar>
+        }
         actions={(row) => [
           {
             label: "Edit",

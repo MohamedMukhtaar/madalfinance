@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
-import { Briefcase, FileDown, FileSpreadsheet, Filter, Pencil, Plus, RotateCcw, Trash2, Users } from "lucide-react";
+import { Briefcase, FileDown, FileSpreadsheet, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { useForm } from "react-hook-form";
 import toast from "react-hot-toast";
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Badge, Button, Card, Modal, StatCard, confirmDialog } from "@/components/ui";
+import { Badge, Button, FilterBar, Modal, StatCard, confirmDialog } from "@/components/ui";
 import { HrTabs } from "@/features/hr/HrTabs";
-import { Input, Select, Textarea, FormSection, fieldBase } from "@/components/ui/FormField";
+import { Input, Select, Textarea, FormSection } from "@/components/ui/FormField";
 import {
   useCreateEmployee,
   useCreateEmployeeOrg,
@@ -25,7 +25,6 @@ import { formatCurrency, formatDate, todayISO } from "@/utils/format";
 import { emailRules, phoneRules } from "@/utils/validation";
 import { financeService } from "@/services/finance";
 import { api, getErrorMessage } from "@/services/api";
-import { cn } from "@/utils/cn";
 import type { Employee, EmployeeOrgKind, EmployeeOrgRecord } from "@/types";
 
 const columnHelper = createColumnHelper<Employee>();
@@ -82,51 +81,6 @@ function clock(value?: string | null): string {
   if (!value) return "";
   return String(value).slice(0, 5);
 }
-
-const filterSelect = cn(fieldBase, "h-10 min-w-[12rem] flex-1 appearance-none pr-9");
-
-function ChipGroup({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: string; label: string; idle: string; active: string }[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {options.map((opt) => {
-        const selected = value === opt.value;
-        return (
-          <button
-            key={opt.value || "all"}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "h-9 rounded-xl px-3.5 text-sm font-semibold transition",
-              selected ? opt.active : opt.idle
-            )}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-const STATUS_CHIPS = [
-  { value: "", label: "All", idle: "bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300", active: "bg-rose-500 text-white shadow-sm" },
-  { value: "active", label: "Active", idle: "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300", active: "bg-emerald-500 text-white shadow-sm" },
-  { value: "inactive", label: "Inactive", idle: "bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300", active: "bg-rose-600 text-white shadow-sm" },
-];
-
-const GENDER_CHIPS = [
-  { value: "", label: "All", idle: "bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300", active: "bg-rose-500 text-white shadow-sm" },
-  { value: "Male", label: "Male", idle: "bg-sky-50 text-sky-600 hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300", active: "bg-sky-500 text-white shadow-sm" },
-  { value: "Female", label: "Female", idle: "bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-500/10 dark:text-orange-300", active: "bg-orange-500 text-white shadow-sm" },
-];
 
 export default function EmployeesPage() {
   const { tab } = useParams();
@@ -289,63 +243,6 @@ function StaffPanel() {
         />
       </div>
 
-      <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-ink">
-            <Filter className="h-4 w-4 text-ink-soft" />
-            <h2 className="text-sm font-bold">Filters</h2>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFilters(EMPTY_FILTERS)}
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft transition hover:text-ink"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Clear
-          </button>
-        </div>
-        <div className="flex max-w-full flex-nowrap items-center gap-2 overflow-x-auto pb-0.5">
-          <div className="relative min-w-[10rem] shrink-0">
-            <select
-              className={filterSelect}
-              value={filters.departmentId}
-              aria-label="Department"
-              onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))}
-            >
-              {lookupOptions(departments, "departments", "All Departments").map((opt) => (
-                <option key={opt.value || "all"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="relative min-w-[10rem] shrink-0">
-            <select
-              className={filterSelect}
-              value={filters.jobTitleId}
-              aria-label="Title"
-              onChange={(e) => setFilters((f) => ({ ...f, jobTitleId: e.target.value }))}
-            >
-              {lookupOptions(titles, "titles", "All Titles").map((opt) => (
-                <option key={opt.value || "all"} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <ChipGroup
-            options={STATUS_CHIPS}
-            value={filters.status}
-            onChange={(status) => setFilters((f) => ({ ...f, status }))}
-          />
-          <ChipGroup
-            options={GENDER_CHIPS}
-            value={filters.gender}
-            onChange={(gender) => setFilters((f) => ({ ...f, gender }))}
-          />
-        </div>
-      </Card>
-
       <DataTable
         columns={columns}
         data={filtered}
@@ -356,6 +253,42 @@ function StaffPanel() {
         emptyTitle="No employees yet"
         emptyDescription="Add staff so you can generate salary charges."
         getRowId={(row) => String(row.employeeId)}
+        toolbar={
+          <FilterBar>
+            <Select
+              value={filters.departmentId}
+              onChange={(e) => setFilters((f) => ({ ...f, departmentId: e.target.value }))}
+              options={lookupOptions(departments, "departments", "All departments")}
+              className="w-auto min-w-[10rem]"
+            />
+            <Select
+              value={filters.jobTitleId}
+              onChange={(e) => setFilters((f) => ({ ...f, jobTitleId: e.target.value }))}
+              options={lookupOptions(titles, "titles", "All titles")}
+              className="w-auto min-w-[9rem]"
+            />
+            <Select
+              value={filters.status}
+              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+              options={[
+                { value: "", label: "All statuses" },
+                { value: "active", label: "Active" },
+                { value: "inactive", label: "Inactive" },
+              ]}
+              className="w-auto min-w-[9rem]"
+            />
+            <Select
+              value={filters.gender}
+              onChange={(e) => setFilters((f) => ({ ...f, gender: e.target.value }))}
+              options={[
+                { value: "", label: "All genders" },
+                { value: "Male", label: "Male" },
+                { value: "Female", label: "Female" },
+              ]}
+              className="w-auto min-w-[9rem]"
+            />
+          </FilterBar>
+        }
         actions={(row) => [
           {
             label: "Edit",

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { createColumnHelper, type ColumnDef } from "@tanstack/react-table";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { DataTable } from "@/components/tables/DataTable";
-import { Badge, Select, StatCard, confirmDialog } from "@/components/ui";
+import { Badge, FilterBar, Select, StatCard, confirmDialog } from "@/components/ui";
 import { useRestoreTrash, useTrash } from "@/hooks/queries";
 import { dateTimeColumns } from "@/utils/tableHelpers";
 import type { TrashItem } from "@/services/finance";
@@ -113,15 +113,17 @@ export default function TrashPage() {
         emptyDescription="Deleted customers, members, invoices and more will appear here."
         getRowId={(row) => String(row.trashId)}
         toolbar={
-          <Select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All types" },
-              ...Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label })),
-            ]}
-            className="w-44"
-          />
+          <FilterBar>
+            <Select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All types" },
+                ...Object.entries(TYPE_LABELS).map(([value, label]) => ({ value, label })),
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+          </FilterBar>
         }
         actions={(row) => [
           {

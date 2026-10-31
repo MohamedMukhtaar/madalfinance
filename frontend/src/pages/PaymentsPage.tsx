@@ -4,7 +4,7 @@ import { CreditCard, Download, Eye, Pencil, Paperclip, Plus, Printer, Trash2, Up
 import { DataTable } from "@/components/tables/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
-import { Badge, DateRangeFilter, FilterBar, type DateFilterMode, StatCard, StatCardsGrid, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
+import { Badge, DateRangeFilter, FilterBar, Select, type DateFilterMode, StatCard, StatCardsGrid, Modal, FileUpload, ErrorState, promptDeleteReason, type UploadedFile } from "@/components/ui";
 import { RecordPaymentModal } from "@/features/payments/RecordPaymentModal";
 import { EditPaymentModal } from "@/features/payments/EditPaymentModal";
 import { useCustomers, useInvoices, usePayments, useVoidPayment } from "@/hooks/queries";
@@ -15,6 +15,7 @@ import { printPayment } from "@/utils/print";
 import { financeService } from "@/services/finance";
 import { getErrorMessage } from "@/services/api";
 import { canManage } from "@/utils/roles";
+import { PAYMENT_METHODS } from "@/utils/constants";
 import type { Payment } from "@/types";
 import toast from "react-hot-toast";
 
@@ -46,6 +47,7 @@ export default function PaymentsPage() {
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [methodFilter, setMethodFilter] = useState("all");
 
   const listParams = useMemo(() => {
     const base: Record<string, string | number> = {
@@ -78,7 +80,11 @@ export default function PaymentsPage() {
   const { data: statsPaymentsData } = usePayments(statsParams);
   const { data: customersData } = useCustomers();
   const { data: invoicesData } = useInvoices();
-  const payments = paymentsData?.rows ?? [];
+  const paymentsRaw = paymentsData?.rows ?? [];
+  const payments = useMemo(() => {
+    if (methodFilter === "all") return paymentsRaw;
+    return paymentsRaw.filter((p) => p.paymentMethod === methodFilter);
+  }, [paymentsRaw, methodFilter]);
   const totalCount = paymentsData?.total ?? 0;
   const customers = customersData?.rows ?? [];
   const invoices = invoicesData?.rows ?? [];
@@ -281,28 +287,40 @@ export default function PaymentsPage() {
         ]}
         toolbar={
           <FilterBar>
-          <DateRangeFilter
-            mode={dateMode}
-            onModeChange={(mode) => {
-              setDateMode(mode);
-              setPageIndex(0);
-            }}
-            date={day}
-            from={from}
-            to={to}
-            onDateChange={(value) => {
-              setDay(value);
-              setPageIndex(0);
-            }}
-            onFromChange={(value) => {
-              setFrom(value);
-              setPageIndex(0);
-            }}
-            onToChange={(value) => {
-              setTo(value);
-              setPageIndex(0);
-            }}
-          />
+            <Select
+              value={methodFilter}
+              onChange={(e) => {
+                setMethodFilter(e.target.value);
+                setPageIndex(0);
+              }}
+              options={[
+                { value: "all", label: "All methods" },
+                ...PAYMENT_METHODS.map((m) => ({ value: m, label: m })),
+              ]}
+              className="w-auto min-w-[9.5rem]"
+            />
+            <DateRangeFilter
+              mode={dateMode}
+              onModeChange={(mode) => {
+                setDateMode(mode);
+                setPageIndex(0);
+              }}
+              date={day}
+              from={from}
+              to={to}
+              onDateChange={(value) => {
+                setDay(value);
+                setPageIndex(0);
+              }}
+              onFromChange={(value) => {
+                setFrom(value);
+                setPageIndex(0);
+              }}
+              onToChange={(value) => {
+                setTo(value);
+                setPageIndex(0);
+              }}
+            />
           </FilterBar>
         }
       />

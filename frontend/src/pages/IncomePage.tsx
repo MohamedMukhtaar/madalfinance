@@ -63,6 +63,7 @@ export function OtherIncomePanel() {
   const [day, setDay] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
 
   const listParams = useMemo(() => {
     const base: Record<string, string | number> = {
@@ -94,7 +95,11 @@ export function OtherIncomePanel() {
   }, [dateMode, day, from, to]);
   const { data: statsData } = useIncome(statsParams);
   const { data: categories = [] } = useIncomeCategories();
-  const rows = data?.rows ?? [];
+  const rowsRaw = data?.rows ?? [];
+  const rows = useMemo(() => {
+    if (categoryFilter === "all") return rowsRaw;
+    return rowsRaw.filter((r) => (r.categoryName ?? "") === categoryFilter);
+  }, [rowsRaw, categoryFilter]);
   const totalCount = data?.total ?? 0;
   const totalAmount = useMemo(
     () => (statsData?.rows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0),
@@ -210,6 +215,18 @@ export function OtherIncomePanel() {
         }
         toolbar={
           <FilterBar>
+            <Select
+              value={categoryFilter}
+              onChange={(e) => {
+                setCategoryFilter(e.target.value);
+                setPageIndex(0);
+              }}
+              options={[
+                { value: "all", label: "All categories" },
+                ...categories.map((c) => ({ value: c.name, label: c.name })).filter((o) => o.value),
+              ]}
+              className="w-auto min-w-[10rem]"
+            />
             <DateRangeFilter
               mode={dateMode}
               onModeChange={(mode) => {
