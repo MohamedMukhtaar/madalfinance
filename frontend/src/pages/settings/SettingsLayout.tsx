@@ -45,7 +45,7 @@ const NAV = [
   },
   {
     to: "/settings/trash",
-    label: "Trash Items",
+    label: "Trash",
     icon: Trash2,
     permissions: ["view trash items", "restore trash items"],
   },
@@ -73,7 +73,7 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
     subtitle: "Audit trail of system actions.",
   },
   "/settings/trash": {
-    title: "Trash Items",
+    title: "Trash",
     subtitle: "Restore or permanently review soft-deleted records.",
   },
 };

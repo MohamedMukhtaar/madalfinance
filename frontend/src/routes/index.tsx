@@ -32,6 +32,7 @@ const SalaryPaymentsPage = lazy(() => import("@/pages/SalaryPaymentsPage"));
 const TransactionsPage = lazy(() => import("@/pages/TransactionsPage"));
 const ReportsPage = lazy(() => import("@/pages/ReportsPage"));
 const LogsPage = lazy(() => import("@/pages/LogsPage"));
+const TrashPage = lazy(() => import("@/pages/TrashPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 const SettingsLayout = lazy(() => import("@/pages/settings/SettingsLayout"));
 const OrganizationSettingsPage = lazy(() => import("@/pages/settings/OrganizationSettingsPage"));
@@ -136,7 +137,7 @@ export const router = createBrowserRouter([
           {
             path: "trash",
             element: (
-              <PermissionRoute permissions={["view trash items"]}>{withLoader(LogsPage)}</PermissionRoute>
+              <PermissionRoute permissions={["view trash items"]}>{withLoader(TrashPage)}</PermissionRoute>
             ),
           },
         ],
