@@ -35,6 +35,11 @@ html.dark {
   --color-ink: #f8fafc;
   --color-ink-soft: #cbd5e1;
   --color-ink-muted: #94a3b8;
+  /* Sidebar matches dark shell (inline brand vars also updated in ThemeContext). */
+  --brand-sidebar: #070b22;
+  --brand-sidebar-ink: #94a3b8;
+  --brand-sidebar-bg: var(--brand-primary);
+  --brand-sidebar-text: #ffffff;
 }
 
 @layer base {

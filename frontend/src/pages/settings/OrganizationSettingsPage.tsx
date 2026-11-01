@@ -173,10 +173,22 @@ export default function OrganizationSettingsPage() {
     const root = document.documentElement;
     root.style.setProperty("--brand-primary", colors.primaryColor);
     root.style.setProperty("--brand-secondary", colors.secondaryColor);
-    root.style.setProperty("--brand-sidebar", colors.sidebarBg);
-    root.style.setProperty("--brand-sidebar-ink", colors.sidebarText);
-    root.style.setProperty("--brand-sidebar-bg", colors.sidebarActiveBg);
-    root.style.setProperty("--brand-sidebar-text", colors.sidebarActiveText);
+    root.dataset.brandSidebar = colors.sidebarBg;
+    root.dataset.brandSidebarInk = colors.sidebarText;
+    root.dataset.brandSidebarBg = colors.sidebarActiveBg;
+    root.dataset.brandSidebarText = colors.sidebarActiveText;
+    const dark = root.classList.contains("dark");
+    if (dark) {
+      root.style.setProperty("--brand-sidebar", "#070b22");
+      root.style.setProperty("--brand-sidebar-ink", "#94a3b8");
+      root.style.setProperty("--brand-sidebar-bg", "var(--brand-primary)");
+      root.style.setProperty("--brand-sidebar-text", "#ffffff");
+    } else {
+      root.style.setProperty("--brand-sidebar", colors.sidebarBg);
+      root.style.setProperty("--brand-sidebar-ink", colors.sidebarText);
+      root.style.setProperty("--brand-sidebar-bg", colors.sidebarActiveBg);
+      root.style.setProperty("--brand-sidebar-text", colors.sidebarActiveText);
+    }
     root.style.setProperty("--color-active", colors.primaryColor);
     root.style.setProperty("--color-accent", colors.secondaryColor);
   }, [colors]);

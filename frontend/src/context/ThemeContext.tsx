@@ -38,6 +38,18 @@ function applyThemeClass(theme: Theme) {
   root.classList.toggle("dark", theme === "dark");
   root.style.colorScheme = theme;
   root.dataset.theme = theme;
+  // Keep sidebar in sync (brand light colors vs dark shell).
+  if (theme === "dark") {
+    root.style.setProperty("--brand-sidebar", "#070b22");
+    root.style.setProperty("--brand-sidebar-ink", "#94a3b8");
+    root.style.setProperty("--brand-sidebar-bg", "var(--brand-primary)");
+    root.style.setProperty("--brand-sidebar-text", "#ffffff");
+  } else {
+    root.style.setProperty("--brand-sidebar", root.dataset.brandSidebar || "#101848");
+    root.style.setProperty("--brand-sidebar-ink", root.dataset.brandSidebarInk || "#c7cedb");
+    root.style.setProperty("--brand-sidebar-bg", root.dataset.brandSidebarBg || "#1a255c");
+    root.style.setProperty("--brand-sidebar-text", root.dataset.brandSidebarText || "#ffffff");
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
